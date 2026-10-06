@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ComputeBudgetProgram,
   Keypair,
   SystemProgram,
   TransactionInstruction,
@@ -12,6 +13,7 @@ import {
   actionsForMember,
   buildVote,
   buildPayoutProposal,
+  buildGuardedExecute,
   validateGuardInstruction,
   proposalIndices,
   decodeProposal,
@@ -335,6 +337,39 @@ test("guarded execution refuses direct Squads execution, missing accounts and ad
         member,
       ),
     /signer/i,
+  );
+});
+test("guarded execute raises the compute limit for the Squads CPI and validates the guard instruction", () => {
+  const [tx] = sqds.getTransactionPda({ multisigPda: multisig, index });
+  const [pda] = sqds.getProposalPda({
+    multisigPda: multisig,
+    transactionIndex: index,
+  });
+  const ix = new TransactionInstruction({
+    programId: guard,
+    keys: [multisig, tx, pda].map((pubkey) => ({
+      pubkey,
+      isSigner: false,
+      isWritable: true,
+    })),
+    data: Buffer.from([2]),
+  });
+  const result = buildGuardedExecute(ix, guard, multisig, index, member);
+  assert.equal(result.length, 2);
+  assert(result[0].programId.equals(ComputeBudgetProgram.programId));
+  assert.equal(result[0].data[0], 2); // SetComputeUnitLimit
+  assert.equal(result[0].data.readUInt32LE(1), 400_000);
+  assert.equal(result[1], ix);
+  assert.throws(
+    () =>
+      buildGuardedExecute(
+        new TransactionInstruction({ ...ix, programId: sqds.PROGRAM_ID }),
+        guard,
+        multisig,
+        index,
+        member,
+      ),
+    /guard/i,
   );
 });
 test("RPC proxy accepts needed reads and signed submissions but refuses arbitrary or nonfinalized reads", () => {

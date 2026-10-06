@@ -29,6 +29,7 @@ import * as sqds from "@sqds/multisig";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   actionsForMember,
+  buildGuardedExecute,
   buildPayoutProposal,
   buildVote,
   fromWire,
@@ -36,7 +37,6 @@ import {
   readProposal,
   readProposalPage,
   signAndConfirm,
-  validateGuardInstruction,
   type SquadConfig,
   type ProposalRecord,
   type VoteAction,
@@ -500,15 +500,13 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       )
         throw new Error("Proposal is not executable.");
       const prepared = await prepare("execute", index, key);
-      return [
-        validateGuardInstruction(
-          fromWire(prepared.guardInstruction),
-          new PublicKey(config!.guardProgram!),
-          new PublicKey(config!.multisig),
-          index,
-          key,
-        ),
-      ];
+      return buildGuardedExecute(
+        fromWire(prepared.guardInstruction),
+        new PublicKey(config!.guardProgram!),
+        new PublicKey(config!.multisig),
+        index,
+        key,
+      );
     });
   }
   async function proposePayment(input: PaymentInput) {
