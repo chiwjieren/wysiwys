@@ -16,6 +16,7 @@ import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { actionsForMember } from "@/lib/squads/sdk";
 import { tokenAmount } from "@/lib/squads/payments";
+import { memberRole } from "@/lib/squads/groups";
 import { PublicKey } from "@solana/web3.js";
 import { figmaAssets } from "@/lib/figma-assets";
 import { CreateGroupButton, GroupManage, GroupInvite } from "./group-controls";
@@ -305,6 +306,9 @@ export function SquadMembers() {
       (m) => m.key.toBase58() !== config?.executor,
     ) ?? [];
   const voters = humans.filter((m) => votable(m.permissions.mask)).length;
+  const guardExecutor = snapshot?.squad.members.find(
+    (m) => m.key.toBase58() === config?.executor,
+  );
   return (
     <div className="page-stack">
       <PageHeader
@@ -364,17 +368,13 @@ export function SquadMembers() {
                     <Explorer address={m.key.toBase58()} />
                   </td>
                   <td>
-                    <div className="flex gap-2">
-                      {m.permissions.mask & 1 ? (
-                        <StatusBadge className="min-w-0">Propose</StatusBadge>
-                      ) : null}
-                      {m.permissions.mask & 2 ? (
-                        <StatusBadge className="min-w-0">Vote</StatusBadge>
-                      ) : null}
-                      {m.permissions.mask & 4 ? (
-                        <StatusBadge className="min-w-0">Execute</StatusBadge>
-                      ) : null}
-                    </div>
+                    <StatusBadge className="min-w-0">
+                      {memberRole(
+                        m.key.toBase58(),
+                        m.permissions.mask,
+                        config?.executor,
+                      )}
+                    </StatusBadge>
                   </td>
                 </tr>
               ))}
@@ -417,10 +417,18 @@ export function SquadMembers() {
                 : "Executes payments after a valid Guard review and required member approvals. Does not propose or vote."}
             </p>
           </div>
-          <StatusBadge tone={config?.executor ? "success" : "neutral"}>
+          <StatusBadge
+            tone={guardExecutor?.permissions.mask === 4 ? "success" : "neutral"}
+          >
             {config?.executionMode === "standard"
               ? "Standard Squads"
-              : "Execute only"}
+              : guardExecutor
+                ? memberRole(
+                    guardExecutor.key.toBase58(),
+                    guardExecutor.permissions.mask,
+                    config?.executor,
+                  )
+                : "Guard executor (Execute only)"}
           </StatusBadge>
         </div>
       </Panel>
