@@ -25,9 +25,7 @@ test("parses DecisionRecorded with destination facts", () => {
     reason: 8,
     policyHash: "03".repeat(32),
     actionKind: 2,
-    destination: key(4).toBase58(),
-    destinationOwner: key(5).toBase58(),
-    mint: key(6).toBase58(),
+    destinationHash: "04".repeat(32),
     expiresAt: "1800000000",
   });
 });

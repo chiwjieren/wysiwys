@@ -28,8 +28,8 @@ export const reviewRequested = (review: PublicKey, txIndex = 7) =>
 
 export const decisionRecorded = (review: PublicKey, verdict = 1, reason = 0) =>
   eventLine("DecisionRecorded", {
-    review, verdict, reason, policy_hash: bytes32(3), action_kind: 2,
-    destination: key(4), destination_owner: key(5), mint: key(6), expires_at: new BN(1_800_000_000),
+    review, verdict, reason, policy_hash: bytes32(3), action_kind: 2, destination_hash: bytes32(4),
+    expires_at: new BN(1_800_000_000),
   });
 
 export const executed = (review: PublicKey, txIndex = 7) =>
