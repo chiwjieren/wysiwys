@@ -12,3 +12,11 @@
 - web3.js 1.99 caches blockhashes by polling `finalized`, which lags on the local validator and returned expired blockhashes ("Blockhash not found"). Test helpers send with a fresh `confirmed` blockhash (`sendWithFreshBlockhash`).
 - mocha 9 keeps running on open websocket handles after the summary; `--exit` is required or validators are left orphaned and later runs stall.
 - `request_review` derives the Review PDA from bytes 72..80 of the vault transaction inside the `seeds` expression; Anchor 1.2 accepts it.
+
+## First devnet deploy (6 Oct)
+
+- Program `3jNv1XjPNeWUiZ8aiYheKJHknyjS81cpZfnPEp57CaH2`, deployed with `scripts/deploy-guard-devnet.sh` via the Helius devnet RPC.
+- Signature `27M9KYXVnvD388oUS9VoqLfq6fxwjoo3wgUa1jM4DtwmdaoWNatFR2uySE8UZXs1jDWYW6A4tgWucWKRoc5JhrRZ` (finalized), slot 508039295.
+- ProgramData `FDLBNBsE4n66oe4fCR8tz6SCTACauBbLgSkfMTUBsq7V`, 208,792 bytes; upgrade authority is the deployer `6GsXSpGrQYQfMesz1uxTWJDkLzZJ2tAWiSSy3UBp6Vm6`.
+- Verified: the dumped on-chain program is byte-identical to `target/deploy/omnicounter_guard.so` at commit b7cc3ea.
+- Includes the review fixes (workflow owner check, executor-in-message check, proposer signer).
