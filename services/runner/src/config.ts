@@ -15,6 +15,8 @@ export type RunnerConfig = {
   dbPath: string;
   triggerUrl: string | null;
   triggerToken: string | null;
+  /** Bearer token the app's server sends to /frontend/*. Unset: those routes answer 503. */
+  settlementToken: string | null;
   backfillIntervalMs: number;
 };
 
@@ -41,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
     dbPath: env.RUNNER_DB_PATH ?? resolve(here, "../data/runner.db"),
     triggerUrl: env.CRE_TRIGGER_URL || null,
     triggerToken: env.CRE_TRIGGER_TOKEN || null,
+    settlementToken: env.SETTLEMENT_TOKEN || null,
     backfillIntervalMs: Number(env.BACKFILL_INTERVAL_MS ?? 60_000),
   };
 }
