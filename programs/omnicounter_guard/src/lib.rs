@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 
-// Placeholder. Replaced in Task 0 (spike 1).
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("3jNv1XjPNeWUiZ8aiYheKJHknyjS81cpZfnPEp57CaH2");
 
 #[program]
 pub mod omnicounter_guard {}
