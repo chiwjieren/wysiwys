@@ -21,6 +21,8 @@ custom-panic = []
 
 [dependencies]
 anchor-lang = "1.2.0"
+solana-sha256-hasher = { version = "3", features = ["sha2"] }
+solana-instructions-sysvar = "3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
