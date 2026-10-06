@@ -2,5 +2,30 @@
   "name": "@wysiwys/decoder",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "squadsSource": {
+    "package": "@sqds/multisig",
+    "version": "2.1.4",
+    "repository": "https://github.com/Squads-Protocol/v4/tree/main/sdk/multisig"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --declaration --outDir dist",
+    "typecheck:browser": "tsc -p test/tsconfig.browser.json",
+    "typecheck:cre": "tsc -p test/cre-smoke/tsconfig.json",
+    "verify:devnet-fixtures": "node tools/verify-devnet-fixtures.mjs",
+    "test": "npm run build && node --experimental-strip-types test/decode.test.ts && node --experimental-strip-types test/instruction-variants.test.ts && node --experimental-strip-types test/security.test.ts && node --experimental-strip-types test/real-devnet.test.ts && node --experimental-strip-types test/boundary.test.ts && node --experimental-strip-types test/stress.test.ts && node --experimental-strip-types test/inspection.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@sqds/multisig": "2.1.4"
+  }
 }

@@ -1,0 +1,28 @@
+[
+  {
+    "accountAddress": "11fcK8xBkav1Ypd3fDWHcqN5F9FeWLfqCwTVj2tMxCY",
+    "cluster": "devnet",
+    "rpcEndpoint": "https://api.devnet.solana.com",
+    "commitment": "finalized",
+    "observedSlot": 507998625,
+    "creationSignature": "32kQ2FzJ1Sq3TZDJNok1vEm3BoiwiB61izZqkY9SKr7jhRTGZkLzQzBBgeP4F4P4C2r94SUVMn1WyL9keU2kStQi",
+    "creationSlot": 427397070,
+    "owner": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+    "sdkPackage": "@sqds/multisig",
+    "sdkVersion": "2.1.4",
+    "accountDataHex": "a8faa264510ea2cf1c32509851c51d40d109d27f8fa6b6ba0352a4f0140940f8a802e70b0d74131f14c9aadf7fadb7679c2187e5207330f07542b2515077870f1893292c0d17b6330300000000000000fe00fe000000000202010400000014c9aadf7fadb7679c2187e5207330f07542b2515077870f1893292c0d17b633285c3865f06ca535d138d96991a429e2d81e7952222401d754760faf39f1f5b9d0e982352540d3a60ad3e5cd3f1b33b40010d722c3cfd24956d150094580ebb3000000000000000000000000000000000000000000000000000000000000000002000000030200000001020c0000000200000050cd100400000000030200000001000c00000002000000702f29000000000000000000"
+  },
+  {
+    "accountAddress": "18PTVHBFMj1nyWaV26u1Q8hSw83djpKLiJfwBtRZmNg",
+    "cluster": "devnet",
+    "rpcEndpoint": "https://api.devnet.solana.com",
+    "commitment": "finalized",
+    "observedSlot": 507998625,
+    "creationSignature": "4ucjg4jWTgCwzr1sUtyHMrKnj2Boe3Fj29cT3zJ3V7Hqb4QezBTkddJGgXcvX8fq3G5MXLNCnmsbbXUcyrHmjqtg",
+    "creationSlot": 427521772,
+    "owner": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+    "sdkPackage": "@sqds/multisig",
+    "sdkVersion": "2.1.4",
+    "accountDataHex": "a8faa264510ea2cf4dfeb40bb23b4b3fd89afb0b4b4838b3a6d81a2b5dcba7a6058ef70ea34be69bcdf1f17a9dafad813b4259bb595a4efcfaad4d8b0b6cd6ff2c017d98cb74bbf49100000000000000ff00ff01000000fb01010106000000c2409d60d02dc0e1c6d57ab5fe39795e144f1f31526cb12a521ff30dd4b547854dae1e38155491214dae9ba7eb593a6ec96d796247b3ea6aa4f66f40a141f9aa8c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8597f2786497d734d017e993b9a204bf7bdf68c5a19ef4d1b5a2f2b47d65b220b8c000000000000000000000000000000000000000000000000000000000000000006ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc0100000002060000000001000304050000000000000000"
+  }
+]
