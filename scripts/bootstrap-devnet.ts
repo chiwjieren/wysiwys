@@ -17,7 +17,7 @@ const env = process.env;
 
 async function main() {
   const rpcUrl = env.HELIUS_DEVNET_RPC_URL || "https://api.devnet.solana.com";
-  const walletPath = env.SOLANA_WALLET ?? join(homedir(), ".config/solana/id.json");
+  const walletPath = env.SOLANA_WALLET || join(homedir(), ".config/solana/id.json");
   const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath, "utf8"))));
   const connection = new Connection(rpcUrl, "confirmed");
   const guard = guardFromEnv(env); // throws on partial CRE values before anything is sent
@@ -33,8 +33,8 @@ async function main() {
     payer,
     guardProgramId: new PublicKey(idl.address),
     keysDir: join(root, "keys"),
-    token: { name: env.MUSD_NAME || "Mock USD", symbol: env.MUSD_SYMBOL || "mUSD", uri: env.MUSD_URI ?? "", decimals },
-    vaultBalance: BigInt(env.MUSD_VAULT_BALANCE ?? 10_000_000) * 10n ** BigInt(decimals),
+    token: { name: env.MUSD_NAME || "Mock USD", symbol: env.MUSD_SYMBOL || "mUSD", uri: env.MUSD_URI || "", decimals },
+    vaultBalance: BigInt(env.MUSD_VAULT_BALANCE || 10_000_000) * 10n ** BigInt(decimals),
     lookalikePrefix: 3,
     guard,
   });

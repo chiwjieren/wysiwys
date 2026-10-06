@@ -166,6 +166,10 @@ describe("guardFromEnv", () => {
     expect(g.maxReviewLifetime).to.equal(3600n);
     expect(g.reviewDeadlineSecs).to.equal(900n);
     expect(guardFromEnv({ ...full, GUARD_MAX_REVIEW_LIFETIME: "600", GUARD_REVIEW_DEADLINE_SECS: "300" })!.reviewDeadlineSecs).to.equal(300n);
+    // Empty values (copied from .env.example) fall back to the defaults.
+    const empty = guardFromEnv({ ...full, GUARD_MAX_REVIEW_LIFETIME: "", GUARD_REVIEW_DEADLINE_SECS: "" })!;
+    expect(empty.maxReviewLifetime).to.equal(3600n);
+    expect(empty.reviewDeadlineSecs).to.equal(900n);
   });
 
   it("refuses partial or malformed values before anything is sent", () => {
