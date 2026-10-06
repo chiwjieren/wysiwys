@@ -4,43 +4,25 @@ import { assertDevnet } from "@/lib/squads/network";
 import { readMultisig, type SquadConfig } from "@/lib/squads/sdk";
 import {
   assertSameOrigin,
-  loadConfig,
-  parseDeployment,
+  loadDeployment,
   rateLimit,
   rpcUrl,
 } from "@/lib/squads/server-config";
+import {
+  callRunner,
+  fetchGuardedGroup,
+  parseCreateGroupRequest,
+  parsePreparedGroup,
+  RunnerRequestError,
+} from "@/lib/squads/guard-groups";
 import { authenticate, AuthenticationError } from "@/lib/auth/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function guardGroup(multisig: string, creator?: string) {
-  const base = process.env.WYSIWYS_SETTLEMENT_URL;
-  if (!base) throw new Error("Group protection is unavailable.");
-  const url = new URL(
-    creator ? "frontend/groups/prepare" : `frontend/groups/${multisig}`,
-    base.endsWith("/") ? base : `${base}/`,
-  );
-  const response = await fetch(url, {
-    method: creator ? "POST" : "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
-        ? {
-            Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
-          }
-        : {}),
-    },
-    ...(creator ? { body: JSON.stringify({ multisig, creator }) } : {}),
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error("Group protection is unavailable.");
-  const result = await response.json();
-  if (result.multisig !== multisig) throw new Error("Group binding mismatch.");
-  // The owning service derives the executor with the shared guard contracts.
-  return parseDeployment(result, result.guardReady === true);
-}
-async function standardGroup(multisig: string): Promise<SquadConfig> {
+async function standardGroup(
+  multisig: string,
+  guardProgram?: string,
+): Promise<SquadConfig> {
   const config: SquadConfig = {
     multisig,
     vaultIndex: 0,
@@ -51,7 +33,7 @@ async function standardGroup(multisig: string): Promise<SquadConfig> {
   await assertDevnet(rpc);
   const squad = await readMultisig(rpc, config);
   const standard = standardGroupConfig(multisig, squad.members);
-  return standard || (await guardGroup(multisig));
+  return standard || (await fetchGuardedGroup(multisig, guardProgram));
 }
 export async function GET(request: Request) {
   try {
@@ -59,13 +41,13 @@ export async function GET(request: Request) {
     const multisig = new PublicKey(
       new URL(request.url).searchParams.get("multisig") || "",
     ).toBase58();
-    const deployment = await loadConfig();
+    const deployment = (await loadDeployment())?.config;
     return Response.json(
       {
         config:
           deployment?.multisig === multisig
             ? deployment
-            : await standardGroup(multisig),
+            : await standardGroup(multisig, deployment?.guardProgram),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -79,6 +61,9 @@ export async function GET(request: Request) {
     );
   }
 }
+// Prepares a guarded treasury: the runner builds initialize_guard for the new
+// multisig, this route validates it, and the creator's wallet signs it in the
+// same transaction as multisigCreateV2.
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -87,20 +72,47 @@ export async function POST(request: Request) {
     const body = await request.text();
     if (body.length > 1024)
       return Response.json({ error: "Request is too large." }, { status: 413 });
-    const input = JSON.parse(body);
-    const multisig = new PublicKey(input.multisig).toBase58();
-    const creator = new PublicKey(input.creator).toBase58();
-    if (creator !== wallet)
+    let input: ReturnType<typeof parseCreateGroupRequest>;
+    try {
+      input = parseCreateGroupRequest(JSON.parse(body));
+    } catch {
+      return Response.json(
+        { error: "Invalid treasury request." },
+        { status: 400 },
+      );
+    }
+    if (input.creator !== wallet)
       throw new AuthenticationError(
         "Connect the request’s wallet to continue.",
       );
-    return Response.json(
-      { config: await guardGroup(multisig, creator) },
-      { headers: { "Cache-Control": "no-store" } },
+    const deployment = await loadDeployment();
+    const prepared = parsePreparedGroup(
+      await callRunner("frontend/groups/prepare", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+      input,
+      {
+        guardProgram: deployment?.config.guardProgram,
+        guardArgs: deployment?.guardArgs,
+      },
     );
+    return Response.json(prepared, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     if (error instanceof AuthenticationError)
       return Response.json({ error: error.message }, { status: 401 });
+    if (error instanceof RunnerRequestError && error.status === 409)
+      return Response.json(
+        { error: "This treasury already has a guard configuration." },
+        { status: 409 },
+      );
+    if (error instanceof RunnerRequestError && error.status === 400)
+      return Response.json(
+        { error: "Invalid treasury request." },
+        { status: 400 },
+      );
     return Response.json(
       { error: "Group protection could not be prepared. Try again later." },
       { status: 503 },

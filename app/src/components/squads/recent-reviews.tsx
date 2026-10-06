@@ -28,8 +28,14 @@ const labels = {
 // each proposal, are authoritative when the two disagree.
 export function RecentReviews() {
   const { config } = useSquad();
-  const data = useRunnerPoll<RunnerReviews>("/api/runner/reviews", unavailable);
-  if (!isGuarded(config)) return null;
+  const guarded = isGuarded(config);
+  const data = useRunnerPoll<RunnerReviews>(
+    guarded
+      ? `/api/runner/reviews?multisig=${encodeURIComponent(config!.multisig)}`
+      : null,
+    unavailable,
+  );
+  if (!guarded) return null;
   const feed = data && "configured" in data ? data : data && unavailable;
   const matches =
     feed?.configured && feed.reachable && feed.multisig === config?.multisig;

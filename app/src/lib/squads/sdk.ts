@@ -190,6 +190,17 @@ export function fromWire(ix: WireInstruction) {
     data: Buffer.from(ix.data, "base64"),
   });
 }
+export function toWire(ix: TransactionInstruction): WireInstruction {
+  return {
+    programId: ix.programId.toBase58(),
+    keys: ix.keys.map((k) => ({
+      pubkey: k.pubkey.toBase58(),
+      isSigner: k.isSigner,
+      isWritable: k.isWritable,
+    })),
+    data: Buffer.from(ix.data).toString("base64"),
+  };
+}
 function owned(info: AccountInfo<Buffer> | null) {
   if (!info || !info.owner.equals(sqds.PROGRAM_ID))
     throw new Error("Squads account missing or owned by another program.");

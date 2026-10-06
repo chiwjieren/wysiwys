@@ -7,24 +7,33 @@ import {
   isPrepareRequest,
 } from "../src/lib/squads/server-config";
 import { assetLabel } from "../src/lib/squads/payments";
-test("settlement preparation accepts propose and execute without a trade id", () => {
+test("settlement preparation accepts propose and execute for the open treasury without a trade id", () => {
   const member = Keypair.generate().publicKey.toBase58();
-  assert.ok(isPrepareRequest({ action: "propose", index: "1", member }));
-  assert.ok(isPrepareRequest({ action: "execute", index: "42", member }));
+  const multisig = Keypair.generate().publicKey.toBase58();
+  assert.ok(
+    isPrepareRequest({ multisig, action: "propose", index: "1", member }),
+  );
+  assert.ok(
+    isPrepareRequest({ multisig, action: "execute", index: "42", member }),
+  );
   assert.ok(
     isPrepareRequest({
+      multisig,
       action: "propose",
       index: "18446744073709551615",
       member,
     }),
   );
   for (const bad of [
-    { action: "vote", index: "1", member },
-    { action: "propose", index: "0", member },
-    { action: "propose", index: "-1", member },
-    { action: "propose", index: "1.5", member },
-    { action: "propose", index: 1, member },
-    { action: "execute", index: "18446744073709551616", member },
+    { multisig, action: "vote", index: "1", member },
+    { multisig, action: "propose", index: "0", member },
+    { multisig, action: "propose", index: "-1", member },
+    { multisig, action: "propose", index: "1.5", member },
+    { multisig, action: "propose", index: 1, member },
+    { multisig, action: "execute", index: "18446744073709551616", member },
+    { action: "propose", index: "1", member },
+    { multisig: "not-a-key", action: "propose", index: "1", member },
+    { multisig: 42, action: "propose", index: "1", member },
     null,
   ])
     assert.equal(isPrepareRequest(bad), false);

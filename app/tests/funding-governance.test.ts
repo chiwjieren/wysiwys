@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as sqds from "@sqds/multisig";
 import { Keypair, SystemProgram } from "@solana/web3.js";
 import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   decodeTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
@@ -43,11 +44,33 @@ test("SPL deposits initialize the vault ATA and transfer the exact amount with w
     token: { mint, source, decimals: 6 },
   });
   assert.equal(instructions.length, 2);
+  // CreateIdempotent (1): the depositor pays rent for the vault ATA if missing.
+  const [create] = instructions;
+  assert.ok(create.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID));
+  assert.deepEqual([...create.data], [1]);
+  assert.deepEqual(
+    create.keys.map((k) => [k.pubkey.toBase58(), k.isSigner, k.isWritable]),
+    [
+      [member.toBase58(), true, true],
+      [
+        getAssociatedTokenAddressSync(mint, vault, true).toBase58(),
+        false,
+        true,
+      ],
+      [vault.toBase58(), false, false],
+      [mint.toBase58(), false, false],
+      [SystemProgram.programId.toBase58(), false, false],
+      [TOKEN_PROGRAM_ID.toBase58(), false, false],
+    ],
+  );
   const decoded = decodeTransferCheckedInstruction(
     instructions[1],
     TOKEN_PROGRAM_ID,
   );
   assert.equal(decoded.data.amount, 1234567n);
+  assert.equal(decoded.data.decimals, 6);
+  assert.ok(decoded.keys.source.pubkey.equals(source));
+  assert.ok(decoded.keys.mint.pubkey.equals(mint));
   assert.ok(decoded.keys.owner.pubkey.equals(member));
   assert.ok(
     decoded.keys.destination.pubkey.equals(

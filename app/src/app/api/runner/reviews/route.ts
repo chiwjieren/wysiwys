@@ -1,10 +1,15 @@
-import { loadConfig, rateLimit } from "@/lib/squads/server-config";
-import { fetchRunner, sanitizeRunnerReviews } from "@/lib/runner/server";
+import { rateLimit } from "@/lib/squads/server-config";
+import {
+  fetchRunner,
+  reviewsMultisig,
+  sanitizeRunnerReviews,
+} from "@/lib/runner/server";
 import type { RunnerReviews } from "@/lib/runner/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
-export async function GET() {
+// Review history for the open treasury, passed as `?multisig=<base58>`.
+export async function GET(request: Request) {
   try {
     rateLimit();
   } catch {
@@ -13,13 +18,13 @@ export async function GET() {
       { status: 429, headers },
     );
   }
-  let multisig: string | null = null;
-  try {
-    multisig = (await loadConfig())?.multisig ?? null;
-  } catch {
-    multisig = null;
-  }
-  const result = await fetchRunner("/reviews?limit=50");
+  const multisig = reviewsMultisig(new URL(request.url));
+  if (!multisig)
+    return Response.json(
+      { error: "Choose a treasury address." },
+      { status: 400, headers },
+    );
+  const result = await fetchRunner("/reviews?limit=200");
   if (result.kind === "unconfigured")
     return Response.json(
       { configured: false, reviews: [] } satisfies RunnerReviews,
@@ -40,7 +45,7 @@ export async function GET() {
       configured: true,
       reachable: true,
       multisig,
-      reviews: multisig ? sanitizeRunnerReviews(result.body, multisig) : [],
+      reviews: sanitizeRunnerReviews(result.body, multisig),
     } satisfies RunnerReviews,
     { headers },
   );

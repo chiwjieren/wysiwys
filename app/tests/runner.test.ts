@@ -5,6 +5,7 @@ import {
   sanitizeRunnerStatus,
   sanitizeRunnerReviews,
   fetchRunner,
+  reviewsMultisig,
 } from "../src/lib/runner/server";
 
 test("runner status keeps only the public health fields", () => {
@@ -102,6 +103,27 @@ test("runner reviews are filtered to the multisig and sanitized", () => {
   ]);
   assert.deepEqual(sanitizeRunnerReviews({}, multisig), []);
   assert.deepEqual(sanitizeRunnerReviews(null, multisig), []);
+});
+
+test("the reviews proxy filters to the requested treasury only", () => {
+  const multisig = Keypair.generate().publicKey.toBase58();
+  assert.equal(
+    reviewsMultisig(
+      new URL(`http://localhost/api/runner/reviews?multisig=${multisig}`),
+    ),
+    multisig,
+  );
+  for (const bad of [
+    "",
+    "?multisig=",
+    "?multisig=nope",
+    `?multisig=${multisig}0`,
+    `?multisig=%20${multisig}`,
+  ])
+    assert.equal(
+      reviewsMultisig(new URL(`http://localhost/api/runner/reviews${bad}`)),
+      null,
+    );
 });
 
 test("fetchRunner reports unconfigured and unreachable runners", async () => {

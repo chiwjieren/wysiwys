@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel } from "@/components/design";
 import { useSquad } from "@/lib/squads/provider";
+import { fixedMembershipReason } from "@/lib/squads/groups";
 import { Explorer } from "./treasury-ui";
 import {
   assetLabel,
@@ -17,20 +18,18 @@ export function VaultFunding() {
     useSquad();
   const [asset, setAsset] = useState("");
   const [amount, setAmount] = useState("");
-  const member = snapshot?.squad.members.some(
-    (m) => m.key.toBase58() === account?.address,
-  );
   const token = funding?.tokens.find((t) => t.address === asset);
   return (
     <Panel className="gap-4">
       <h2>Fund the Squad vault</h2>
       <p className="caption">
-        The funded member deposits treasury assets. Members can then propose and
-        vote on payouts without owning those assets. Keep SOL in member wallets
-        for signing fees.
+        Any funded wallet can deposit SOL or the treasury token into the vault.
+        A missing vault token account is created first, paid by the depositor.
+        Members then propose and vote on payouts. Keep SOL in member wallets for
+        signing fees.
       </p>
       {!account ? (
-        <p>Connect with the funded member wallet.</p>
+        <p>Connect the wallet that holds the funds.</p>
       ) : !funding ? (
         <p>Loading your wallet balance…</p>
       ) : (
@@ -47,7 +46,10 @@ export function VaultFunding() {
                 .filter((t) => BigInt(t.amount) > 0n)
                 .map((t) => (
                   <option key={t.address} value={t.address}>
-                    {t.mint} · {formatTokenAmount(t.amount, t.decimals)}
+                    {assetLabel(config, t.mint) === "tokens"
+                      ? t.mint
+                      : assetLabel(config, t.mint)}{" "}
+                    · {formatTokenAmount(t.amount, t.decimals)}
                   </option>
                 ))}
             </select>
@@ -67,16 +69,11 @@ export function VaultFunding() {
             onChange={(e) => setAmount(e.target.value)}
           />
           <Button
-            disabled={!member || !!busy || !!error || !amount.trim()}
+            disabled={!snapshot || !!busy || !!error || !amount.trim()}
             onClick={() => void deposit(amount.trim(), asset || undefined)}
           >
             Deposit into vault
           </Button>
-          {!member && (
-            <p className="caption">
-              This wallet is not a member of the configured Squad.
-            </p>
-          )}
         </>
       )}
     </Panel>
@@ -87,6 +84,7 @@ export function ThresholdSettings() {
   const [threshold, setValue] = useState("");
   const router = useRouter();
   if (!snapshot) return null;
+  const fixed = !!fixedMembershipReason(config);
   const squad = snapshot.squad;
   const voters = squad.members.filter((m) =>
     sqds.types.Permissions.has(m.permissions, sqds.types.Permission.Vote),
@@ -113,7 +111,12 @@ export function ThresholdSettings() {
       <p>
         Current threshold: {squad.threshold} of {voters} voters
       </p>
-      {controlled ? (
+      {fixed ? (
+        <p className="caption">
+          The threshold is fixed after creation: only the guard can execute, and
+          it executes payments only.
+        </p>
+      ) : controlled ? (
         <>
           <p className="caption">
             The existing on-chain configuration authority can set this
@@ -138,7 +141,7 @@ export function ThresholdSettings() {
         onChange={(e) => setValue(e.target.value)}
       />
       <Button
-        disabled={!allowed || !valid || !!busy || !!error}
+        disabled={fixed || !allowed || !valid || !!busy || !!error}
         onClick={async () => {
           const id = await setThreshold(Number(threshold));
           if (id) router.push(`/transactions/${id}`);
