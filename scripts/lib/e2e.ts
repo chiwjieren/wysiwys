@@ -119,7 +119,8 @@ async function fund(ctx: E2eContext, keys: PublicKey[]) {
   if (ixs.length) await send(ctx.connection, ixs, [ctx.payer]);
 }
 
-export async function runScenario(ctx: E2eContext, name: ScenarioName): Promise<Outcome> {
+/** Steps 1 and 2: store the scenario's payment in Squads and request its review (one transaction, as the app does). */
+export async function proposeScenario(ctx: E2eContext, name: ScenarioName) {
   const { connection, deployment: d } = ctx;
   const expected = EXPECTED[name];
   const multisigPda = new PublicKey(d.multisig);
@@ -128,10 +129,6 @@ export async function runScenario(ctx: E2eContext, name: ScenarioName): Promise<
   const mint = new PublicKey(d.mint);
   const member = ctx.signers[0]!;
   const settlement = createSettlement({ connection, programId });
-  const program = new anchor.Program(
-    { ...(idlJson as anchor.Idl), address: d.programId },
-    new anchor.AnchorProvider(connection, new anchor.Wallet(ctx.payer), { commitment: "confirmed" }),
-  );
   const signatures: Record<string, string> = {};
   await fund(ctx, [...ctx.signers.map((s) => s.publicKey), ctx.recipient.publicKey]);
 
@@ -193,6 +190,22 @@ export async function runScenario(ctx: E2eContext, name: ScenarioName): Promise<
     [member],
   );
   const reviewPda = PublicKey.findProgramAddressSync([Buffer.from("review"), multisigPda.toBuffer(), txIndexSeed(txIndex)], programId)[0];
+
+  return { txIndex, ids, reviewPda, signatures, ownershipAccount, settlement };
+}
+
+export async function runScenario(ctx: E2eContext, name: ScenarioName): Promise<Outcome> {
+  const { connection, deployment: d } = ctx;
+  const expected = EXPECTED[name];
+  const multisigPda = new PublicKey(d.multisig);
+  const vault = new PublicKey(d.vault);
+  const programId = new PublicKey(d.programId);
+  const member = ctx.signers[0]!;
+  const program = new anchor.Program(
+    { ...(idlJson as anchor.Idl), address: d.programId },
+    new anchor.AnchorProvider(connection, new anchor.Wallet(ctx.payer), { commitment: "confirmed" }),
+  );
+  const { txIndex, ids, reviewPda, signatures, ownershipAccount, settlement } = await proposeScenario(ctx, name);
 
   // 3. Review (stand-in for CRE) delivered through the mock forwarder.
   const outcome: Outcome = { name, txIndex: txIndex.toString(), reviewStatus: "pending", reason: null, executed: false, signatures, matches: false };

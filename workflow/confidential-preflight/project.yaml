@@ -13,6 +13,9 @@ staging-settings:
   rpcs:
     - chain-name: ethereum-testnet-sepolia
       url: https://ethereum-sepolia-rpc.publicnode.com
+    # Review workflow: Solana writes (simulator mock forwarder). URL from the project .env.
+    - chain-name: solana-devnet
+      url: ${CRE_HELIUS_SOLANA_DEVNET_RPC_URL}
 
 # ==========================================================================
 production-settings:
