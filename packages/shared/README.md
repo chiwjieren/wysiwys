@@ -1,5 +1,5 @@
-# @omnicounter/shared
+# @wysiwys/shared
 
-Cross-component contracts: seeds, events, report payload, reason codes (`ReviewReason`), `settlement_intent_hash` and `trade_ref_hash` hashing, DecodedAction schema, IDL and runner API types.
+Cross-component contracts: seeds, events, account models (`GuardConfig`, `RequestHead`, `Review`), report layout, reason codes, canonical `tx_hash` encoding, DecodedAction schema, IDL, runner API types and cross-language fixtures.
 
 See the root AGENTS.md for guidelines.

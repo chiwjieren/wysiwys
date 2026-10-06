@@ -69,7 +69,7 @@ function ShellContent({ children }: { children: ReactNode }) {
         className="flex items-center gap-2.5 text-lg leading-[26px] font-semibold"
       >
         <AssetIcon src={scope.imgIconShield} size={28} />
-        OmniCounter
+        Wysiwys
       </Link>
       <div className="h-2" />
       <div className="space-y-3 rounded-xl bg-secondary p-4">
@@ -154,7 +154,7 @@ function ShellContent({ children }: { children: ReactNode }) {
       </div>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
         <DialogContent className="max-w-[360px] bg-sidebar">
-          <DialogTitle>OmniCounter</DialogTitle>
+          <DialogTitle>Wysiwys</DialogTitle>
           <DialogDescription>No proof, no payout.</DialogDescription>
           {navigation}
         </DialogContent>

@@ -74,7 +74,7 @@ export default function MembersPage() {
         <div className="flex items-center gap-4">
           <AssetIcon src={figmaAssets.members.imgIconShield2} size={32} />
           <div className="flex-1 space-y-2">
-            <h2>OmniCounter Guard</h2>
+            <h2>Wysiwys Guard</h2>
             <p className="caption">Executor PDA · {mockDesk.executor}</p>
             <p className="text-muted-foreground">
               Executes only after policy approval and all required votes. Cannot

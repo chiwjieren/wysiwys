@@ -21,7 +21,7 @@ type MockContext = {
   observeReview: (id: string) => void;
 };
 const Context = createContext<MockContext | null>(null);
-const storageKey = "omnicounter.mock-payouts.v1";
+const storageKey = "wysiwys.mock-payouts.v1";
 function persist(records: PayoutView[]) {
   try {
     sessionStorage.setItem(storageKey, JSON.stringify(records));

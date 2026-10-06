@@ -3,8 +3,8 @@ import "./globals.css";
 import { AppShell } from "@/components/shell";
 
 export const metadata: Metadata = {
-  title: "OmniCounter",
-  description: "No proof, no payout. OTC settlement firewall.",
+  title: "Wysiwys",
+  description: "What You See Is What You Sign. Treasury payment firewall for Solana.",
 };
 export default function RootLayout({
   children,

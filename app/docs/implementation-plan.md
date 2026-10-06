@@ -1,4 +1,4 @@
-# OmniCounter frontend implementation plan
+# Wysiwys frontend implementation plan
 
 Goal: implement the approved [Figma frontend](https://www.figma.com/design/z3l7IfdoF1dX25wUUwAhxd) in Next.js, Tailwind CSS and shadcn/ui.
 
