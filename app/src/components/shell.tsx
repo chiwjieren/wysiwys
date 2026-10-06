@@ -10,14 +10,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { AssetIcon, Avatar, StatusBadge } from "@/components/design";
 import { figmaAssets } from "@/lib/figma-assets";
+import { SquadProvider, useSquad } from "@/lib/squads/provider";
+import { WalletButton } from "@/components/squads/wallet-button";
 import { MockSettlementProvider } from "@/lib/mock/provider";
 import { mockDesk } from "@/lib/mock/data";
 import { cn } from "@/lib/utils";
@@ -29,6 +25,7 @@ const nav = [
   { label: "Settings", href: "/settings", icon: "imgIconSettings" },
 ] as const;
 function ShellContent({ children }: { children: ReactNode }) {
+  const { mode, config, snapshot } = useSquad();
   const path = usePathname();
   const active =
     nav.find((n) =>
@@ -74,8 +71,18 @@ function ShellContent({ children }: { children: ReactNode }) {
       <div className="h-2" />
       <div className="space-y-3 rounded-xl bg-secondary p-4">
         <p className="font-medium leading-5">{mockDesk.name}</p>
-        <p className="caption">7nYp…8qLm &nbsp; ↗</p>
-        <StatusBadge className="w-full">3 of 3 approvals</StatusBadge>
+        <p className="caption break-all">
+          {mode === "sample"
+            ? "7nYp…8qLm"
+            : config?.multisig || "Deployment unavailable"}
+        </p>
+        <StatusBadge className="w-full">
+          {snapshot
+            ? `${snapshot.squad.threshold} required approvals`
+            : mode === "sample"
+              ? "3 of 3 approvals"
+              : "Chain state pending"}
+        </StatusBadge>
       </div>
       {navigation}
       <div className="mt-auto space-y-2 pt-6">
@@ -87,7 +94,7 @@ function ShellContent({ children }: { children: ReactNode }) {
         <div className="h-px bg-border" />
         <div className="flex items-center gap-2.5 text-xs">
           <Avatar initials="ZJ" size={32} />
-          Zhi Jian · You
+          {mode === "sample" ? "Sample member" : "Connected Squad"}
         </div>
       </div>
     </div>
@@ -124,25 +131,13 @@ function ShellContent({ children }: { children: ReactNode }) {
             <StatusBadge className="hidden min-w-0 w-[72px] sm:inline-flex">
               Devnet
             </StatusBadge>
-            <span className="caption hidden sm:inline">Sample data</span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="secondary"
-                  className="h-10 w-[188px] max-sm:w-auto"
-                >
-                  Zhi Jian · 9wK…3tF
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link href="/settings">Wallet preferences</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/members">Member permissions</Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <span className="caption hidden sm:inline">
+              {mode === "sample" ? "Sample data" : "Chain data"}
+            </span>
+            <WalletButton />
+            <Link className="caption" href="/squad">
+              Squad connection
+            </Link>
           </div>
         </header>
         <main
@@ -164,8 +159,10 @@ function ShellContent({ children }: { children: ReactNode }) {
 }
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <MockSettlementProvider>
-      <ShellContent>{children}</ShellContent>
-    </MockSettlementProvider>
+    <SquadProvider>
+      <MockSettlementProvider>
+        <ShellContent>{children}</ShellContent>
+      </MockSettlementProvider>
+    </SquadProvider>
   );
 }

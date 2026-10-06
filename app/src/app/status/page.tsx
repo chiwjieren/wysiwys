@@ -1,9 +1,37 @@
+"use client";
+import { useSquad } from "@/lib/squads/provider";
+import { SquadFeedback } from "@/components/squads/live-squad";
 import Link from "next/link";
 import { PageHeader, Panel, StatusBadge } from "@/components/design";
 import { Button } from "@/components/ui/button";
 import { mockProviders } from "@/lib/mock/data";
 
 export default function StatusPage() {
+  const { mode, config, snapshot } = useSquad();
+  if (mode !== "sample")
+    return (
+      <div className="page-stack">
+        <PageHeader
+          title="Verification infrastructure"
+          description="Live frontend connection state"
+        />
+        <SquadFeedback />
+        <Panel className="gap-4">
+          <p>
+            Finalized Squads reads: {snapshot ? "Available" : "Unavailable"}
+          </p>
+          <p>
+            Guard settlement adapter:{" "}
+            {config?.settlementEnabled ? "Configured" : "Unavailable"}
+          </p>
+          <p className="caption">
+            Listener, CRE workflow and client-leg health are unavailable until
+            their backend health adapter is connected.
+          </p>
+        </Panel>
+      </div>
+    );
+
   return (
     <div className="page-stack">
       <PageHeader

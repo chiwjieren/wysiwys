@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useSquad } from "@/lib/squads/provider";
+import { SquadDashboard } from "@/components/squads/live-squad";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +20,7 @@ const filters = [
   "Blocked",
 ] as const;
 export default function TransactionsPage() {
+  const { mode } = useSquad();
   const { payouts, now } = useMockSettlement();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>("All transactions");
@@ -34,6 +37,7 @@ export default function TransactionsPage() {
       (filter === "Blocked" && status === "Expired");
     return p.id !== "unavailable" && matchesQuery && matchesFilter;
   });
+  if (mode !== "sample") return <SquadDashboard transactions />;
   return (
     <div className="page-stack">
       <PageHeader

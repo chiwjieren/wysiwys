@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useSquad } from "@/lib/squads/provider";
+import { LiveProposal } from "@/components/squads/live-squad";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,10 +29,12 @@ import {
 } from "@/lib/mock/settlement";
 
 export function ReviewScreen({ id }: { id: string }) {
+  const { mode } = useSquad();
   const { payouts, dispatch, now, loaded, observeReview } = useMockSettlement();
   useEffect(() => observeReview(id), [id, observeReview]);
   const payout = payouts.find((p) => p.id === id);
   const trade = mockTrades.find((t) => t.id === payout?.tradeId);
+  if (mode !== "sample") return <LiveProposal id={id} />;
   if (!loaded)
     return (
       <p className="caption" role="status">

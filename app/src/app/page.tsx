@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useSquad } from "@/lib/squads/provider";
+import { SquadDashboard } from "@/components/squads/live-squad";
 import {
   AssetIcon,
   Avatar,
@@ -21,6 +23,7 @@ import { getPayoutStatus } from "@/lib/mock/settlement";
 import { useMockSettlement } from "@/lib/mock/provider";
 
 export default function DashboardPage() {
+  const { mode } = useSquad();
   const { payouts, now } = useMockSettlement();
   const visible = payouts.filter(
     (p) => p.id !== "unavailable" && p.stage !== "executed",
@@ -29,6 +32,7 @@ export default function DashboardPage() {
     (p) => getPayoutStatus(p, now, payouts) === "Needs approval",
   ).length;
   const missing = visible.filter((p) => !p.clientReceived).length;
+  if (mode !== "sample") return <SquadDashboard />;
   return (
     <div className="page-stack gap-4">
       <PageHeader

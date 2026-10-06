@@ -117,3 +117,94 @@ test("search, invalid IDs, and mobile navigation are usable", async ({
   );
   expect(overflow).toBe(false);
 });
+
+test("a configured Squad RPC failure never displays sample funds or approvals", async ({
+  page,
+}) => {
+  await page.route("**/api/squads/config", (route) =>
+    route.fulfill({
+      json: {
+        config: {
+          multisig: "11111111111111111111111111111111",
+          guardProgram: "11111111111111111111111111111111",
+          executor: "11111111111111111111111111111111",
+          vaultIndex: 0,
+          settlementEnabled: false,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/squads/rpc", (route) =>
+    route.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
+  await page.goto("/");
+  await expect(page.getByText("$2,025,400.00", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh chain state" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Propose guarded payout" }),
+  ).toHaveCount(0);
+  await page.goto("/status");
+  await expect(page.getByText("Helius", { exact: true })).toHaveCount(0);
+});
+
+test("wallet connection opens the actual Wallet Standard picker", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Connect wallet", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "No compatible wallet detected",
+  );
+  await expect(page.getByRole("dialog")).toContainText("Devnet");
+});
+
+test("settings wallet controls and rejected connection requests use the real wallet state", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const wallet = {
+      version: "1.0.0",
+      name: "Declining wallet",
+      icon: "data:image/svg+xml,<svg/>",
+      chains: ["solana:devnet"],
+      accounts: [],
+      features: {
+        "standard:connect": {
+          version: "1.0.0",
+          connect: async () => {
+            throw new Error("Wallet connection declined");
+          },
+        },
+        "solana:signTransaction": {
+          version: "1.0.0",
+          supportedTransactionVersions: [0],
+          signTransaction: async () => [],
+        },
+      },
+    };
+    window.addEventListener("wallet-standard:app-ready", (event) =>
+      (event as CustomEvent).detail.register(wallet),
+    );
+  });
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Connected as Zhi Jian", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Connect wallet", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: "Declining wallet", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Wallet connection declined",
+  );
+});

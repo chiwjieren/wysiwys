@@ -1,4 +1,7 @@
 "use client";
+import { useSquad } from "@/lib/squads/provider";
+import { WalletButton } from "@/components/squads/wallet-button";
+import { SquadSettings } from "@/components/squads/live-squad";
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,12 +14,13 @@ import {
 import { mockDesk } from "@/lib/mock/data";
 
 export default function SettingsPage() {
+  const { mode, account } = useSquad();
   const [theme, setTheme] = useState("dark");
-  const [connected, setConnected] = useState(true);
   const changeTheme = (value: string) => {
     setTheme(value);
     document.documentElement.dataset.theme = value;
   };
+  if (mode !== "sample") return <SquadSettings />;
   return (
     <div className="page-stack">
       <PageHeader
@@ -115,17 +119,11 @@ export default function SettingsPage() {
             <div className="h-px bg-border" />
             <div className="flex items-center justify-between gap-3">
               <p>
-                {connected
-                  ? "Connected as Zhi Jian"
-                  : "Sample wallet disconnected"}
+                {account
+                  ? `Connected: ${account.address.slice(0, 4)}…${account.address.slice(-4)}`
+                  : "Wallet disconnected"}
               </p>
-              <Button
-                variant="secondary"
-                className="w-40"
-                onClick={() => setConnected(!connected)}
-              >
-                {connected ? "Disconnect" : "Connect"}
-              </Button>
+              <WalletButton />
             </div>
           </Panel>
         </div>

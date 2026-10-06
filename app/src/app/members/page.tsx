@@ -1,3 +1,6 @@
+"use client";
+import { useSquad } from "@/lib/squads/provider";
+import { SquadMembers } from "@/components/squads/live-squad";
 import {
   PageHeader,
   Panel,
@@ -9,6 +12,8 @@ import { figmaAssets } from "@/lib/figma-assets";
 import { mockDesk, mockMembers } from "@/lib/mock/data";
 
 export default function MembersPage() {
+  const { mode } = useSquad();
+  if (mode !== "sample") return <SquadMembers />;
   return (
     <div className="page-stack">
       <PageHeader
