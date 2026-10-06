@@ -31,4 +31,8 @@ pub mod omnicounter_guard {
     ) -> Result<()> {
         instructions::request_review::handle_request_review(ctx, settlement_intent_hash, trade_ref_hash)
     }
+
+    pub fn on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u8>) -> Result<()> {
+        instructions::on_report::handle_on_report(ctx, metadata, report)
+    }
 }

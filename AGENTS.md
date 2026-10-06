@@ -49,7 +49,7 @@ npm test                                   # all TS workspaces
 
 # Guard program
 anchor build
-anchor test                                # local validator, Squads cloned from devnet
+anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
 anchor deploy --provider.cluster devnet
 cargo test -p omnicounter_guard --lib      # guard pure logic unit tests
 
