@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeVaultTransaction } from '../src/index.ts';
+import { encodeU64, fixtureKeys as k, makeVaultTransaction, systemData, SYSTEM_PROGRAM, TOKEN_PROGRAM } from './account-fixture.ts';
 import fixture from '../fixtures/transfer-checked.json' with { type: 'json' };
 
 const accountBytes = () => Uint8Array.from(fixture.accountDataHex.match(/../g)!, (x) => Number.parseInt(x, 16));
@@ -22,6 +23,34 @@ test('decodes the complete deterministic Squads TransferChecked fixture', () => 
       decimals: 6,
     }],
   });
+});
+
+test('distinct input keys and amounts produce distinct System Transfer actions', () => {
+  for (const [source, destination, lamports] of [
+    [k[2]!, k[3]!, 17n],
+    [k[8]!, k[9]!, 9_007_199_254_740_995n],
+  ] as const) {
+    const bytes = makeVaultTransaction(SYSTEM_PROGRAM, [source, destination], systemData(2, encodeU64(lamports)));
+    assert.deepEqual(decodeVaultTransaction(bytes), {
+      schemaVersion: 1,
+      status: 'success',
+      actions: [{ instructionIndex: 0, kind: 'system.transfer', source, destination, lamports: lamports.toString() }],
+    });
+  }
+});
+
+test('distinct input keys and amounts produce distinct TransferChecked actions', () => {
+  for (const [sourceTokenAccount, mint, destinationTokenAccount, authority, amount, decimals] of [
+    [k[2]!, k[3]!, k[4]!, k[5]!, 23n, 2],
+    [k[6]!, k[7]!, k[8]!, k[9]!, 9_007_199_254_740_997n, 9],
+  ] as const) {
+    const bytes = makeVaultTransaction(TOKEN_PROGRAM, [sourceTokenAccount, mint, destinationTokenAccount, authority], [12, ...encodeU64(amount), decimals]);
+    assert.deepEqual(decodeVaultTransaction(bytes), {
+      schemaVersion: 1,
+      status: 'success',
+      actions: [{ instructionIndex: 0, kind: 'token.transferChecked', programId: TOKEN_PROGRAM, sourceTokenAccount, mint, destinationTokenAccount, authority, amount: amount.toString(), decimals }],
+    });
+  }
 });
 
 test('fails closed on a nonempty address table lookup', () => {

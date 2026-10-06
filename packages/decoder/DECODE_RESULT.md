@@ -12,4 +12,4 @@ A nonempty address table lookup list returns `status: 'unsupported'`, `error: 'a
 
 Classic Token actions include an optional `multisigSigners` array when signer accounts follow the required accounts. The keys remain in account order. Base-unit amounts are decimal strings; no mint is inferred for plain Token `Transfer`. A revoked `SetAuthority` new authority is explicitly `null`.
 
-Hash verification, policy eligibility, actual CRE target imports, and real devnet account validation are later integration gates.
+Hash verification remains upstream of this package. A caller must pass bytes to the decoder only after checking the hash of the full account data, and must pass actions to policy only when `status === 'success'`. Boundary tests in `test/boundary.test.ts` cover that call order with mocks. Real devnet account validation is covered by `test/real-devnet.test.ts`. An import and build against the actual CRE workflow target remains an integration gate.
