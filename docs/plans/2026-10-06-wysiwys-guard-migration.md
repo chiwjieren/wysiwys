@@ -10,6 +10,8 @@
 
 **Spec:** `docs/plans/architecture.md` (PROPOSED sections), `AGENTS.md` (Contracts to freeze, Guard program rules).
 
+> **Superseded in part (7 Oct):** payload v1 (181 bytes) below did not fit CRE's 265-byte Solana raw report limit, which also counts 109 bytes of forwarder metadata, a 32-byte account hash and a 4-byte length. Replaced by payload v2 (117 bytes, `destination_hash` instead of destination, owner and mint). Current contract: `docs/specs/guard-cre-interface.md`.
+
 ## Decisions taken in this plan
 
 - **No `RequestHead` / review generations.** One Review per Squads transaction index, as today. A rejected or expired review means proposing a new Squads transaction. Reviews are never closed, so the Review itself is the permanent consumed marker. Revisit only after the full flow works on devnet.

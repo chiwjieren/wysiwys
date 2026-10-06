@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "salt": "REPLACE_WITH_openssl_rand_-hex_16",
+  "allowedPrograms": ["11111111111111111111111111111111", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
+  "allowedInstructions": ["system:transfer", "spl-token:transferChecked"],
+  "allowedMints": [{ "mint": "J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r", "decimals": 6 }],
+  "maxAmountPerPayment": "100000000000",
+  "destinationWhitelist": ["REPLACE_WITH_WHITELISTED_OWNER_WALLET"],
+  "screening": { "provider": "scorechain", "blockOn": ["SANCTIONED"] }
+}

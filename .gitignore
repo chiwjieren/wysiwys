@@ -27,3 +27,6 @@ keys/
 
 # Runner SQLite (history only)
 services/runner/data/
+
+# Private policy document (whitelist + salt). Only its hash (GUARD_POLICY_HASH) is public.
+workflow/policy.json
