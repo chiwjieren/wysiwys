@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --declaration --outDir dist",
     "typecheck:browser": "tsc -p test/tsconfig.browser.json",
+    "typecheck:cre": "tsc -p test/cre-smoke/tsconfig.json",
     "verify:devnet-fixtures": "node tools/verify-devnet-fixtures.mjs",
     "test": "npm run build && node --experimental-strip-types test/decode.test.ts && node --experimental-strip-types test/instruction-variants.test.ts && node --experimental-strip-types test/security.test.ts && node --experimental-strip-types test/real-devnet.test.ts && node --experimental-strip-types test/boundary.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"

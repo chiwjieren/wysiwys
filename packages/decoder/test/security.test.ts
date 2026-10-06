@@ -23,6 +23,22 @@ test('unknown programs preserve every recoverable field without successful actio
   });
 });
 
+test('an Anchor instruction discriminator does not authorize an unknown program', () => {
+  const data = [175, 175, 109, 31, 13, 152, 155, 237, ...encodeU64(42n)];
+  assert.deepEqual(decodeVaultTransaction(makeVaultTransaction(k[10]!, [k[0]!, k[1]!], data)), {
+    schemaVersion: 1,
+    status: 'unsupported',
+    error: 'unsupported_instruction',
+    unsupportedInstructions: [{
+      instructionIndex: 0,
+      category: 'unknown_program',
+      programId: k[10]!,
+      accountKeys: [k[0]!, k[1]!],
+      dataHex: 'afaf6d1f0d989bed2a00000000000000',
+    }],
+  });
+});
+
 test('Token-2022 and wrong classic program IDs are unsupported', () => {
   for (const programId of [token2022, k[9]!]) {
     const result = decodeVaultTransaction(makeVaultTransaction(programId, [k[0]!, k[1]!, k[2]!], [3, ...encodeU64(5n)]));
