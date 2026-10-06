@@ -1,0 +1,26 @@
+# Anchor / Rust
+.anchor
+target
+**/*.rs.bk
+test-ledger
+.surfpool
+
+# Node
+node_modules
+dist
+build
+.next
+*.tsbuildinfo
+
+# Secrets: keypairs, API keys, tokens (see AGENTS.md "Secrets")
+keys/
+.env
+.env.*
+!.env.example
+
+# Runner database
+*.db
+*.sqlite
+*.sqlite3
+
+.DS_Store

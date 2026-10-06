@@ -1,7 +1,5 @@
 # AGENTS.md
 
-Guidance for Claude Code working anywhere in this repository (program, decoder, CRE workflow, runner, web app, scripts).
-
 ## Project
 
 **Wysiwys** ("What You See Is What You Sign", pronounced "wizzy-wiss"). An on-chain firewall for Solana treasuries: a Squads v4 multisig payment can only execute after a Chainlink CRE workflow independently decodes it and confirms it matches the treasury policy.
