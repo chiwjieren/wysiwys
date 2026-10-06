@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Guidance for Claude Code working anywhere in this repository (program, decoder, CRE workflow, runner, web app, scripts).
 
