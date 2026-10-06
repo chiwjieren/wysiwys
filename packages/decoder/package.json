@@ -9,7 +9,7 @@
     "repository": "https://github.com/Squads-Protocol/v4/tree/main/sdk/multisig"
   },
   "scripts": {
-    "test": "node --experimental-strip-types test/decode.test.ts && node --experimental-strip-types test/instruction-variants.test.ts",
+    "test": "node --experimental-strip-types test/decode.test.ts && node --experimental-strip-types test/instruction-variants.test.ts && node --experimental-strip-types test/security.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

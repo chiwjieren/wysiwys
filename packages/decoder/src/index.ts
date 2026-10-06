@@ -5,19 +5,27 @@ export type DecodedAction =
   | { instructionIndex: number; kind: 'system.withdrawNonce'; nonceAccount: string; destination: string; recentBlockhashesSysvar: string; rentSysvar: string; authority: string; lamports: string }
   | { instructionIndex: number; kind: 'system.initializeNonce'; nonceAccount: string; recentBlockhashesSysvar: string; rentSysvar: string; authority: string }
   | { instructionIndex: number; kind: 'system.authorizeNonce'; nonceAccount: string; currentAuthority: string; newAuthority: string }
-  | { instructionIndex: number; kind: 'token.transfer'; sourceTokenAccount: string; destinationTokenAccount: string; authority: string; amount: string }
-  | { instructionIndex: number; kind: 'token.approve'; sourceTokenAccount: string; delegate: string; authority: string; amount: string }
-  | { instructionIndex: number; kind: 'token.approveChecked'; sourceTokenAccount: string; mint: string; delegate: string; authority: string; amount: string; decimals: number }
-  | { instructionIndex: number; kind: 'token.revoke'; sourceTokenAccount: string; authority: string }
-  | { instructionIndex: number; kind: 'token.setAuthority'; target: string; authorityType: 'mintTokens' | 'freezeAccount' | 'accountOwner' | 'closeAccount'; currentAuthority: string; newAuthority: string | null }
-  | { instructionIndex: number; kind: 'token.closeAccount'; tokenAccount: string; destination: string; authority: string }
-  | { instructionIndex: number; kind: 'token.transferChecked'; programId: string; sourceTokenAccount: string; mint: string; destinationTokenAccount: string; authority: string; amount: string; decimals: number }
+  | { instructionIndex: number; kind: 'token.transfer'; sourceTokenAccount: string; destinationTokenAccount: string; authority: string; amount: string; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.approve'; sourceTokenAccount: string; delegate: string; authority: string; amount: string; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.approveChecked'; sourceTokenAccount: string; mint: string; delegate: string; authority: string; amount: string; decimals: number; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.revoke'; sourceTokenAccount: string; authority: string; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.setAuthority'; target: string; authorityType: 'mintTokens' | 'freezeAccount' | 'accountOwner' | 'closeAccount'; currentAuthority: string; newAuthority: string | null; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.closeAccount'; tokenAccount: string; destination: string; authority: string; multisigSigners?: string[] }
+  | { instructionIndex: number; kind: 'token.transferChecked'; programId: string; sourceTokenAccount: string; mint: string; destinationTokenAccount: string; authority: string; amount: string; decimals: number; multisigSigners?: string[] }
   | { instructionIndex: number; kind: 'ata.create' | 'ata.createIdempotent'; payer: string; associatedTokenAccount: string; walletOwner: string; mint: string };
 
 export type DecodeResult =
   | { schemaVersion: 1; status: 'success'; actions: DecodedAction[] }
-  | { schemaVersion: 1; status: 'unsupported'; error: string; instructionIndex?: number }
-  | { schemaVersion: 1; status: 'malformed'; error: string; instructionIndex?: number };
+  | { schemaVersion: 1; status: 'unsupported'; error: string; unsupportedInstructions: UnsupportedInstruction[] }
+  | { schemaVersion: 1; status: 'malformed'; error: string; instructionIndex?: number; unsupportedInstructions?: UnsupportedInstruction[] };
+
+export type UnsupportedInstruction = {
+  instructionIndex: number;
+  category: 'unknown_program' | 'unknown_instruction';
+  programId: string;
+  accountKeys: string[];
+  dataHex: string;
+};
 
 type CompiledInstruction = { programIdIndex: number; accountIndexes: number[]; data: Uint8Array };
 type Message = { accountKeys: Uint8Array[]; instructions: CompiledInstruction[]; lookups: number };
@@ -32,6 +40,12 @@ const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const AUTHORITY_TYPES = ['mintTokens', 'freezeAccount', 'accountOwner', 'closeAccount'] as const;
 const MAX_ACCOUNT_BYTES = 1_048_576;
 const MAX_VECTOR_ITEMS = 4096;
+
+function instructionHex(bytes: Uint8Array): string {
+  let value = '';
+  for (const byte of bytes) value += byte.toString(16).padStart(2, '0');
+  return value;
+}
 
 class Reader {
   offset = 0;
@@ -117,6 +131,7 @@ function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): 
   const d = ix.data;
   const account = (required: number) => { if (a.length < required) throw new Error('missing_required_accounts'); };
   const dataLength = (required: number) => { if (d.length !== required) throw new Error('invalid_instruction_data_length'); };
+  const signerKeys = (required: number) => a.length > required ? { multisigSigners: a.slice(required) } : {};
   if (programId === SYSTEM_PROGRAM) {
     if (d.length < 4) throw new Error('invalid_system_instruction_data');
     const tag = new Reader(d).u32();
@@ -155,16 +170,16 @@ function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): 
     if (tag === 3 || tag === 4) {
       dataLength(9); account(3);
       return tag === 3
-        ? { instructionIndex: index, kind: 'token.transfer', sourceTokenAccount: a[0]!, destinationTokenAccount: a[1]!, authority: a[2]!, amount: readAmount(d, 1) }
-        : { instructionIndex: index, kind: 'token.approve', sourceTokenAccount: a[0]!, delegate: a[1]!, authority: a[2]!, amount: readAmount(d, 1) };
+        ? { instructionIndex: index, kind: 'token.transfer', sourceTokenAccount: a[0]!, destinationTokenAccount: a[1]!, authority: a[2]!, amount: readAmount(d, 1), ...signerKeys(3) }
+        : { instructionIndex: index, kind: 'token.approve', sourceTokenAccount: a[0]!, delegate: a[1]!, authority: a[2]!, amount: readAmount(d, 1), ...signerKeys(3) };
     }
     if (tag === 5) {
       dataLength(1); account(2);
-      return { instructionIndex: index, kind: 'token.revoke', sourceTokenAccount: a[0]!, authority: a[1]! };
+      return { instructionIndex: index, kind: 'token.revoke', sourceTokenAccount: a[0]!, authority: a[1]!, ...signerKeys(2) };
     }
     if (tag === 9) {
       dataLength(1); account(3);
-      return { instructionIndex: index, kind: 'token.closeAccount', tokenAccount: a[0]!, destination: a[1]!, authority: a[2]! };
+      return { instructionIndex: index, kind: 'token.closeAccount', tokenAccount: a[0]!, destination: a[1]!, authority: a[2]!, ...signerKeys(3) };
     }
     if (tag === 6) {
       if (d.length !== 3 && d.length !== 35) throw new Error('invalid_set_authority_data');
@@ -172,15 +187,15 @@ function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): 
       const type = d[1]!;
       const option = d[2]!;
       if (type > 3 || option > 1 || (option === 0 && d.length !== 3) || (option === 1 && d.length !== 35)) throw new Error('invalid_set_authority_data');
-      return { instructionIndex: index, kind: 'token.setAuthority', target: a[0]!, authorityType: AUTHORITY_TYPES[type]!, currentAuthority: a[1]!, newAuthority: option === 0 ? null : encodeBase58(d.subarray(3, 35)) };
+      return { instructionIndex: index, kind: 'token.setAuthority', target: a[0]!, authorityType: AUTHORITY_TYPES[type]!, currentAuthority: a[1]!, newAuthority: option === 0 ? null : encodeBase58(d.subarray(3, 35)), ...signerKeys(2) };
     }
     if (tag === 12) {
       dataLength(10); account(4);
-      return { instructionIndex: index, kind: 'token.transferChecked', programId, sourceTokenAccount: a[0]!, mint: a[1]!, destinationTokenAccount: a[2]!, authority: a[3]!, amount: readAmount(d, 1), decimals: d[9]! };
+      return { instructionIndex: index, kind: 'token.transferChecked', programId, sourceTokenAccount: a[0]!, mint: a[1]!, destinationTokenAccount: a[2]!, authority: a[3]!, amount: readAmount(d, 1), decimals: d[9]!, ...signerKeys(4) };
     }
     if (tag === 13) {
       dataLength(10); account(4);
-      return { instructionIndex: index, kind: 'token.approveChecked', sourceTokenAccount: a[0]!, mint: a[1]!, delegate: a[2]!, authority: a[3]!, amount: readAmount(d, 1), decimals: d[9]! };
+      return { instructionIndex: index, kind: 'token.approveChecked', sourceTokenAccount: a[0]!, mint: a[1]!, delegate: a[2]!, authority: a[3]!, amount: readAmount(d, 1), decimals: d[9]!, ...signerKeys(4) };
     }
     return 'unsupported';
   }
@@ -209,25 +224,35 @@ export function decodeVaultTransaction(data: Uint8Array): DecodeResult {
     reader.bytesVec(); // ephemeralSignerBumps
     const message = readMessage(reader);
     if (reader.offset !== data.length) return { schemaVersion: 1, status: 'malformed', error: 'trailing_data' };
-    if (message.lookups > 0) return { schemaVersion: 1, status: 'unsupported', error: 'address_table_lookups' };
+    if (message.lookups > 0) return { schemaVersion: 1, status: 'unsupported', error: 'address_table_lookups', unsupportedInstructions: [] };
+    if (message.instructions.length === 0) return { schemaVersion: 1, status: 'malformed', error: 'empty_instructions' };
     for (const ix of message.instructions) {
       if (ix.programIdIndex >= message.accountKeys.length) return { schemaVersion: 1, status: 'malformed', error: 'program_index_out_of_range' };
       if (ix.accountIndexes.some((index) => index >= message.accountKeys.length)) return { schemaVersion: 1, status: 'malformed', error: 'account_index_out_of_range' };
     }
     const actions: DecodedAction[] = [];
     let firstMalformed: { error: string; instructionIndex: number } | undefined;
-    let firstUnsupported: number | undefined;
+    const unsupportedInstructions: UnsupportedInstruction[] = [];
     for (let instructionIndex = 0; instructionIndex < message.instructions.length; instructionIndex++) {
       try {
-        const action = decodeOne(message.instructions[instructionIndex]!, instructionIndex, message.accountKeys);
-        if (action === 'unsupported') firstUnsupported ??= instructionIndex;
-        else actions.push(action);
+        const ix = message.instructions[instructionIndex]!;
+        const action = decodeOne(ix, instructionIndex, message.accountKeys);
+        if (action === 'unsupported') {
+          const programId = encodeBase58(message.accountKeys[ix.programIdIndex]!);
+          unsupportedInstructions.push({
+            instructionIndex,
+            category: programId === SYSTEM_PROGRAM || programId === SPL_TOKEN_PROGRAM || programId === ASSOCIATED_TOKEN_PROGRAM ? 'unknown_instruction' : 'unknown_program',
+            programId,
+            accountKeys: ix.accountIndexes.map((accountIndex) => encodeBase58(message.accountKeys[accountIndex]!)),
+            dataHex: instructionHex(ix.data),
+          });
+        } else actions.push(action);
       } catch (error) {
         firstMalformed ??= { error: error instanceof Error ? error.message : 'malformed_instruction', instructionIndex };
       }
     }
-    if (firstMalformed) return { schemaVersion: 1, status: 'malformed', ...firstMalformed };
-    if (firstUnsupported !== undefined) return { schemaVersion: 1, status: 'unsupported', error: 'unknown_program_or_instruction', instructionIndex: firstUnsupported };
+    if (firstMalformed) return { schemaVersion: 1, status: 'malformed', ...firstMalformed, ...(unsupportedInstructions.length > 0 ? { unsupportedInstructions } : {}) };
+    if (unsupportedInstructions.length > 0) return { schemaVersion: 1, status: 'unsupported', error: 'unsupported_instruction', unsupportedInstructions };
     return { schemaVersion: 1, status: 'success', actions };
   } catch (error) {
     return { schemaVersion: 1, status: 'malformed', error: error instanceof Error ? error.message : 'malformed_account' };

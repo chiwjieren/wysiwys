@@ -75,7 +75,7 @@ export function makeVaultTransactionMany(instructions: { programId: string; acco
     ...decodeBase58(fixtureKeys[0]!), ...decodeBase58(fixtureKeys[1]!),
     ...Array(8).fill(0), 254, 0, 253,
     ...byteVec([]),
-    1, 1, 0,
+    keys.length === 0 ? 0 : 1, keys.length === 0 ? 0 : 1, 0,
     ...itemVec(keys.length, accountKeyBytes),
     ...itemVec(compiled.length, compiled.flat()),
     ...itemVec(0, []),
