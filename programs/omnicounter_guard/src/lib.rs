@@ -35,4 +35,8 @@ pub mod omnicounter_guard {
     pub fn on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u8>) -> Result<()> {
         instructions::on_report::handle_on_report(ctx, metadata, report)
     }
+
+    pub fn guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>) -> Result<()> {
+        instructions::guarded_execute::handle_guarded_execute(ctx)
+    }
 }
