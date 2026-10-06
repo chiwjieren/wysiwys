@@ -38,11 +38,9 @@ pub struct Review {
     pub status: ReviewStatus,
     pub reason: u16,
     pub policy_hash: [u8; 32],
-    /// Destination facts from the accepted report, re-checked by guarded_execute.
+    /// Reviewed destination from the accepted report; guarded_execute recomputes it from the live account.
     pub action_kind: u8,
-    pub destination: Pubkey,
-    pub destination_owner: Pubkey,
-    pub mint: Pubkey,
+    pub destination_hash: [u8; 32],
     pub issued_at: i64,
     pub expires_at: i64,
     pub created_at: i64,

@@ -17,12 +17,12 @@ The guard (`programs/wysiwys_guard`) holds the only Execute permission on the tr
 | 7 | One-way status Pending → Approved or Rejected; Approved → Executed; Executed written before the CPI (`InvalidStatusTransition`, `AlreadyExecuted`, `NotApproved`) | `tests/on_report.ts`, `tests/guarded_execute.ts` |
 | 8 | `on_report` accepts only the configured Keystone forwarder state, owner and signed authority PDA, reports whose metadata names the configured CRE workflow owner, and matching `tx_hash`, `policy_hash` (`InvalidForwarder`, `InvalidWorkflow`, `HashMismatch`, `PolicyMismatch`) | `tests/on_report.ts`, `logic.rs` |
 | 9 | Expiry uses `Clock::get()` (`Expired`) | `tests/guarded_execute.ts` |
-| 10 | Report payload v1 is exactly 181 bytes: version 1, verdict 1 or 2, reason <= 13, approve names a destination (SOL or SPL), `issued_at` at most 60 s ahead, `expires_at` in the future and at most `max_review_lifetime` after `issued_at` (`InvalidPayload`) | `logic.rs`, `tests/on_report.ts` |
+| 10 | Report payload v2 is exactly 117 bytes (fits CRE's 265-byte Solana raw report): version 2, verdict 1 or 2, reason <= 13, approve names a destination kind (SOL or SPL) with a non-zero `destination_hash`, `issued_at` at most 60 s ahead, `expires_at` in the future and at most `max_review_lifetime` after `issued_at` (`InvalidPayload`) | `logic.rs`, `tests/on_report.ts` |
 | 11 | `init` only, never `init_if_needed` | `tests/structure.ts` |
 | 12 | `initialize_guard` needs the Squads `create_key` signature and an autonomous multisig where the executor PDA is the only Execute member (`InvalidMultisigConfig`) | `tests/initialize_guard.ts` |
 | 13 | Only the vault transaction's creator can call `request_review`, so nobody else can claim the single Review slot (`NotProposer`) | `tests/request_review.ts` |
 | 14 | A report must arrive within `review_deadline_secs` of `request_review` (`ReviewDeadlinePassed`); both durations must be positive at init (`InvalidConfig`) | `tests/on_report.ts`, `tests/initialize_guard.ts` |
-| 15 | `guarded_execute` re-checks the reviewed destination: same account and, for SPL, still a legacy Token account with the reviewed mint and owner, not frozen (`DestinationChanged`) | `tests/guarded_execute.ts`, `logic.rs` |
+| 15 | `guarded_execute` recomputes `destination_hash` from the passed destination account: same account and, for SPL, still a legacy Token account with the reviewed mint and owner, not frozen (`DestinationChanged`) | `tests/guarded_execute.ts`, `logic.rs` |
 
 **Trust assumptions**
 - Squads v4 (audited) enforces the 3 of 3 vote; the guard never replaces it.

@@ -29,3 +29,10 @@
 - Verified: the dumped on-chain program is byte-identical to `target/deploy/wysiwys_guard.so` (sha256 `215dc3ff064a88df45af8c1e8e247d6dfc244ea79f90acb81b1d94eb775e1b38`), built from 72425d5 plus the program ID change.
 - `anchor test --validator legacy`: 57 passing with this ID before deploy.
 - No guard config or multisig exists yet for this program; `scripts/bootstrap-devnet.ts` must create them and write `deployments/devnet.json`.
+
+## Guard upgrade: payload v2 (7 Oct)
+
+- In-place upgrade of `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` (no Review or GuardConfig accounts existed). Signature `3Ztzo42Ld2SgokJDaLQRZoFBZSq1MNgZWy9cNTT5Fp3QwPSUoybJNx4Awk3vUJNt3SBXDGaReLZArnBhA2VieoXj` (finalized), slot 508153634.
+- Build 215,184 bytes (sha256 `ac32be4edcd8a3e31f47eca41dbffb3bf3c6fd94b16df1d0245dbda8a40d3de3`) at e098b24; fits the existing 216,960-byte ProgramData. Verified: the dumped program's first 215,184 bytes equal the build and the rest is zero padding.
+- Why: CRE caps the Solana raw report at 265 bytes (109 metadata + 32 account hash + 4 length + payload), so payload v1 (181) could not be delivered. v2 is 117 bytes with `destination_hash`. See `docs/specs/guard-cre-interface.md`.
+- `anchor test --validator legacy`: 70 passing before the upgrade.

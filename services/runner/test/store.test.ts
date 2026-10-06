@@ -7,7 +7,7 @@ const R = "Review1111111111111111111111111111111111111";
 const requested: ReviewRequested = { name: "ReviewRequested", review: R, multisig: "Ms11", txIndex: "7", txHash: "ab".repeat(32) };
 const decided = (verdict: number, reason = 0): DecisionRecorded => ({
   name: "DecisionRecorded", review: R, verdict, reason, policyHash: "03".repeat(32), actionKind: 2,
-  destination: "Dest", destinationOwner: "Owner", mint: "Mint", expiresAt: "1800000000",
+  destinationHash: "04".repeat(32), expiresAt: "1800000000",
 });
 const executed: Executed = { name: "Executed", review: R, multisig: "Ms11", txIndex: "7" };
 const meta = (signature: string, idx = 0, blockTime = 100) => ({ signature, idx, slot: 1, blockTime });

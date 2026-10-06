@@ -11,9 +11,7 @@ export type DecisionRecorded = {
   reason: number;
   policyHash: string;
   actionKind: number;
-  destination: string;
-  destinationOwner: string;
-  mint: string;
+  destinationHash: string;
   expiresAt: string;
 };
 export type Executed = { name: "Executed"; review: string; multisig: string; txIndex: string };
@@ -44,9 +42,7 @@ function toGuardEvent(name: string, d: any): GuardEvent | null {
         reason: d.reason,
         policyHash: hex(d.policy_hash),
         actionKind: d.action_kind,
-        destination: d.destination.toBase58(),
-        destinationOwner: d.destination_owner.toBase58(),
-        mint: d.mint.toBase58(),
+        destinationHash: hex(d.destination_hash),
         expiresAt: d.expires_at.toString(),
       };
     case "executed":

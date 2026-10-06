@@ -1,9 +1,10 @@
 import { sha256 } from "@noble/hashes/sha256";
 
-// CRE report payload v1 consumed by the guard's on_report. Fixed 181 bytes, little-endian.
-// CRE's Solana raw report limit is 265 bytes including the 64-byte metadata, so the payload stays <= 201.
-export const REPORT_PAYLOAD_LEN = 181;
-export const REPORT_VERSION = 1;
+// CRE report payload v2 consumed by the guard's on_report. Fixed 117 bytes, little-endian.
+// CRE caps the Solana raw report at 265 bytes: 109 bytes forwarder metadata + 32 account hash
+// + 4 length prefix + payload, so the payload must stay <= 120 bytes.
+export const REPORT_PAYLOAD_LEN = 117;
+export const REPORT_VERSION = 2;
 export const VERDICT = { APPROVE: 1, REJECT: 2 } as const;
 /** Reviewed payment kind. NONE is only valid on a reject verdict. */
 export const ACTION_KIND = { NONE: 0, SOL: 1, SPL: 2 } as const;
@@ -12,17 +13,33 @@ export interface ReportPayload {
   verdict: 1 | 2;
   reason: number;
   txHash: Uint8Array;
-  /** Commitment over the policy file and the decoder version. */
+  /** policyHash(): commitment over the policy document and the decoder version. */
   policyHash: Uint8Array;
   actionKind: 0 | 1 | 2;
-  /** SOL: recipient wallet. SPL: destination token account. */
-  destination: Uint8Array;
-  /** SOL: same as destination. SPL: token account owner wallet. */
-  destinationOwner: Uint8Array;
-  /** SOL: zero. SPL: mint. */
-  mint: Uint8Array;
+  /** destinationHash() of the reviewed destination; 32 zero bytes when actionKind is NONE. */
+  destinationHash: Uint8Array;
   issuedAt: bigint;
   expiresAt: bigint;
+}
+
+const DEST_HASH_DOMAIN = new TextEncoder().encode("wysiwys:dest:v1");
+
+/**
+ * sha256("wysiwys:dest:v1" || kind || destination || owner || mint). Same as destination_hash in the guard.
+ * SOL: destination = owner = recipient wallet, mint = 32 zero bytes.
+ * SPL: destination = token account, owner = its owner wallet, mint = its mint.
+ */
+export function destinationHash(kind: number, destination: Uint8Array, owner: Uint8Array, mint: Uint8Array): Uint8Array {
+  check32("destination", destination);
+  check32("owner", owner);
+  check32("mint", mint);
+  const joined = new Uint8Array(DEST_HASH_DOMAIN.length + 1 + 96);
+  joined.set(DEST_HASH_DOMAIN, 0);
+  joined[DEST_HASH_DOMAIN.length] = kind;
+  joined.set(destination, DEST_HASH_DOMAIN.length + 1);
+  joined.set(owner, DEST_HASH_DOMAIN.length + 33);
+  joined.set(mint, DEST_HASH_DOMAIN.length + 65);
+  return sha256(joined);
 }
 
 const TX_HASH_DOMAIN = new TextEncoder().encode("wysiwys:tx:v1");
@@ -69,9 +86,7 @@ function check32(name: string, v: Uint8Array) {
 export function encodeReportPayload(p: ReportPayload): Uint8Array {
   check32("txHash", p.txHash);
   check32("policyHash", p.policyHash);
-  check32("destination", p.destination);
-  check32("destinationOwner", p.destinationOwner);
-  check32("mint", p.mint);
+  check32("destinationHash", p.destinationHash);
   const out = new Uint8Array(REPORT_PAYLOAD_LEN);
   const view = new DataView(out.buffer);
   view.setUint8(0, REPORT_VERSION);
@@ -80,11 +95,9 @@ export function encodeReportPayload(p: ReportPayload): Uint8Array {
   out.set(p.txHash, 4);
   out.set(p.policyHash, 36);
   view.setUint8(68, p.actionKind);
-  out.set(p.destination, 69);
-  out.set(p.destinationOwner, 101);
-  out.set(p.mint, 133);
-  view.setBigInt64(165, p.issuedAt, true);
-  view.setBigInt64(173, p.expiresAt, true);
+  out.set(p.destinationHash, 69);
+  view.setBigInt64(101, p.issuedAt, true);
+  view.setBigInt64(109, p.expiresAt, true);
   return out;
 }
 
@@ -102,10 +115,8 @@ export function decodeReportPayload(bytes: Uint8Array): ReportPayload {
     txHash: bytes.slice(4, 36),
     policyHash: bytes.slice(36, 68),
     actionKind: actionKind as 0 | 1 | 2,
-    destination: bytes.slice(69, 101),
-    destinationOwner: bytes.slice(101, 133),
-    mint: bytes.slice(133, 165),
-    issuedAt: view.getBigInt64(165, true),
-    expiresAt: view.getBigInt64(173, true),
+    destinationHash: bytes.slice(69, 101),
+    issuedAt: view.getBigInt64(101, true),
+    expiresAt: view.getBigInt64(109, true),
   };
 }

@@ -8,7 +8,7 @@ import {
   MAX_REVIEW_LIFETIME, chainNow, expectError, guardEvents, guardProgram, randomHash, requestReview, setupGuardedDesk, statusOf,
 } from "./helpers/guard";
 import {
-  ForwardedDesk, approvePayload, createForwarderState, deliverReport, forwarderAuthority, forwarderProgram, reportMetadata,
+  ForwardedDesk, approvePayload, deskDestinationHash, createForwarderState, deliverReport, forwarderAuthority, forwarderProgram, reportMetadata,
   setupForwardedDesk,
 } from "./helpers/forwarder";
 
@@ -36,14 +36,12 @@ describe("on_report", () => {
     expect(r.reason).to.equal(0);
     expect(r.expiresAt.toNumber()).to.be.greaterThan(Number(await chainNow(connection)));
     expect(r.actionKind).to.equal(ACTION_KIND.SPL);
-    expect(r.destination.toBase58()).to.equal(desk.counterpartyAta.toBase58());
-    expect(r.destinationOwner.toBase58()).to.equal(desk.counterparty.publicKey.toBase58());
-    expect(r.mint.toBase58()).to.equal(desk.mint.toBase58());
+    expect(Buffer.from(r.destinationHash).equals(Buffer.from(deskDestinationHash(desk)))).to.equal(true);
     expect(r.issuedAt.toNumber()).to.be.greaterThan(0);
     const ev = (await guardEvents(sig)).find((e) => e.name === "decisionRecorded");
     expect(ev?.data.review.toBase58()).to.equal(review.toBase58());
     expect(ev?.data.verdict).to.equal(VERDICT.APPROVE);
-    expect(ev?.data.destination.toBase58()).to.equal(desk.counterpartyAta.toBase58());
+    expect(Buffer.from(ev?.data.destinationHash).equals(Buffer.from(deskDestinationHash(desk)))).to.equal(true);
     // The CRE workflow's computeConfig budget is 290,000 CU for the whole forwarder transaction.
     const tx = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
     expect(tx!.meta!.computeUnitsConsumed).to.be.lessThan(290_000);
@@ -147,7 +145,7 @@ describe("on_report", () => {
   it("rejects malformed payloads", async () => {
     const review = await pendingReview();
     const good = await approvePayload(desk, review);
-    await expectError(deliverReport(desk, review, good.slice(0, 180)), "InvalidPayload");
+    await expectError(deliverReport(desk, review, good.slice(0, 116)), "InvalidPayload");
     await expectError(deliverReport(desk, review, Uint8Array.from([...good, 0])), "InvalidPayload");
     const badVerdict = Uint8Array.from(good);
     badVerdict[1] = 3;

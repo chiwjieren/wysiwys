@@ -30,7 +30,7 @@ pub struct GuardedExecute<'info> {
     /// CHECK: must equal review.vault_transaction and still hash to review.tx_hash (handler).
     #[account(owner = SQUADS_PROGRAM_ID @ GuardError::NotSquadsAccount)]
     pub vault_transaction: UncheckedAccount<'info>,
-    /// CHECK: must equal review.destination; for SPL its token program, mint and owner are re-checked (handler).
+    /// CHECK: hashed with its live mint and owner and compared with review.destination_hash (handler).
     pub destination: UncheckedAccount<'info>,
     /// CHECK: executor PDA, signs only the Squads CPI below.
     #[account(seeds = [EXECUTOR_SEED, multisig.key().as_ref()], bump = config.executor_bump)]
@@ -77,15 +77,7 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
         logic::check_executable(review.status, review.expires_at, now)?;
         require!(current_hash == review.tx_hash, GuardError::HashMismatch);
         let dest = &ctx.accounts.destination;
-        logic::check_destination(
-            review.action_kind,
-            &review.destination,
-            &review.destination_owner,
-            &review.mint,
-            &dest.key(),
-            dest.owner,
-            &dest.try_borrow_data()?,
-        )?;
+        logic::check_destination(review.action_kind, &review.destination_hash, &dest.key(), dest.owner, &dest.try_borrow_data()?)?;
 
         // Security rule 6: Executed is written before the CPI.
         review.status = ReviewStatus::Executed;

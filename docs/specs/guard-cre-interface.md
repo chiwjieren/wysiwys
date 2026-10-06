@@ -10,7 +10,8 @@ What the CRE workflow must read and produce so the Wysiwys guard accepts its rep
 | Guard program | `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` |
 | IDL | `packages/shared/idl/wysiwys_guard.json` |
 | Squads v4 | `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` |
-| Guard config, multisig, mint, forwarder | Not created yet. `scripts/bootstrap-devnet.ts` will write them to `deployments/devnet.json`. Never hardcode them. |
+| Multisig, vault, mUSD mint, recipients | Created by `scripts/bootstrap-devnet.ts`; read them from `deployments/devnet.json`, never hardcode |
+| Guard config | Not created yet: needs the values in section 7, then a bootstrap run |
 
 ## 1. Trigger: `ReviewRequested`
 
@@ -44,43 +45,43 @@ Squads accounts: `multisig.getTransactionPda({ multisigPda, index })` (the `Vaul
 
    Mismatch → reject with `TX_HASH_MISMATCH`.
 3. **Decode every instruction** of the stored message. Approve only a single System SOL transfer or a single legacy SPL Token `TransferChecked` from the vault. Anything else → reject (reason codes below).
-4. **Destination facts** (these go into the report and the guard re-checks them at execution):
-   - SOL: `destination` = recipient wallet, `destinationOwner` = same wallet, `mint` = 32 zero bytes.
-   - SPL: `destination` = destination token account, `destinationOwner` = its token-account **owner wallet** (bytes 32..64 of the token account data), `mint` = its mint. The token account must be owned by `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, initialized and not frozen, or the payout fails at execution with `DestinationChanged`.
+4. **Destination** (bound into the report as `destination_hash`; the guard recomputes it from the live account at execution):
+   - SOL: `destinationHash(ACTION_KIND.SOL, recipientWallet, recipientWallet, zero32)`.
+   - SPL: `destinationHash(ACTION_KIND.SPL, destinationTokenAccount, ownerWallet, mint)`, where owner wallet = bytes 32..64 and mint = bytes 0..32 of the token account data. The token account must be owned by `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, initialized and not frozen, or the payout fails at execution with `DestinationChanged`.
 5. **Policy** (confidential): whitelist check on the owner wallet, mint allowlist, per-payment cap, screening.
 
 ## 3. Report: metadata + payload
 
-The forwarder calls `on_report(metadata: Vec<u8>, report: Vec<u8>)`. Raw report limit is 265 bytes; metadata 64 + payload 181 = 245.
+The forwarder calls `on_report(metadata: Vec<u8>, report: Vec<u8>)`.
 
-**Metadata (64 bytes)**: `workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2`. The guard requires `workflow_owner` to equal the 20-byte owner stored in GuardConfig. Tell Jun Heng the workflow owner address before bootstrap.
+**Size budget (verified in Chainlink source).** CRE caps the Solana raw report at 265 bytes (`ReportSizeLimit = '265b'` in `chainlink-common` `cresettings/defaults.toml`; the CLI simulator enforces the same). The raw report is `forwarder metadata (109) | Borsh{ account_hash [32], payload Vec<u8> (4 + n) }`, so the payload can be at most **120 bytes**. Payload v2 is 117 (raw report 262).
 
-**Payload v1 (181 bytes, little-endian)**. Build it with `encodeReportPayload` from `@wysiwys/shared`:
+**Metadata the guard receives (64 bytes)**: `workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2` (the forwarder passes `raw_report[45..109]`). The guard requires `workflow_owner` (bytes 42..62) to equal GuardConfig's.
+
+**Payload v2 (117 bytes, little-endian)**. Build it with `encodeReportPayload` from `@wysiwys/shared`:
 
 | Offset | Field | Type | Guard rule |
 |---|---|---|---|
-| 0 | version | u8 | must be 1 |
+| 0 | version | u8 | must be 2 |
 | 1 | verdict | u8 | 1 approve, 2 reject |
 | 2 | reason | u16 | 0..13 (table below) |
 | 4 | tx_hash | [32] | must equal `Review.tx_hash` |
-| 36 | policy_hash | [32] | must equal `GuardConfig.policy_hash` (commitment over `workflow/policy.json` and the decoder version) |
+| 36 | policy_hash | [32] | must equal `GuardConfig.policy_hash` (section 7) |
 | 68 | action_kind | u8 | 0 none (reject only), 1 SOL, 2 SPL |
-| 69 | destination | [32] | see section 2 |
-| 101 | destination_owner | [32] | SOL: equal to destination |
-| 133 | mint | [32] | SOL: zero; SPL: non-zero |
-| 165 | issued_at | i64 | unix seconds; at most 60 s ahead of the chain clock |
-| 173 | expires_at | i64 | `> now` and `expires_at - issued_at <= max_review_lifetime` (GuardConfig) |
+| 69 | destination_hash | [32] | `destinationHash(...)` from section 2; 32 zero bytes when action_kind is 0, non-zero otherwise |
+| 101 | issued_at | i64 | unix seconds; at most 60 s ahead of the chain clock |
+| 109 | expires_at | i64 | `> now` and `expires_at - issued_at <= max_review_lifetime` (GuardConfig) |
 
 ```ts
-import { ACTION_KIND, VERDICT, encodeReportPayload } from "@wysiwys/shared";
+import { ACTION_KIND, VERDICT, destinationHash, encodeReportPayload } from "@wysiwys/shared";
 const payload = encodeReportPayload({
   verdict: VERDICT.APPROVE, reason: 0, txHash, policyHash, actionKind: ACTION_KIND.SPL,
-  destination: destAta.toBytes(), destinationOwner: ownerWallet.toBytes(), mint: mint.toBytes(),
+  destinationHash: destinationHash(ACTION_KIND.SPL, destAta.toBytes(), ownerWallet.toBytes(), mint.toBytes()),
   issuedAt, expiresAt,
 });
 ```
 
-A reject may use `action_kind = 0` with zero destination fields, but it still needs a valid `tx_hash`, `policy_hash` and a future `expires_at`.
+A reject may use `action_kind = 0` with a zero `destination_hash`, but it still needs a valid `tx_hash`, `policy_hash` and a future `expires_at`.
 
 ## 4. Reason codes (`ReviewReason`, u16)
 
@@ -103,7 +104,7 @@ Order fixed by the Keystone forwarder: `[forwarder_state, forwarder_authority (s
 | 1 | GuardConfig `["config", multisig]` | no |
 | 2 | Review `["review", multisig, tx_index LE]` | yes |
 
-The guard checks: `forwarder_state` equals GuardConfig's, is owned by GuardConfig's forwarder program, and `forwarder_authority` equals PDA `["forwarder", forwarder_state, guard_program_id]` under that program and signed. The forwarder program and state used for the simulator mock forwarder must be confirmed and given to Jun Heng before bootstrap.
+The guard checks: `forwarder_state` equals GuardConfig's, is owned by GuardConfig's forwarder program, and `forwarder_authority` equals PDA `["forwarder", forwarder_state, guard_program_id]` under that program and signed. Values in section 7.
 
 Budget: the full forwarder transaction used well under 290,000 CU in local tests.
 
@@ -111,9 +112,19 @@ Budget: the full forwarder transaction used well under 290,000 CU in local tests
 
 `HashMismatch` (tx_hash), `PolicyMismatch`, `InvalidPayload` (length, version, ranges, times, destination rules), `ReviewDeadlinePassed`, `InvalidStatusTransition` (review already decided), `InvalidForwarder`, `InvalidWorkflow` (metadata owner or length). Full list: `packages/shared/src/guard.ts`.
 
-## 7. Open items for the CRE lead
+## 7. Guard config values
 
-- Workflow owner address (20 bytes) to store in GuardConfig.
-- Simulator mock forwarder program and state for devnet (`cre workflow simulate --broadcast`).
-- How `policy_hash` is computed from `workflow/policy.json` + decoder version (must be fixed before bootstrap; GuardConfig is immutable).
-- Confirm the 265-byte raw report limit applies to metadata + payload together.
+| Variable | Value | Evidence |
+|---|---|---|
+| `GUARD_FORWARDER_PROGRAM` | `7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK` (simulator mock forwarder) | CRE Solana onchain-write guide; `chainlink-solana` `mock-forwarder` `declare_id!`; executable on devnet |
+| `GUARD_FORWARDER_STATE` | `5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7` | Same guide; owned by the mock forwarder on devnet |
+| `GUARD_WORKFLOW_OWNER` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | Simulator default owner (`chainlink` `core/services/workflows/cmd/cre/utils/standalone_engine.go`, `defaultOwner`); confirmed on CLI v1.33.0 / SDK 1.23.0: `evidence/cre/2026-10-07-solana-report-owner-spike.log` (metadata[42..62] = `aa` x 20, raw report 262 of 265 bytes, payload intact) |
+| `GUARD_POLICY_HASH` | `402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0` for the current private `workflow/policy.json` (recompute with `npx tsx scripts/policy-hash.ts`) | `policyHash` in `packages/shared` (below) |
+
+Live (deployed workflow) forwarder on devnet, for a future config: program `CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5`, state `8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9`. GuardConfig is immutable, so switching means a new multisig and config.
+
+**Trust boundary in simulation.** The mock forwarder does not verify DON signatures, and every simulator reports the same owner, so with this config anyone on devnet could deliver an approval. Demo approvals are simulated, not trust-bearing. Say so in the demo.
+
+**policy_hash.** `sha256("wysiwys:policy:v1" || u32le(len(decoder_version)) || decoder_version || sha256(canonicalJson(policy)))`, with `decoder_version = "@wysiwys/decoder@<package version>"`. `canonicalJson` sorts keys at every level, no whitespace, safe integers only (amounts as decimal strings). The policy must have a numeric `version` and a random hex `salt` of at least 16 bytes so the hash cannot be confirmed by guessing whitelist entries. Template: `workflow/policy.example.json`; the real `workflow/policy.json` is gitignored and goes to CRE as a secret. The workflow must compute the same hash from the same document and put it in every report.
+
+**Simulate with broadcast** needs `CRE_SOLANA_PRIVATE_KEY` (base58 keypair, pays the transaction) and `CRE_ETH_PRIVATE_KEY` (required by the CLI even for Solana-only workflows) in the CRE project's `.env`. Solana devnet chain selector: `16423721717087811551`. `computeConfig.computeLimit` must be > 0.

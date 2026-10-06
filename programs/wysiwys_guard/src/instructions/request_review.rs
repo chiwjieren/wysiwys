@@ -63,9 +63,7 @@ pub fn handle_request_review(ctx: Context<RequestReview>) -> Result<()> {
     review.reason = 0;
     review.policy_hash = [0u8; 32];
     review.action_kind = ACTION_NONE;
-    review.destination = Pubkey::default();
-    review.destination_owner = Pubkey::default();
-    review.mint = Pubkey::default();
+    review.destination_hash = [0u8; 32];
     review.issued_at = 0;
     review.expires_at = 0;
     review.created_at = Clock::get()?.unix_timestamp;

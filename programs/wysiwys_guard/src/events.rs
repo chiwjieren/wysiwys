@@ -15,9 +15,7 @@ pub struct DecisionRecorded {
     pub reason: u16,
     pub policy_hash: [u8; 32],
     pub action_kind: u8,
-    pub destination: Pubkey,
-    pub destination_owner: Pubkey,
-    pub mint: Pubkey,
+    pub destination_hash: [u8; 32],
     pub expires_at: i64,
 }
 

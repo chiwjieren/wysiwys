@@ -101,8 +101,8 @@ export function guardFromEnv(env: Record<string, string | undefined>): GuardInit
     forwarderState: new PublicKey(env.GUARD_FORWARDER_STATE!),
     policyHash: hexBytes("GUARD_POLICY_HASH", env.GUARD_POLICY_HASH!, 32),
     workflowOwner: hexBytes("GUARD_WORKFLOW_OWNER", env.GUARD_WORKFLOW_OWNER!, 20),
-    maxReviewLifetime: BigInt(env.GUARD_MAX_REVIEW_LIFETIME ?? 3600),
-    reviewDeadlineSecs: BigInt(env.GUARD_REVIEW_DEADLINE_SECS ?? 900),
+    maxReviewLifetime: BigInt(env.GUARD_MAX_REVIEW_LIFETIME || 3600),
+    reviewDeadlineSecs: BigInt(env.GUARD_REVIEW_DEADLINE_SECS || 900),
   };
 }
 

@@ -1,6 +1,6 @@
 # @wysiwys/shared
 
-Cross-component contracts: seeds, events, report payload v1 (`encodeReportPayload`, 181 bytes), reason codes (`ReviewReason`), guard error codes, `txHash` (same as the guard's `tx_hash`), DecodedAction schema, IDL, runner API types and cross-language fixtures.
+Cross-component contracts: seeds, events, report payload v2 (`encodeReportPayload`, 117 bytes), `destinationHash`, `policyHash` and `canonicalJson`, reason codes (`ReviewReason`), guard error codes, `txHash` (same as the guard's `tx_hash`), DecodedAction schema, IDL, runner API types and cross-language fixtures.
 
 See the root AGENTS.md for guidelines.
 

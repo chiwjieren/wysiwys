@@ -43,9 +43,7 @@ pub fn handle_on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u
     review.reason = payload.reason;
     review.policy_hash = payload.policy_hash;
     review.action_kind = payload.action_kind;
-    review.destination = payload.destination;
-    review.destination_owner = payload.destination_owner;
-    review.mint = payload.mint;
+    review.destination_hash = payload.destination_hash;
     review.issued_at = payload.issued_at;
     review.expires_at = payload.expires_at;
 
@@ -55,9 +53,7 @@ pub fn handle_on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u
         reason: payload.reason,
         policy_hash: payload.policy_hash,
         action_kind: payload.action_kind,
-        destination: payload.destination,
-        destination_owner: payload.destination_owner,
-        mint: payload.mint,
+        destination_hash: payload.destination_hash,
         expires_at: payload.expires_at,
     });
     Ok(())

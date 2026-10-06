@@ -559,16 +559,13 @@
             "type": "u8"
           },
           {
-            "name": "destination",
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_owner",
-            "type": "pubkey"
-          },
-          {
-            "name": "mint",
-            "type": "pubkey"
+            "name": "destination_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "expires_at",
@@ -721,21 +718,18 @@
           {
             "name": "action_kind",
             "docs": [
-              "Destination facts from the accepted report, re-checked by guarded_execute."
+              "Reviewed destination from the accepted report; guarded_execute recomputes it from the live account."
             ],
             "type": "u8"
           },
           {
-            "name": "destination",
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_owner",
-            "type": "pubkey"
-          },
-          {
-            "name": "mint",
-            "type": "pubkey"
+            "name": "destination_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "issued_at",
