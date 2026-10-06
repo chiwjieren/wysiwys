@@ -2,5 +2,17 @@
   "name": "@wysiwys/runner",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "^1.2.0",
+    "@solana/web3.js": "^1.99.0",
+    "@wysiwys/shared": "*"
+  }
 }
