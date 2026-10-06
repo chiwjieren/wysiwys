@@ -74,14 +74,13 @@ npx tsx scripts/e2e-devnet.ts [scenario]   # clean, lookalike, drift, overCap, o
 npm test --workspace=packages/decoder
 
 # CRE workflow
-cd workflow && cre workflow simulate       # save output to evidence/cre/
+cd workflow/<cre project> && cre workflow simulate <workflow> --target staging-settings   # save output to evidence/cre/
 
 # Runner (event adapter)
 npm run dev --workspace=services/runner
 
-# Web app (installed with workspaces disabled to protect the root lockfile)
-cd app && npm install --workspaces=false
-npm run dev | npm test | npm run test:e2e | npm run typecheck | npm run build
+# Web app (root npm workspace; env in app/.env.example)
+npm run dev --workspace=app    # also: test, test:e2e, typecheck, build
 ```
 
 Keep this section accurate. Update it in the same commit that changes a command.
@@ -154,7 +153,8 @@ Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing an
 ### Web app (`app/`)
 - Next.js App Router, Tailwind CSS, shadcn/ui, built from the approved Figma; see `app/README.md` and `app/docs/implementation-plan.md`.
 - Screens: dashboard, transactions, transaction review (verdict + summary + proposer claim vs decoded reality), members, settings, `/status`. Propose, request review, vote and guarded-execute actions.
-- `src/lib/mock` holds UI-only view models (still OTC-flavoured from the first pass). They are not protocol contracts; map authoritative records from `packages/shared` into them when wiring the backend.
+- Real Squads v4 actions from the browser wallet (Wallet Standard). Guarded treasuries (executor PDA in `deployments/devnet.json`, or a group the runner reports as guarded) propose exactly one payment (SOL transfer or `TransferChecked` to an existing token account) together with the runner-built `request_review` in one transaction, and execute only through the runner-built `guarded_execute`. Server routes call the runner at `WYSIWYS_SETTLEMENT_URL` with `WYSIWYS_SETTLEMENT_TOKEN` (= runner `SETTLEMENT_TOKEN`).
+- UI group creation is hidden unless `NEXT_PUBLIC_ENABLE_STANDARD_GROUPS=true`: those groups give the creator Execute and bypass the guard. Guarded treasuries come from the bootstrap.
 - Read current state (balances, votes, Review status) from chain via a server route proxy; read history from the runner DB. Show the on-chain verdict first; a local decoder preview is labelled "preview" and never overrides it. A frontend button is never a permission boundary.
 - Signer keys, RPC keys and the runner token live only in server routes. Nothing secret in client bundles. Rate limit and cap amounts so the devnet vault cannot be drained.
 

@@ -1,3 +1,5 @@
+> **Superseded (7 Oct):** all four guard values are resolved and the guard config exists on devnet. See `docs/specs/guard-cre-interface.md` section 7 and `deployments/devnet.json`. Note: `CRE_TRIGGER_URL`/`CRE_TRIGGER_TOKEN` below are replaced by the runner's in-process CRE runner (`CRE_PROJECT_DIR`, `REVIEW_TOKEN`).
+
 You need two groups of values: four for the guard config, and two for the runner. The guard ones matter most because the config can't be changed once created.
 
 1. Guard config (goes in .env, then rerun the bootstrap)

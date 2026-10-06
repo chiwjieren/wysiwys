@@ -1,5 +1,7 @@
 # Treasury Payment Firewall — complete coding-agent architecture
 
+> **Implementation status (7 Oct):** the MVP deliberately simplifies this design. No `RequestHead`, request generations, pause flag or admin/policy updates: one Review per Squads transaction index (never closed, so it is the permanent consumed marker) and an immutable GuardConfig. The report is payload v2 (117 bytes) with `destination_hash`. The current contract is `docs/specs/guard-cre-interface.md`; the decisions are in `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Sections below that conflict with these are design references for after the hackathon.
+
 **Design review: 6 October 2026.** Scope: the treasury payment flow in the user's selected image, with three representative DON node operators, three RPC providers inside each operator, and a private whitelisted-address rule in the TEE. This is a proposed architecture, not verified application behavior or a frozen API contract.
 
 The invariant is: **Squads human approval AND a matching, current, unexpired, unused APPROVED Guard review are required before money moves.** Votes and review may arrive in either order. A CRE verdict is neither a Squads vote nor permission for a human to execute directly.
