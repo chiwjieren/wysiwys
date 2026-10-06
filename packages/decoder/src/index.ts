@@ -21,7 +21,7 @@ export type DecodeResult =
 
 export type UnsupportedInstruction = {
   instructionIndex: number;
-  category: 'unknown_program' | 'unknown_instruction';
+  category: 'unknown_program' | 'unknown_instruction' | 'unsupported_token_program';
   programId: string;
   accountKeys: string[];
   dataHex: string;
@@ -125,7 +125,7 @@ function readAmount(bytes: Uint8Array, offset: number): string {
   return value.toString(10);
 }
 
-function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): DecodedAction | 'unsupported' {
+function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): DecodedAction | 'unsupported' | 'unsupported_token_program' {
   const programId = encodeBase58(keys[ix.programIdIndex]!);
   const a = ix.accountIndexes.map((accountIndex) => encodeBase58(keys[accountIndex]!));
   const d = ix.data;
@@ -200,13 +200,14 @@ function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): 
     return 'unsupported';
   }
   if (programId === ASSOCIATED_TOKEN_PROGRAM) {
-    if (d.length === 0) throw new Error('missing_ata_instruction_tag');
-    if (d[0] !== 0 && d[0] !== 1) return 'unsupported';
-    dataLength(1);
+    const tag = d.length === 0 ? 0 : d[0]!;
+    if (tag !== 0 && tag !== 1) return 'unsupported';
+    if (d.length > 1) throw new Error('invalid_instruction_data_length');
     account(6);
     if (a.length !== 6) throw new Error('invalid_ata_account_count');
-    if (a[4] !== SYSTEM_PROGRAM || a[5] !== SPL_TOKEN_PROGRAM) throw new Error('invalid_ata_program_accounts');
-    return { instructionIndex: index, kind: d[0] === 0 ? 'ata.create' : 'ata.createIdempotent', payer: a[0]!, associatedTokenAccount: a[1]!, walletOwner: a[2]!, mint: a[3]! };
+    if (a[4] !== SYSTEM_PROGRAM) throw new Error('invalid_ata_program_accounts');
+    if (a[5] !== SPL_TOKEN_PROGRAM) return 'unsupported_token_program';
+    return { instructionIndex: index, kind: tag === 0 ? 'ata.create' : 'ata.createIdempotent', payer: a[0]!, associatedTokenAccount: a[1]!, walletOwner: a[2]!, mint: a[3]! };
   }
   return 'unsupported';
 }
@@ -237,11 +238,11 @@ export function decodeVaultTransaction(data: Uint8Array): DecodeResult {
       try {
         const ix = message.instructions[instructionIndex]!;
         const action = decodeOne(ix, instructionIndex, message.accountKeys);
-        if (action === 'unsupported') {
+        if (action === 'unsupported' || action === 'unsupported_token_program') {
           const programId = encodeBase58(message.accountKeys[ix.programIdIndex]!);
           unsupportedInstructions.push({
             instructionIndex,
-            category: programId === SYSTEM_PROGRAM || programId === SPL_TOKEN_PROGRAM || programId === ASSOCIATED_TOKEN_PROGRAM ? 'unknown_instruction' : 'unknown_program',
+            category: action === 'unsupported_token_program' ? 'unsupported_token_program' : programId === SYSTEM_PROGRAM || programId === SPL_TOKEN_PROGRAM || programId === ASSOCIATED_TOKEN_PROGRAM ? 'unknown_instruction' : 'unknown_program',
             programId,
             accountKeys: ix.accountIndexes.map((accountIndex) => encodeBase58(message.accountKeys[accountIndex]!)),
             dataHex: instructionHex(ix.data),

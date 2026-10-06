@@ -29,4 +29,4 @@ Accounts retain their source positions: Transfer source/destination/authority; A
 
 Source: [Associated Token Account interface `instruction.rs`](https://github.com/solana-program/associated-token-account/blob/main/interface/src/instruction.rs)
 
-The instruction data is one byte: `Create=0`, `CreateIdempotent=1`. Both use six accounts in order: payer, associated token account, wallet owner, mint, System Program, classic SPL Token program. The decoder checks the final two program accounts and preserves the first four role keys.
+The current instruction builder emits one byte: `Create=0`, `CreateIdempotent=1`. The [official program processor](https://github.com/solana-program/associated-token-account/blob/main/program/src/processor.rs) also treats an empty payload as `Create`. Both use six accounts in order: payer, associated token account, wallet owner, mint, System Program, token program. The decoder accepts only the classic SPL Token program in the final account position and preserves the first four role keys. A different token program is explicitly unsupported.
