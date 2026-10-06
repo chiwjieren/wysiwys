@@ -33,6 +33,7 @@ const GUARD_ERRORS = [
   "IntentMismatch",
   "InvalidForwarder",
   "InvalidMultisigConfig",
+  "ExecutorInMessage",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];

@@ -142,7 +142,7 @@ export async function createDesk(
       ata(vaultAta, vaultPda),
       ata(counterpartyAta, counterparty.publicKey),
       ata(lookalikeAta, lookalike.publicKey),
-      createMintToInstruction(mint.publicKey, vaultAta, payer.publicKey, usdc(2_000_000)),
+      createMintToInstruction(mint.publicKey, vaultAta, payer.publicKey, usdc(10_000_000)),
     ],
     [payer, mint],
   );

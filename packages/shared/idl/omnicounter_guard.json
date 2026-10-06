@@ -491,6 +491,11 @@
       "code": 6016,
       "name": "InvalidMultisigConfig",
       "msg": "Multisig must be autonomous with the executor as the only Execute member"
+    },
+    {
+      "code": 6017,
+      "name": "ExecutorInMessage",
+      "msg": "Vault transaction must not reference the executor PDA"
     }
   ],
   "types": [

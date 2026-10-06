@@ -50,6 +50,7 @@ test("error codes follow the Rust enum order", () => {
   assert.equal(GuardErrorCode.NotSquadsAccount, 6000);
   assert.equal(GuardErrorCode.InvalidForwarder, 6015);
   assert.equal(GuardErrorCode.InvalidMultisigConfig, 6016);
+  assert.equal(GuardErrorCode.ExecutorInMessage, 6017);
 });
 
 test("reason codes match AGENTS.md", () => {

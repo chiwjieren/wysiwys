@@ -37,4 +37,6 @@ pub enum GuardError {
     InvalidForwarder,
     #[msg("Multisig must be autonomous with the executor as the only Execute member")]
     InvalidMultisigConfig,
+    #[msg("Vault transaction must not reference the executor PDA")]
+    ExecutorInMessage,
 }

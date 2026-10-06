@@ -9,7 +9,7 @@ The guard (`programs/omnicounter_guard`) holds the only Execute permission on th
 | # | Check | Covered by |
 |---|---|---|
 | 1 | CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` (`InvalidSquadsProgram`) | `tests/guarded_execute.ts` |
-| 2 | The executor PDA signs only the Squads `vault_transaction_execute` CPI (one `invoke_signed` in the program) | `tests/structure.ts` |
+| 2 | The executor PDA signs only the Squads `vault_transaction_execute` CPI (one `invoke_signed` in the program) and may not appear in the vault transaction, so its signature cannot reach inner instructions (`ExecutorInMessage`) | `tests/structure.ts`, `tests/guarded_execute.ts` |
 | 3 | `GuardConfig` is immutable: the program exposes only `initialize_guard`, `request_review`, `on_report`, `guarded_execute` | `tests/structure.ts` |
 | 4 | Instructions sysvar address checked before the durable-nonce check (`InvalidInstructionsSysvar`, `DurableNonceDetected`) | `tests/guarded_execute.ts` |
 | 5 | Owner, discriminator and seed checks on every account; `has_one = multisig` (`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`) | `tests/request_review.ts`, `tests/guarded_execute.ts` |

@@ -52,6 +52,13 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
     let proposal_key = ctx.accounts.proposal.key();
     let vault_tx_key = ctx.accounts.vault_transaction.key();
     let current_hash = logic::sha256(&ctx.accounts.vault_transaction.try_borrow_data()?);
+    // Security rule 2: if the message names the executor, the runtime merges it with the signed
+    // executor account below and Squads could pass the signature to an inner instruction.
+    let executor_key = ctx.accounts.executor.key();
+    require!(
+        ctx.remaining_accounts.iter().all(|acc| *acc.key != executor_key),
+        GuardError::ExecutorInMessage
+    );
     let now = Clock::get()?.unix_timestamp;
 
     let (review_key, tx_index) = {

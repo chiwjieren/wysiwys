@@ -145,6 +145,20 @@ describe("guarded_execute", () => {
     await expectError(execute(a, { vaultTransaction: b.p.transactionPda, proposal: b.p.proposalPda }), "ReviewMismatch");
   });
 
+  it("refuses a vault transaction that references the executor PDA (rule 2)", async () => {
+    // If the executor appears in the message, the runtime merges it with the signed executor
+    // account, so Squads could hand the guard's signature to an inner instruction.
+    const leak = SystemProgram.transfer({ fromPubkey: desk.executorPda, toPubkey: desk.counterparty.publicKey, lamports: 0 });
+    const p = await proposePayout(connection, desk, [...payoutIxs(desk, desk.counterpartyAta, usdc(1)), leak]);
+    const { review } = await requestReview(desk, p);
+    await approve(connection, desk, p.transactionIndex);
+    await deliverReport(desk, review, await approvePayload(review));
+    // An attacker passes the executor as a plain account; only the guard's CPI signs for it.
+    const remaining = (await executeRemainingAccounts(connection, desk, p.transactionIndex)).map((m) => ({ ...m, isSigner: false }));
+    await expectError(execute({ p, review }, {}, remaining), "ExecutorInMessage");
+    expect(await reviewStatus(review)).to.equal("approved");
+  });
+
   it("2 of 3 votes: Squads refuses, review stays Approved, executes after the third vote", async () => {
     const f = await flow({ votes: 2 });
     await expectError(execute(f), "InvalidProposalStatus");
