@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import {
+  assetLabel,
   buildGuardedPaymentInstruction,
   buildPaymentInstructions,
   tokenAmount,
@@ -240,8 +241,11 @@ export function PaymentButton() {
                 <option value="">SOL</option>
                 {snapshot?.tokens.map((t) => (
                   <option value={t.address} key={t.address}>
-                    {t.mint.slice(0, 6)}… · {tokenAmount(t.amount, t.decimals)}{" "}
-                    tokens
+                    {assetLabel(config, t.mint) === "tokens"
+                      ? `${t.mint.slice(0, 6)}… · `
+                      : ""}
+                    {tokenAmount(t.amount, t.decimals)}{" "}
+                    {assetLabel(config, t.mint)}
                   </option>
                 ))}
               </select>
@@ -285,7 +289,7 @@ export function PaymentButton() {
               <p className="caption">Decoded payment preview</p>
               <p className="mt-2 text-lg font-semibold">
                 Send {reviewed?.input.amount}{" "}
-                {reviewed?.input.token ? "tokens" : "SOL"}
+                {assetLabel(config, reviewed?.input.token?.mint)}
               </p>
               <p className="mt-3 break-all text-sm">
                 To {reviewed?.input.recipient}

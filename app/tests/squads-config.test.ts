@@ -6,6 +6,7 @@ import {
   assertSameOrigin,
   isPrepareRequest,
 } from "../src/lib/squads/server-config";
+import { assetLabel } from "../src/lib/squads/payments";
 test("settlement preparation accepts propose and execute without a trade id", () => {
   const member = Keypair.generate().publicKey.toBase58();
   assert.ok(isPrepareRequest({ action: "propose", index: "1", member }));
@@ -108,6 +109,45 @@ test("the checked-in devnet deployment parses", async () => {
   assert.equal(config.multisig, raw.multisig);
   assert.equal(config.executor, raw.executorPda);
   assert.equal(config.guardProgram, raw.programId);
+  assert.deepEqual(config.token, {
+    mint: raw.mint,
+    symbol: raw.token.symbol,
+    decimals: raw.token.decimals,
+  });
+});
+test("deployment token metadata is optional and validated", () => {
+  const mint = Keypair.generate().publicKey.toBase58();
+  const token = { name: "Mock USD", symbol: "mUSD", uri: "", decimals: 6 };
+  assert.deepEqual(
+    parseDeployment({ ...deployment, mint, token }, false).token,
+    {
+      mint,
+      symbol: "mUSD",
+      decimals: 6,
+    },
+  );
+  assert.equal(parseDeployment(deployment, false).token, undefined);
+  for (const bad of [
+    { mint: "nope", token },
+    { mint, token: { ...token, symbol: "<script>" } },
+    { mint, token: { ...token, symbol: "" } },
+    { mint, token: { ...token, decimals: 20 } },
+  ])
+    assert.throws(
+      () => parseDeployment({ ...deployment, ...bad }, false),
+      /token/i,
+    );
+});
+test("amount labels use the deployment symbol only for the deployment mint", () => {
+  const mint = Keypair.generate().publicKey.toBase58();
+  const config = { token: { mint, symbol: "mUSD", decimals: 6 } };
+  assert.equal(assetLabel(config, mint), "mUSD");
+  assert.equal(
+    assetLabel(config, Keypair.generate().publicKey.toBase58()),
+    "tokens",
+  );
+  assert.equal(assetLabel(undefined, mint), "tokens");
+  assert.equal(assetLabel(config, undefined), "SOL");
 });
 test("same-origin checks support Next.js bound-host URLs while rejecting foreign browser origins", () => {
   assert.doesNotThrow(() =>

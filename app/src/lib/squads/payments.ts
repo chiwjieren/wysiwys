@@ -33,6 +33,14 @@ export function tokenAmount(raw: string, decimals: number) {
       )
     : padded;
 }
+// Unit label for an amount: SOL, the deployment token symbol, or generic tokens.
+export function assetLabel(
+  config: { token?: { mint: string; symbol: string } } | undefined,
+  mint: string | undefined,
+) {
+  if (!mint) return "SOL";
+  return config?.token?.mint === mint ? config.token.symbol : "tokens";
+}
 export function buildPaymentInstructions({
   vault,
   ...input

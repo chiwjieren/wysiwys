@@ -15,7 +15,7 @@ import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { actionsForMember } from "@/lib/squads/sdk";
-import { tokenAmount } from "@/lib/squads/payments";
+import { assetLabel, tokenAmount } from "@/lib/squads/payments";
 import { memberRole } from "@/lib/squads/groups";
 import { PublicKey } from "@solana/web3.js";
 import { figmaAssets } from "@/lib/figma-assets";
@@ -58,7 +58,7 @@ export function SquadDashboard({
   return transactions ? <SquadTransactions /> : <Dashboard />;
 }
 function Dashboard() {
-  const { snapshot, account } = useSquad();
+  const { config, snapshot, account } = useSquad();
   const voters = snapshot?.squad.members.filter((m) =>
     votable(m.permissions.mask),
   ).length;
@@ -153,7 +153,11 @@ function Dashboard() {
                     <div className="flex items-center gap-3">
                       <Avatar initials="T" />
                       <div>
-                        <p className="font-medium">SPL token</p>
+                        <p className="font-medium">
+                          {assetLabel(config, t.mint) === "tokens"
+                            ? "SPL token"
+                            : assetLabel(config, t.mint)}
+                        </p>
                         <p className="caption">
                           <Explorer address={t.mint} />
                         </p>

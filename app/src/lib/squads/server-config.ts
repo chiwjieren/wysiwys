@@ -46,7 +46,27 @@ export function parseDeployment(
     vaultIndex,
     settlementEnabled,
     executionMode: "guarded",
+    ...(record.mint === undefined ? {} : { token: parseToken(record) }),
   };
+}
+function parseToken(record: Record<string, unknown>) {
+  const token = record.token as Record<string, unknown> | undefined;
+  try {
+    const mint = new PublicKey(record.mint as string).toBase58();
+    const { symbol, decimals } = token ?? {};
+    if (
+      typeof symbol !== "string" ||
+      !/^[A-Za-z0-9]{1,10}$/.test(symbol) ||
+      typeof decimals !== "number" ||
+      !Number.isInteger(decimals) ||
+      decimals < 0 ||
+      decimals > 9
+    )
+      throw new Error();
+    return { mint, symbol, decimals };
+  } catch {
+    throw new Error("Invalid deployment token metadata.");
+  }
 }
 export async function loadConfig(): Promise<SquadConfig | null> {
   const configuredPath = process.env.WYSIWYS_DEPLOYMENT_PATH;

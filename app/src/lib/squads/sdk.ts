@@ -17,6 +17,8 @@ export type SquadConfig = {
   vaultIndex: number;
   settlementEnabled: boolean;
   executionMode?: "standard" | "guarded";
+  // Public display metadata for the deployment mint (e.g. mUSD).
+  token?: { mint: string; symbol: string; decimals: number };
 };
 export type WireInstruction = {
   programId: string;
