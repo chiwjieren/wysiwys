@@ -41,4 +41,6 @@ pub enum GuardError {
     ExecutorInMessage,
     #[msg("Report was not produced by the configured CRE workflow owner")]
     InvalidWorkflow,
+    #[msg("Only the creator of the vault transaction can request its review")]
+    NotProposer,
 }

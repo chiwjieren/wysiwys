@@ -20,6 +20,7 @@ The guard (`programs/omnicounter_guard`) holds the only Execute permission on th
 | 10 | Report payload is exactly 107 bytes, verdict 1 or 2, reason <= 22, `expires_at` in the future (`InvalidPayload`) | `logic.rs`, `tests/on_report.ts` |
 | 11 | `init` only, never `init_if_needed` | `tests/structure.ts` |
 | 12 | `initialize_guard` needs the Squads `create_key` signature and an autonomous multisig where the executor PDA is the only Execute member (`InvalidMultisigConfig`) | `tests/initialize_guard.ts` |
+| 13 | Only the vault transaction's creator can call `request_review`, so nobody can front-run the Review with wrong trade hashes (`NotProposer`) | `tests/request_review.ts` |
 
 **Trust assumptions**
 - Squads v4 (audited) enforces the 3 of 3 vote; the guard never replaces it.

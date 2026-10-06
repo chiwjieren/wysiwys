@@ -30,6 +30,9 @@ pub struct RequestReview<'info> {
         bump
     )]
     pub review: Account<'info, Review>,
+    /// Creator of the vault transaction. Stops anyone else from claiming the Review slot
+    /// with wrong trade hashes (front-running), which would force a re-proposal.
+    pub proposer: Signer<'info>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -46,6 +49,7 @@ pub fn handle_request_review(
         (logic::parse_vault_transaction(&data)?, logic::sha256(&data))
     };
     require_keys_eq!(vault_tx.multisig, multisig, GuardError::WrongMultisig);
+    require_keys_eq!(vault_tx.creator, ctx.accounts.proposer.key(), GuardError::NotProposer);
     let proposal = logic::parse_proposal(&ctx.accounts.proposal.try_borrow_data()?)?;
     require_keys_eq!(proposal.multisig, multisig, GuardError::WrongMultisig);
     require!(proposal.transaction_index == vault_tx.index, GuardError::WrongTxIndex);

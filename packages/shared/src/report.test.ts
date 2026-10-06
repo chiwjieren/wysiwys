@@ -62,6 +62,7 @@ test("error codes follow the Rust enum order", () => {
   assert.equal(GuardErrorCode.InvalidMultisigConfig, 6016);
   assert.equal(GuardErrorCode.ExecutorInMessage, 6017);
   assert.equal(GuardErrorCode.InvalidWorkflow, 6018);
+  assert.equal(GuardErrorCode.NotProposer, 6019);
 });
 
 test("reason codes match AGENTS.md", () => {

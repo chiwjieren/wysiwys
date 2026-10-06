@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { sha256 } from "@noble/hashes/sha256";
 import { expect } from "chai";
 import { createDesk, payoutIxs, proposePayout, usdc, DeskFixture } from "./helpers/squads";
@@ -28,7 +28,8 @@ describe("request_review", () => {
   const rawRequest = (multisig: PublicKey, vaultTransaction: PublicKey, proposal: PublicKey, review: PublicKey) =>
     program.methods
       .requestReview(Array.from(randomHash()), Array.from(randomHash()))
-      .accountsPartial({ multisig, vaultTransaction, proposal, review, payer: payer().publicKey })
+      .accountsPartial({ multisig, vaultTransaction, proposal, review, proposer: desk.members[0].publicKey, payer: payer().publicKey })
+      .signers([desk.members[0]])
       .rpc();
 
   it("creates a Pending review with msg_hash computed on-chain", async () => {
@@ -99,6 +100,14 @@ describe("request_review", () => {
       rawRequest(desk.multisigPda, a.transactionPda, b.proposalPda, reviewPda(desk.multisigPda, a.transactionIndex)),
       "WrongTxIndex",
     );
+  });
+
+  it("rejects a review requested by anyone other than the vault transaction creator (front-running)", async () => {
+    const p = await propose();
+    await expectError(requestReview(desk, p, {}, desk.members[1]), "NotProposer");
+    await expectError(requestReview(desk, p, {}, Keypair.generate()), "NotProposer");
+    // The real proposer can still claim the slot afterwards.
+    await requestReview(desk, p);
   });
 
   it("works for many sequential tx indexes (Demo mode reruns)", async () => {

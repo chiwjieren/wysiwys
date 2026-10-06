@@ -32,7 +32,7 @@
 - `ExecutionBlocked { review, error_code }` (optional, emitted only on paths that do not revert; most blocks are reverts and are tracked by the UI instead)
 
 **Instruction signatures**
-- `request_review(settlement_intent_hash: [u8; 32], trade_ref_hash: [u8; 32])`; accounts `multisig, vault_transaction, proposal, review (init), payer, system_program`
+- `request_review(settlement_intent_hash: [u8; 32], trade_ref_hash: [u8; 32])`; accounts `multisig, vault_transaction, proposal, review (init), proposer (signer, must equal the VaultTransaction creator, `NotProposer`), payer, system_program`
 - `on_report(metadata: Vec<u8>, report: Vec<u8>)`; accounts `forwarder_state, forwarder_authority (signer), config, review` (forwarder accounts first, per Chainlink's `kv_store_receiver`)
 
 **CRE report payload (fixed 107 bytes, little-endian, decided 6 Oct)**: `{ verdict: u8 (1 = approve, 2 = reject), reason: u16, msg_hash: [u8; 32], intent_hash: [u8; 32], policy_hash: [u8; 32], expires_at: i64 }`, with `intent_hash` = SHA-256(`settlement_intent_hash || trade_ref_hash`). The Review is the account passed to `on_report`. Cut from 171 bytes to fit CRE's 265-byte Solana raw report limit. `expires_at` = min(policy expiry, trade `valid_until`), set by the workflow, always in the future.

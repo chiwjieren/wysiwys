@@ -82,6 +82,7 @@ export async function requestReview(
   desk: DeskFixture,
   p: Proposed,
   hashes: { sih?: Uint8Array; trh?: Uint8Array } = {},
+  proposer: Keypair = desk.members[0], // proposePayout creates every vault transaction as members[0]
 ) {
   const sih = hashes.sih ?? randomHash();
   const trh = hashes.trh ?? randomHash();
@@ -93,8 +94,10 @@ export async function requestReview(
       vaultTransaction: p.transactionPda,
       proposal: p.proposalPda,
       review,
+      proposer: proposer.publicKey,
       payer: payer().publicKey,
     })
+    .signers([proposer])
     .rpc({ commitment: "confirmed" });
   return { review, sig, sih, trh };
 }

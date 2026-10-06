@@ -35,13 +35,14 @@ fn read_u32(d: &[u8], off: usize) -> Result<u32> {
 
 pub struct VaultTxHeader {
     pub multisig: Pubkey,
+    pub creator: Pubkey,
     pub index: u64,
 }
 
 /// Squads VaultTransaction: discriminator, multisig (8..40), creator (40..72), index (72..80).
 pub fn parse_vault_transaction(data: &[u8]) -> Result<VaultTxHeader> {
     require!(data.len() >= 80 && data[..8] == VAULT_TRANSACTION_DISCRIMINATOR, GuardError::NotSquadsAccount);
-    Ok(VaultTxHeader { multisig: read_pubkey(data, 8)?, index: read_u64(data, 72)? })
+    Ok(VaultTxHeader { multisig: read_pubkey(data, 8)?, creator: read_pubkey(data, 40)?, index: read_u64(data, 72)? })
 }
 
 /// Review PDA seed taken from raw vault transaction bytes during account validation.
@@ -282,6 +283,7 @@ mod tests {
     fn parses_vault_transaction_header() {
         let h = parse_vault_transaction(&vault_tx_bytes(key(1), 42)).unwrap();
         assert_eq!(h.multisig, key(1));
+        assert_eq!(h.creator, key(9));
         assert_eq!(h.index, 42);
     }
 

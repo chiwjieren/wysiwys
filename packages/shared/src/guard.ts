@@ -35,6 +35,7 @@ const GUARD_ERRORS = [
   "InvalidMultisigConfig",
   "ExecutorInMessage",
   "InvalidWorkflow",
+  "NotProposer",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];

@@ -315,6 +315,14 @@
           "writable": true
         },
         {
+          "name": "proposer",
+          "docs": [
+            "Creator of the vault transaction. Stops anyone else from claiming the Review slot",
+            "with wrong trade hashes (front-running), which would force a re-proposal."
+          ],
+          "signer": true
+        },
+        {
           "name": "payer",
           "writable": true,
           "signer": true
@@ -510,6 +518,11 @@
       "code": 6018,
       "name": "InvalidWorkflow",
       "msg": "Report was not produced by the configured CRE workflow owner"
+    },
+    {
+      "code": 6019,
+      "name": "NotProposer",
+      "msg": "Only the creator of the vault transaction can request its review"
     }
   ],
   "types": [
