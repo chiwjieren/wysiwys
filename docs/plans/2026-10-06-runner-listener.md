@@ -35,7 +35,7 @@
 | `services/runner/src/store.ts` | SQLite schema, idempotent `applyEvent`, trigger bookkeeping |
 | `services/runner/src/trigger.ts` | `HttpTrigger` (POST with bearer) and `LogTrigger` (no URL set) |
 | `services/runner/src/listener.ts` | WebSocket subscription, backfill, trigger loop, health state |
-| `services/runner/src/server.ts` | `GET /status` |
+| `services/runner/src/server.ts` | `GET /status`, `GET /reviews` |
 | `services/runner/src/index.ts` | Wire up and start |
 | `services/runner/test/*.test.ts` | Unit tests per module |
 
@@ -54,8 +54,8 @@ cursor(id INTEGER PRIMARY KEY CHECK (id = 1), last_signature TEXT)
 
 ## Tasks
 
-- [ ] **Task 1: events.** Tests build real Anchor log lines (`Program <id> invoke [1]`, `Program data: <base64>`, `Program <id> success`) with `BorshCoder` from the IDL and assert the parsed `ReviewRequested`, `DecisionRecorded`, `Executed` fields (pubkeys base58, u64 as decimal string, hashes hex). Events from another program id are ignored.
-- [ ] **Task 2: store.** In-memory SQLite. `applyEvent` is idempotent per `(signature, idx)`; status precedence pending < approved|rejected < executed; out-of-order events fill identifiers without regressing; `pendingTriggers()` returns reviews with `status = pending` and `trigger_status in (none, failed)`; `markTrigger(review, ok, error?)`.
-- [ ] **Task 3: trigger.** `HttpTrigger` POSTs `{ multisig, txIndex }` with `Authorization: Bearer`, throws on non-2xx (tested with a local `node:http` server).
-- [ ] **Task 4: listener.** Fake connection: backfill pages `getSignaturesForAddress` (`before`) until the cursor, processes oldest first, skips failed transactions, stores the newest signature as cursor; WebSocket callback path and backfill path dedupe; `runTriggers()` fires once per review and retries failures; health reflects WS state and last backfill time.
-- [ ] **Task 5: server + entry.** `GET /status` returns 200 with JSON when healthy, 503 when not. `npm run dev --workspace=services/runner` starts against devnet.
+- [x] **Task 1: events.** Tests build real Anchor log lines (`Program <id> invoke [1]`, `Program data: <base64>`, `Program <id> success`) with `BorshCoder` from the IDL and assert the parsed `ReviewRequested`, `DecisionRecorded`, `Executed` fields (pubkeys base58, u64 as decimal string, hashes hex). Events from another program id are ignored.
+- [x] **Task 2: store.** In-memory SQLite. `applyEvent` is idempotent per `(signature, idx)`; status precedence pending < approved|rejected < executed; out-of-order events fill identifiers without regressing; `pendingTriggers()` returns reviews with `status = pending` and `trigger_status in (none, failed)`; `markTrigger(review, ok, error?)`.
+- [x] **Task 3: trigger.** `HttpTrigger` POSTs `{ multisig, txIndex }` with `Authorization: Bearer`, throws on non-2xx (tested with a local `node:http` server).
+- [x] **Task 4: listener.** Fake connection: backfill pages `getSignaturesForAddress` (`before`) until the cursor, processes oldest first, skips failed transactions, stores the newest signature as cursor; WebSocket callback path and backfill path dedupe; `runTriggers()` fires once per review and retries failures; health reflects WS state and last backfill time.
+- [x] **Task 5: server + entry.** `GET /status` returns 200 with JSON when healthy, 503 when not. `GET /reviews?limit=` (max 200) serves history for the app's activity feed. `npm run dev --workspace=services/runner` starts against devnet.

@@ -24,3 +24,6 @@ keys/
 *.sqlite3
 
 .DS_Store
+
+# Runner SQLite (history only)
+services/runner/data/
