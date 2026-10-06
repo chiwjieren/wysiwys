@@ -21,6 +21,8 @@ pub mod wysiwys_guard {
         forwarder_state: Pubkey,
         policy_hash: [u8; 32],
         workflow_owner: [u8; 20],
+        max_review_lifetime: i64,
+        review_deadline_secs: i64,
     ) -> Result<()> {
         instructions::initialize_guard::handle_initialize_guard(
             ctx,
@@ -28,15 +30,13 @@ pub mod wysiwys_guard {
             forwarder_state,
             policy_hash,
             workflow_owner,
+            max_review_lifetime,
+            review_deadline_secs,
         )
     }
 
-    pub fn request_review(
-        ctx: Context<RequestReview>,
-        settlement_intent_hash: [u8; 32],
-        trade_ref_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::request_review::handle_request_review(ctx, settlement_intent_hash, trade_ref_hash)
+    pub fn request_review(ctx: Context<RequestReview>) -> Result<()> {
+        instructions::request_review::handle_request_review(ctx)
     }
 
     pub fn on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u8>) -> Result<()> {

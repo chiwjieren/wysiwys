@@ -4,7 +4,7 @@ import {
   ComputeBudgetProgram, Keypair, NONCE_ACCOUNT_LENGTH, PublicKey, SYSVAR_CLOCK_PUBKEY, SYSVAR_INSTRUCTIONS_PUBKEY,
   SystemProgram, Transaction,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
+import { AuthorityType, TOKEN_PROGRAM_ID, createSetAuthorityInstruction, getAccount } from "@solana/spl-token";
 import { expect } from "chai";
 import { VERDICT } from "@wysiwys/shared";
 import { testProvider } from "./helpers/provider";
@@ -35,7 +35,7 @@ describe("guarded_execute", () => {
     if (verdict !== "none") {
       const expiresAt = (await chainNow(connection)) + (opts.expiresIn ?? 600n);
       const overrides = verdict === "reject" ? { verdict: VERDICT.REJECT, reason: 12, expiresAt } : { expiresAt };
-      await deliverReport(desk, review, await approvePayload(review, overrides));
+      await deliverReport(desk, review, await approvePayload(desk, review, overrides));
     }
     return { p, review };
   }
@@ -49,6 +49,7 @@ describe("guarded_execute", () => {
         multisig: desk.multisigPda,
         proposal: f.p.proposalPda,
         vaultTransaction: f.p.transactionPda,
+        destination: desk.counterpartyAta,
         executor: desk.executorPda,
         squadsProgram: SQUADS_PROGRAM_ID,
         instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -100,7 +101,7 @@ describe("guarded_execute", () => {
   it("refuses a report after execution", async () => {
     const f = await flow();
     await execute(f);
-    await expectError(deliverReport(desk, f.review, await approvePayload(f.review)), "InvalidStatusTransition");
+    await expectError(deliverReport(desk, f.review, await approvePayload(desk, f.review)), "InvalidStatusTransition");
   });
 
   it("refuses a durable nonce transaction", async () => {
@@ -152,11 +153,45 @@ describe("guarded_execute", () => {
     const p = await proposePayout(connection, desk, [...payoutIxs(desk, desk.counterpartyAta, usdc(1)), leak]);
     const { review } = await requestReview(desk, p);
     await approve(connection, desk, p.transactionIndex);
-    await deliverReport(desk, review, await approvePayload(review));
+    await deliverReport(desk, review, await approvePayload(desk, review));
     // An attacker passes the executor as a plain account; only the guard's CPI signs for it.
     const remaining = (await executeRemainingAccounts(connection, desk, p.transactionIndex)).map((m) => ({ ...m, isSigner: false }));
     await expectError(execute({ p, review }, {}, remaining), "ExecutorInMessage");
     expect(await reviewStatus(review)).to.equal("approved");
+  });
+
+  it("refuses a destination account other than the reviewed one", async () => {
+    const f = await flow();
+    await expectError(execute(f, { destination: desk.lookalikeAta }), "DestinationChanged");
+    expect(await reviewStatus(f.review)).to.equal("approved");
+  });
+
+  it("refuses when the destination token account changed owner after review", async () => {
+    // Fresh desk: the ownership change must not leak into other tests.
+    const d = await setupForwardedDesk();
+    const p = await proposePayout(connection, d, payoutIxs(d, d.counterpartyAta, usdc(1)));
+    const { review } = await requestReview(d, p);
+    await approve(connection, d, p.transactionIndex);
+    await deliverReport(d, review, await approvePayload(d, review));
+    await sendWithFreshBlockhash(
+      connection,
+      [createSetAuthorityInstruction(d.counterpartyAta, d.counterparty.publicKey, AuthorityType.AccountOwner, Keypair.generate().publicKey)],
+      [payer(), d.counterparty],
+    );
+    const remaining = await executeRemainingAccounts(connection, d, p.transactionIndex);
+    await expectError(
+      program.methods
+        .guardedExecute()
+        .accountsPartial({
+          config: d.config, review, multisig: d.multisigPda, proposal: p.proposalPda, vaultTransaction: p.transactionPda,
+          destination: d.counterpartyAta, executor: d.executorPda, squadsProgram: SQUADS_PROGRAM_ID, instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .remainingAccounts(remaining)
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })])
+        .rpc({ commitment: "confirmed" }),
+      "DestinationChanged",
+    );
+    expect(statusOf(await program.account.review.fetch(review, "confirmed"))).to.equal("approved");
   });
 
   it("2 of 3 votes: Squads refuses, review stays Approved, executes after the third vote", async () => {

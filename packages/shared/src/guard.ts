@@ -30,12 +30,14 @@ const GUARD_ERRORS = [
   "InvalidSquadsProgram",
   "InvalidInstructionsSysvar",
   "PolicyMismatch",
-  "IntentMismatch",
   "InvalidForwarder",
   "InvalidMultisigConfig",
   "ExecutorInMessage",
   "InvalidWorkflow",
   "NotProposer",
+  "DestinationChanged",
+  "ReviewDeadlinePassed",
+  "InvalidConfig",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];

@@ -29,21 +29,24 @@ pub fn handle_on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u
     logic::verify_forwarder(&state.key(), state.owner, &authority.key(), authority.is_signer, &ctx.accounts.config)?;
     logic::verify_workflow(&metadata, &ctx.accounts.config.workflow_owner)?;
 
-    let config_policy_hash = ctx.accounts.config.policy_hash;
+    let config = &ctx.accounts.config;
     let review = &mut ctx.accounts.review;
     require!(review.status == ReviewStatus::Pending, GuardError::InvalidStatusTransition);
 
-    let payload = logic::decode_report(&report, Clock::get()?.unix_timestamp)?;
-    require!(payload.msg_hash == review.msg_hash, GuardError::HashMismatch);
-    require!(
-        payload.intent_hash == logic::intent_hash(&review.settlement_intent_hash, &review.trade_ref_hash),
-        GuardError::IntentMismatch
-    );
-    require!(payload.policy_hash == config_policy_hash, GuardError::PolicyMismatch);
+    let now = Clock::get()?.unix_timestamp;
+    let payload = logic::decode_report(&report, now)?;
+    logic::check_report_times(&payload, review.created_at, now, config)?;
+    require!(payload.tx_hash == review.tx_hash, GuardError::HashMismatch);
+    require!(payload.policy_hash == config.policy_hash, GuardError::PolicyMismatch);
 
     review.status = if payload.verdict == VERDICT_APPROVE { ReviewStatus::Approved } else { ReviewStatus::Rejected };
     review.reason = payload.reason;
     review.policy_hash = payload.policy_hash;
+    review.action_kind = payload.action_kind;
+    review.destination = payload.destination;
+    review.destination_owner = payload.destination_owner;
+    review.mint = payload.mint;
+    review.issued_at = payload.issued_at;
     review.expires_at = payload.expires_at;
 
     emit!(DecisionRecorded {
@@ -51,6 +54,10 @@ pub fn handle_on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u
         verdict: payload.verdict,
         reason: payload.reason,
         policy_hash: payload.policy_hash,
+        action_kind: payload.action_kind,
+        destination: payload.destination,
+        destination_owner: payload.destination_owner,
+        mint: payload.mint,
         expires_at: payload.expires_at,
     });
     Ok(())

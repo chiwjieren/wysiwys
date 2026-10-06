@@ -1,7 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload, intentHash } from "@wysiwys/shared";
+import { ACTION_KIND, ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload } from "@wysiwys/shared";
 import type { TestForwarder } from "../../target/types/test_forwarder";
 import { GuardedDesk, POLICY_HASH, WORKFLOW_OWNER, chainNow, guardProgram, payer, setupGuardedDesk } from "./guard";
 
@@ -31,16 +31,27 @@ export async function setupForwardedDesk(): Promise<ForwardedDesk> {
   return { ...desk, forwarderState };
 }
 
-/** Approve payload that echoes the Review's stored hashes, valid for 10 minutes. */
-export async function approvePayload(review: PublicKey, overrides: Partial<ReportPayload> = {}): Promise<Uint8Array> {
+/**
+ * Approve payload that echoes the Review's tx_hash and names the desk's counterparty token
+ * account (owner counterparty, desk mint) as the SPL destination, valid for 10 minutes.
+ */
+export async function approvePayload(
+  desk: GuardedDesk,
+  review: PublicKey,
+  overrides: Partial<ReportPayload> = {},
+): Promise<Uint8Array> {
   const r = await guardProgram().account.review.fetch(review, "confirmed");
   const now = await chainNow(guardProgram().provider.connection);
   return encodeReportPayload({
     verdict: VERDICT.APPROVE,
     reason: 0,
-    msgHash: Uint8Array.from(r.msgHash),
-    intentHash: intentHash(Uint8Array.from(r.settlementIntentHash), Uint8Array.from(r.tradeRefHash)),
+    txHash: Uint8Array.from(r.txHash),
     policyHash: POLICY_HASH,
+    actionKind: ACTION_KIND.SPL,
+    destination: desk.counterpartyAta.toBytes(),
+    destinationOwner: desk.counterparty.publicKey.toBytes(),
+    mint: desk.mint.toBytes(),
+    issuedAt: now,
     expiresAt: now + 600n,
     ...overrides,
   });

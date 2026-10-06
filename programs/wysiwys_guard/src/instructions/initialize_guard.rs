@@ -34,7 +34,10 @@ pub fn handle_initialize_guard(
     forwarder_state: Pubkey,
     policy_hash: [u8; 32],
     workflow_owner: [u8; 20],
+    max_review_lifetime: i64,
+    review_deadline_secs: i64,
 ) -> Result<()> {
+    require!(max_review_lifetime > 0 && review_deadline_secs > 0, GuardError::InvalidConfig);
     let multisig = ctx.accounts.multisig.key();
     let (expected, _) = Pubkey::find_program_address(
         &[b"multisig", b"multisig", ctx.accounts.create_key.key().as_ref()],
@@ -51,6 +54,8 @@ pub fn handle_initialize_guard(
     config.forwarder_state = forwarder_state;
     config.policy_hash = policy_hash;
     config.workflow_owner = workflow_owner;
+    config.max_review_lifetime = max_review_lifetime;
+    config.review_deadline_secs = review_deadline_secs;
     config.bump = ctx.bumps.config;
     config.executor_bump = ctx.bumps.executor;
     Ok(())

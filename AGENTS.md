@@ -15,12 +15,12 @@ Architecture reference: `docs/plans/architecture.md` and `docs/plans/architectur
 ## End-to-end flow
 
 1. **Propose:** a treasury member picks recipient, token and integer amount in the Next.js app (optional off-chain memo/invoice). The app uses the Squads SDK to create the `VaultTransaction` and `Proposal`. Browser previews and memos never authorize payment.
-2. **Request review:** the app calls Guard `request_review`. Guard validates multisig, vault, Squads-owned accounts and PDAs, computes the exact `tx_hash` of the stored message on-chain, bumps the request generation in `RequestHead`, creates the current `Review` PDA (PENDING, `used = false`, active policy/decoder versions, request deadline) and emits `ReviewRequested`.
+2. **Request review:** the app calls Guard `request_review`. Guard validates multisig, vault, Squads-owned accounts and PDAs, computes the exact `tx_hash` of the stored message on-chain, creates the `Review` PDA for that transaction index (PENDING, `created_at` starts the report deadline) and emits `ReviewRequested`. Only the vault transaction's creator can request it.
 3. **Fetch and agree:** the event adapter (runner) observes the **finalized** event and sends an authenticated HTTP trigger to CRE with identifiers only. In a CRE node-mode HTTP callback, each node reads the required accounts from QuickNode, Helius and Alchemy and needs a 2-of-3 exact content match to produce an observation. CRE consensus aggregates node outputs. No quorum means no ALLOW.
 4. **Decode and evaluate:** decode every instruction of the agreed stored message with the pinned decoder. Pass typed actions, `tx_hash` and destination facts into the Confidential Workflow, which fetches/decrypts the private policy and checks the destination whitelist, program and instruction allowlists, mints, per-payment caps and screening. Output: ALLOW / DENY + reason + policy version.
 5. **Write the review:** the DON-signed report goes through the Keystone Forwarder (CPI) to Guard `on_report`, which authenticates the forwarder, checks the binding to the current request and stores APPROVED or REJECTED with the validated destination facts and expiry.
 6. **Human approval:** three treasury signers (Propose + Vote only, 3 of 3) approve in Squads. Votes can happen before, during or after the review.
-7. **Guarded execution:** anyone calls `guarded_execute`. Guard checks APPROVED, exact current `tx_hash`, active policy/decoder, current generation, unexpired, unused, unpaused, and re-checks mutable destination facts (token account owner, mint, token program). It marks the review used, then CPIs into Squads execute signed by the executor PDA (the sole Execute member). Squads checks votes and timelock; the vault authorizes the transfer. Any failure rolls back consumption and payout together.
+7. **Guarded execution:** anyone calls `guarded_execute`. Guard checks APPROVED (not yet Executed), exact current `tx_hash`, unexpired, and re-checks the reviewed destination (same account; for SPL the token program, mint and owner, not frozen). It marks the review Executed, then CPIs into Squads execute signed by the executor PDA (the sole Execute member). Squads checks votes and timelock; the vault authorizes the transfer. Any failure rolls back consumption and payout together.
 
 ## Narrow MVP
 
@@ -59,7 +59,7 @@ npm test
 
 # Guard program
 anchor build
-anchor test                                # local validator, Squads cloned from devnet
+anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
 anchor deploy --provider.cluster devnet
 
 # Devnet setup and end-to-end (scripts not written yet)
@@ -90,35 +90,35 @@ Keep this section accurate. Update it in the same commit that changes a command.
 - **Docs:** `docs/plans/architecture.md` is the design reference. Add plans for workflow, runner and Guard in `docs/plans/` before building them; the app keeps its plan in `app/docs/`. Update a plan when a decision changes.
 - **Never invent** native trigger support, report-metadata offsets, enclave attestation, DON membership, program IDs, whitelist entries, policy values or deployment evidence. Verify against pinned dependencies and official docs.
 
-## Contracts to freeze in `packages/shared` (PROPOSED)
+## Contracts in `packages/shared` (frozen for the guard)
 
-Field sizes, seeds and enum values are not final. Freeze them before coding the Guard or workflow; after that, ask before changing them.
+Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing any of these.
 
-- **Accounts (Guard PDAs):**
-  - `GuardConfig` (per multisig): schema version, network domain, Guard/Squads IDs, multisig/vault + vault index, executor PDA/bump, active policy and decoder versions/commitments, trusted forwarder program/state, workflow authentication config, max review lifetime, pause flag.
-  - `RequestHead` (per stored Squads transaction): transaction identity, monotonic request generation, current review address, **permanent consumed marker**.
-  - `Review` (per transaction + generation): identities, `tx_hash`, policy/decoder versions, request time and deadline, verdict/reason, reviewed destination facts, issued/expiry times, accepted-report commitment, `used`.
-- **`tx_hash`:** domain-separated, versioned hash of the exact stored Squads message: instruction order and data, program IDs, account keys, signer/writable flags. Not the whole mutable account envelope. One spec, shared fixtures for Rust (Guard) and TS (workflow, app).
-- **Report (logical fields):** domain (schema version, cluster, Guard program/config, Squads program); request (review, generation, multisig, vault/index, transaction, proposal); `tx_hash`; policy and decoder version/commitment; destination facts (action kind, destination account/wallet, and for SPL the owner authority, mint, token program); verdict (ALLOW → APPROVED, DENY → REJECTED) + stable `u16` reason; issued time + bounded expiry. No private whitelist, limits, screening inputs or secrets in the report.
-- **Events:** `ReviewRequested` (identities, generation, `tx_hash`), `DecisionRecorded` (review, verdict, reason, policy version, expiry; no private data), `Executed`.
-- **Reason codes:** stable `u16` enum covering at least: within policy, RPC no quorum, tx hash mismatch, unknown program, unexpected instruction, unsupported (ALT, account creation, Token-2022, ephemeral signers), authority change blocked, durable nonce detected, destination not whitelisted, destination owner changed, mint not allowed, amount over cap, screening rejected, policy/decoder stale.
-- **Review states shown to users:** PENDING, APPROVED, REJECTED, EXPIRED, STALE, SUPERSEDED, INDETERMINATE/ERROR, EXECUTED. Only APPROVED with every other gate passing can execute. EXPIRED, STALE and SUPERSEDED are derived from chain state; no background job revokes approvals.
-- **Runner API:** authenticated `POST /review { multisig, txIndex }`, `GET /status`. Event DB table: `reviews(review, multisig, tx_index, generation, status, reason, tx_hash, tx_signature, updated_at)`.
+- **Seeds:** `["config", multisig]`, `["review", multisig, tx_index u64 LE]`, `["executor", multisig]`. One Review per Squads transaction index; Reviews are never closed, so the Review is the permanent consumed marker. No `RequestHead` or review generations: a rejected or expired review means a new Squads transaction.
+- **`GuardConfig`** (immutable after `initialize_guard`): multisig, forwarder program and state, `policy_hash` (commitment over the policy file and the decoder version), CRE `workflow_owner`, `max_review_lifetime`, `review_deadline_secs`, bumps. No pause or admin instructions.
+- **`Review`:** multisig, vault transaction, proposal, tx_index, `tx_hash`, status, reason, `policy_hash`, destination facts (`action_kind`, `destination`, `destination_owner`, `mint`), `issued_at`, `expires_at`, `created_at`.
+- **`tx_hash`** = SHA-256(`"wysiwys:tx:v1"` || vault transaction address || VaultTransaction account data), computed by the guard. One TS implementation (`txHash`) for the workflow and app.
+- **Report payload v1** (fixed layout, 181 bytes LE; with the 64-byte metadata it fits CRE's 265-byte Solana report): `version u8 = 1 | verdict u8 (1 approve, 2 reject) | reason u16 | tx_hash [32] | policy_hash [32] | action_kind u8 (0 none, reject only; 1 SOL; 2 SPL) | destination [32] | destination_owner [32] | mint [32] | issued_at i64 | expires_at i64`. SOL: owner = destination, mint zero. SPL: destination is the token account, owner its wallet.
+- **Reason codes** (`ReviewReason`, u16, append only): 0 WITHIN_POLICY, 1 RPC_NO_QUORUM, 2 TX_HASH_MISMATCH, 3 UNKNOWN_PROGRAM, 4 UNEXPECTED_INSTRUCTION, 5 UNSUPPORTED_FEATURE, 6 AUTHORITY_CHANGE_BLOCKED, 7 DURABLE_NONCE_DETECTED, 8 DESTINATION_NOT_WHITELISTED, 9 DESTINATION_OWNER_UNRESOLVED, 10 MINT_NOT_ALLOWED, 11 AMOUNT_OVER_CAP, 12 SCREENING_REJECTED, 13 POLICY_STALE.
+- **Instructions:** `initialize_guard(forwarder_program, forwarder_state, policy_hash, workflow_owner [20], max_review_lifetime i64, review_deadline_secs i64)`, `request_review()`, `on_report(metadata, report)`, `guarded_execute()` with the reviewed `destination` account.
+- **Events:** `ReviewRequested { review, multisig, tx_index, tx_hash }`, `DecisionRecorded { review, verdict, reason, policy_hash, action_kind, destination, destination_owner, mint, expires_at }` (no private policy data), `Executed { review, multisig, tx_index }`.
+- **Review states shown to users:** PENDING, APPROVED, REJECTED, EXPIRED, INDETERMINATE/ERROR, EXECUTED. Only APPROVED with every other gate passing can execute. EXPIRED is derived from chain state (`expires_at`, or `created_at + review_deadline_secs` while PENDING); no background job revokes approvals.
+- **Runner API:** authenticated `POST /review { multisig, txIndex }`, `GET /status`. Event DB table: `reviews(review, multisig, tx_index, status, reason, tx_hash, tx_signature, updated_at)`.
 
 ## Component guidelines
 
 ### Guard program (`programs/wysiwys_guard`)
-- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, plus protected admin (pause/unpause, policy/decoder updates). Nothing else without team agreement.
+- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`. No admin, pause or config update. Nothing else without team agreement.
 - Security rules (every rule has a test; never weaken a security test to make something pass):
   1. CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. No general-purpose CPI or PDA-signing entry point.
   2. The executor PDA signs only the Squads vault-transaction execute CPI, and is the sole Execute member.
-  3. `request_review`: caller must be an authorized treasury requester (e.g. Squads member with Propose) so arbitrary callers cannot keep superseding reviews. Compute `tx_hash` on-chain; ignore proposer-supplied recipient, amount or hash.
-  4. `on_report`: forwarder state owner == pinned forwarder program and authority == PDA `["forwarder", forwarder_state, guard_program_id]`; verify workflow provenance with a mechanism the deployed Solana path actually supports (a payload `workflow_id` is not proof; live approval stays disabled until resolved); check schema/domain, current generation, identities, `tx_hash`, active policy/decoder, chain-clock time, expiry, max lifetime and request deadline. Accept a terminal verdict only for the current unconsumed request; an identical duplicate may be idempotent but never extends expiry, replaces a verdict or resets `used`.
-  5. `guarded_execute`: validate the full account set and unpaused config; require current generation, APPROVED, active policy/decoder, unexpired, unused; recompute `tx_hash`; re-check source vault authority, mint, token program and destination owner against the review; check the instructions sysvar address, then reject if instruction 0 is `AdvanceNonceAccount`.
-  6. One-way status. Set `used` and the `RequestHead` consumed marker **before** the Squads CPI in the same transaction. Closing/recreating a Review, reusing an index or migrating accounts must never restore authorization.
+  3. `GuardConfig` is immutable after init; `max_review_lifetime` and `review_deadline_secs` must be positive. `request_review` takes no arguments, computes `tx_hash` on-chain and only the vault transaction's creator may call it.
+  4. `on_report`: forwarder state owner == pinned forwarder program and authority == PDA `["forwarder", forwarder_state, guard_program_id]`, signed; metadata names the configured `workflow_owner` (a payload field is not proof of origin; live approval stays disabled until provenance on the deployed Solana path is verified); review Pending; payload v1 exact length and ranges; `issued_at <= now + 60`; `expires_at > now` and `<= issued_at + max_review_lifetime`; arrives by `created_at + review_deadline_secs`; `tx_hash` and `policy_hash` match. A second report on a decided review fails.
+  5. `guarded_execute`: check the instructions sysvar address, then reject if instruction 0 is `AdvanceNonceAccount`; re-derive the Review and bind it to multisig, vault transaction and proposal; APPROVED and unexpired; recompute `tx_hash`; re-check the reviewed destination (`DestinationChanged`); refuse a message that references the executor PDA.
+  6. One-way status Pending → Approved | Rejected; Approved → Executed, written **before** the Squads CPI in the same transaction. Reviews are never closed, so an executed transaction index can never be re-authorized.
   7. Owner checks on every account; re-derive seeds; `has_one` constraints. Expiry uses `Clock::get()`. Payload decoding is exact-length and range-checked.
   8. `init` only, never `init_if_needed`.
-  9. Security-relevant config changes invalidate outstanding approvals (config generation or version binding). Admin and upgrade authorities are protected.
+  9. A policy or decoder change means a new guard config (new multisig); old approvals carry the old `policy_hash` and only bind to the old config. Upgrade authority is protected.
 - Bypass closure: no other Squads Execute members, no spending limits, clean token authorities/delegates on the vault. Bootstrap verifies this.
 
 ### Decoder and policy (`packages/decoder`)
@@ -140,7 +140,7 @@ Field sizes, seeds and enum values are not final. Freeze them before coding the 
 - Simulation vs live: local simulation is single-node consensus and a mock forwarder (`--broadcast` writes real devnet state). Keep mock and live forwarder config separate. Simulation evidence is not evidence of live DON signatures or TEE attestation. Keep every simulation log in `evidence/cre/`.
 
 ### Event adapter and runner (`services/runner`)
-- Listener: `logsSubscribe` on the Guard program via a configured provider, act only on **finalized** events, parse Anchor events with the IDL, backfill with `getSignaturesForAddress` on startup and every minute, dedupe by `(review, generation)`.
+- Listener: `logsSubscribe` on the Guard program via a configured provider, act only on **finalized** events, parse Anchor events with the IDL, backfill with `getSignaturesForAddress` on startup and every minute, dedupe by `review`.
 - Sends authenticated, idempotent HTTP triggers to CRE (or runs `cre workflow simulate` in the demo setup). `POST /review` is bearer-token protected and rate limited.
 - SQLite stores events for the activity feed. The DB is history, not truth.
 - Adapter down means reviews do not start and payments cannot execute (fail closed). Expose health on `GET /status`.
@@ -162,7 +162,7 @@ Field sizes, seeds and enum values are not final. Freeze them before coding the 
 - One conflicting provider can be outvoted; missing/error responses do not count. No source or DON quorum → no APPROVED.
 - Non-whitelisted wallets fail, including a lookalike address or a whitelisted-looking token account owned by another wallet. Wrong mint/program and changed destination ownership fail.
 - Unknown instructions, wrong derivations, modified message/amount/privileges and stale policy/decoder fail.
-- Forged or direct report calls, wrong forwarder, wrong network/request, expired, replayed, superseded and consumed reviews fail.
+- Forged or direct report calls, wrong forwarder, wrong network/request, expired, late (after the review deadline), replayed and executed reviews fail.
 - Direct human execution and spending-limit bypasses fail. Missing votes/timelock or a failed transfer leave no consumption.
 - Keep separate evidence for provider-quorum tests, mock devnet delivery, live DON consensus and TEE attestation.
 

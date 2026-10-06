@@ -4,7 +4,7 @@
     "name": "wysiwys_guard",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Wysiwys guard: executes a Squads v4 OTC payout only after a CRE approval"
+    "description": "Wysiwys guard: executes a Squads v4 payment only after human approval and a matching CRE review"
   },
   "instructions": [
     {
@@ -61,6 +61,9 @@
         },
         {
           "name": "vault_transaction"
+        },
+        {
+          "name": "destination"
         },
         {
           "name": "executor",
@@ -202,6 +205,14 @@
               20
             ]
           }
+        },
+        {
+          "name": "max_review_lifetime",
+          "type": "i64"
+        },
+        {
+          "name": "review_deadline_secs",
+          "type": "i64"
         }
       ]
     },
@@ -317,8 +328,8 @@
         {
           "name": "proposer",
           "docs": [
-            "Creator of the vault transaction. Stops anyone else from claiming the Review slot",
-            "with wrong trade hashes (front-running), which would force a re-proposal."
+            "Creator of the vault transaction. Stops anyone else from claiming the single Review slot",
+            "and running it into a reject or expiry (griefing), which would force a re-proposal."
           ],
           "signer": true
         },
@@ -332,26 +343,7 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "settlement_intent_hash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "trade_ref_hash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
+      "args": []
     }
   ],
   "accounts": [
@@ -496,33 +488,43 @@
     },
     {
       "code": 6014,
-      "name": "IntentMismatch",
-      "msg": "Report intent hash does not match the Review"
-    },
-    {
-      "code": 6015,
       "name": "InvalidForwarder",
       "msg": "Report did not come from the configured forwarder"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "InvalidMultisigConfig",
       "msg": "Multisig must be autonomous with the executor as the only Execute member"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "ExecutorInMessage",
       "msg": "Vault transaction must not reference the executor PDA"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "InvalidWorkflow",
       "msg": "Report was not produced by the configured CRE workflow owner"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "NotProposer",
       "msg": "Only the creator of the vault transaction can request its review"
+    },
+    {
+      "code": 6019,
+      "name": "DestinationChanged",
+      "msg": "Destination account no longer matches the reviewed destination"
+    },
+    {
+      "code": 6020,
+      "name": "ReviewDeadlinePassed",
+      "msg": "Report arrived after the review deadline"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidConfig",
+      "msg": "Invalid guard configuration"
     }
   ],
   "types": [
@@ -551,6 +553,22 @@
                 32
               ]
             }
+          },
+          {
+            "name": "action_kind",
+            "type": "u8"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
           },
           {
             "name": "expires_at",
@@ -621,6 +639,20 @@
             }
           },
           {
+            "name": "max_review_lifetime",
+            "docs": [
+              "Upper bound on expires_at - issued_at of an approval, in seconds."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "review_deadline_secs",
+            "docs": [
+              "A report must arrive within this many seconds of request_review."
+            ],
+            "type": "i64"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -657,25 +689,7 @@
             "type": "u64"
           },
           {
-            "name": "msg_hash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "settlement_intent_hash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "trade_ref_hash",
+            "name": "tx_hash",
             "type": {
               "array": [
                 "u8",
@@ -703,6 +717,29 @@
                 32
               ]
             }
+          },
+          {
+            "name": "action_kind",
+            "docs": [
+              "Destination facts from the accepted report, re-checked by guarded_execute."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination_owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "issued_at",
+            "type": "i64"
           },
           {
             "name": "expires_at",
@@ -737,25 +774,7 @@
             "type": "u64"
           },
           {
-            "name": "msg_hash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "settlement_intent_hash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "trade_ref_hash",
+            "name": "tx_hash",
             "type": {
               "array": [
                 "u8",

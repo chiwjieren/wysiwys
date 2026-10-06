@@ -14,6 +14,10 @@ export const POLICY_HASH = new Uint8Array(32).fill(7);
 /** Expected CRE workflow owner (20-byte EVM address) stored in GuardConfig. */
 export const WORKFLOW_OWNER = new Uint8Array(20).fill(0x11);
 export const randomHash = () => crypto.getRandomValues(new Uint8Array(32));
+/** Longest approval window a report may grant, in seconds. */
+export const MAX_REVIEW_LIFETIME = 3600n;
+/** A report must arrive within this many seconds of request_review. */
+export const REVIEW_DEADLINE = 900n;
 
 export const configPda = (multisig: PublicKey) =>
   PublicKey.findProgramAddressSync([Buffer.from(SEEDS.config), multisig.toBuffer()], guardProgram().programId)[0];
@@ -55,7 +59,14 @@ export const statusOf = (review: { status: object }) => Object.keys(review.statu
 export type GuardedDesk = DeskFixture & { config: PublicKey };
 
 export async function setupGuardedDesk(
-  opts: { forwarderProgram?: PublicKey; forwarderState?: PublicKey; workflowOwner?: Uint8Array; desk?: DeskOptions } = {},
+  opts: {
+    forwarderProgram?: PublicKey;
+    forwarderState?: PublicKey;
+    workflowOwner?: Uint8Array;
+    maxReviewLifetime?: bigint;
+    reviewDeadline?: bigint;
+    desk?: DeskOptions;
+  } = {},
 ): Promise<GuardedDesk> {
   const desk = await createDesk(provider().connection, payer(), guardProgram().programId, opts.desk);
   const config = configPda(desk.multisigPda);
@@ -65,6 +76,8 @@ export async function setupGuardedDesk(
       opts.forwarderState ?? Keypair.generate().publicKey,
       Array.from(POLICY_HASH),
       Array.from(opts.workflowOwner ?? WORKFLOW_OWNER),
+      new anchor.BN((opts.maxReviewLifetime ?? MAX_REVIEW_LIFETIME).toString()),
+      new anchor.BN((opts.reviewDeadline ?? REVIEW_DEADLINE).toString()),
     )
     .accountsPartial({
       multisig: desk.multisigPda,
@@ -81,14 +94,11 @@ export async function setupGuardedDesk(
 export async function requestReview(
   desk: DeskFixture,
   p: Proposed,
-  hashes: { sih?: Uint8Array; trh?: Uint8Array } = {},
   proposer: Keypair = desk.members[0], // proposePayout creates every vault transaction as members[0]
 ) {
-  const sih = hashes.sih ?? randomHash();
-  const trh = hashes.trh ?? randomHash();
   const review = reviewPda(desk.multisigPda, p.transactionIndex);
   const sig = await guardProgram()
-    .methods.requestReview(Array.from(sih), Array.from(trh))
+    .methods.requestReview()
     .accountsPartial({
       multisig: desk.multisigPda,
       vaultTransaction: p.transactionPda,
@@ -99,5 +109,5 @@ export async function requestReview(
     })
     .signers([proposer])
     .rpc({ commitment: "confirmed" });
-  return { review, sig, sih, trh };
+  return { review, sig };
 }

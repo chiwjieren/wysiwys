@@ -31,8 +31,6 @@ pub enum GuardError {
     InvalidInstructionsSysvar,
     #[msg("Report policy hash does not match the guard config")]
     PolicyMismatch,
-    #[msg("Report intent hash does not match the Review")]
-    IntentMismatch,
     #[msg("Report did not come from the configured forwarder")]
     InvalidForwarder,
     #[msg("Multisig must be autonomous with the executor as the only Execute member")]
@@ -43,4 +41,10 @@ pub enum GuardError {
     InvalidWorkflow,
     #[msg("Only the creator of the vault transaction can request its review")]
     NotProposer,
+    #[msg("Destination account no longer matches the reviewed destination")]
+    DestinationChanged,
+    #[msg("Report arrived after the review deadline")]
+    ReviewDeadlinePassed,
+    #[msg("Invalid guard configuration")]
+    InvalidConfig,
 }

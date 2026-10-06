@@ -1,9 +1,9 @@
 import * as anchor from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { sha256 } from "@noble/hashes/sha256";
+import { txHash } from "@wysiwys/shared";
 import { expect } from "chai";
 import { createDesk, payoutIxs, proposePayout, usdc, DeskFixture } from "./helpers/squads";
-import { expectError, guardEvents, guardProgram, payer, requestReview, reviewPda, statusOf, randomHash } from "./helpers/guard";
+import { expectError, guardEvents, guardProgram, payer, requestReview, reviewPda, statusOf } from "./helpers/guard";
 import { testProvider } from "./helpers/provider";
 
 describe("request_review", () => {
@@ -27,19 +27,19 @@ describe("request_review", () => {
 
   const rawRequest = (multisig: PublicKey, vaultTransaction: PublicKey, proposal: PublicKey, review: PublicKey) =>
     program.methods
-      .requestReview(Array.from(randomHash()), Array.from(randomHash()))
+      .requestReview()
       .accountsPartial({ multisig, vaultTransaction, proposal, review, proposer: desk.members[0].publicKey, payer: payer().publicKey })
       .signers([desk.members[0]])
       .rpc();
 
-  it("creates a Pending review with msg_hash computed on-chain", async () => {
+  it("creates a Pending review with tx_hash computed on-chain", async () => {
     const p = await propose();
-    const { review, sih, trh } = await requestReview(desk, p);
+    const { review } = await requestReview(desk, p);
     const r = await program.account.review.fetch(review);
     const vtData = (await connection.getAccountInfo(p.transactionPda))!.data;
-    expect(Buffer.from(r.msgHash).toString("hex")).to.equal(Buffer.from(sha256(vtData)).toString("hex"));
-    expect(Buffer.from(r.settlementIntentHash).equals(Buffer.from(sih))).to.equal(true);
-    expect(Buffer.from(r.tradeRefHash).equals(Buffer.from(trh))).to.equal(true);
+    const expected = txHash(p.transactionPda.toBytes(), vtData);
+    expect(Buffer.from(r.txHash).toString("hex")).to.equal(Buffer.from(expected).toString("hex"));
+    expect(r.actionKind).to.equal(0);
     expect(r.vaultTransaction.toBase58()).to.equal(p.transactionPda.toBase58());
     expect(r.proposal.toBase58()).to.equal(p.proposalPda.toBase58());
     expect(r.multisig.toBase58()).to.equal(desk.multisigPda.toBase58());
@@ -50,13 +50,14 @@ describe("request_review", () => {
 
   it("emits ReviewRequested with the stored fields", async () => {
     const p = await propose();
-    const { review, sig, sih } = await requestReview(desk, p);
+    const { review, sig } = await requestReview(desk, p);
     const ev = (await guardEvents(sig)).find((e) => e.name === "reviewRequested");
     expect(ev, "ReviewRequested event").to.not.equal(undefined);
     expect(ev!.data.review.toBase58()).to.equal(review.toBase58());
     expect(ev!.data.multisig.toBase58()).to.equal(desk.multisigPda.toBase58());
     expect(BigInt(ev!.data.txIndex.toString())).to.equal(p.transactionIndex);
-    expect(Buffer.from(ev!.data.settlementIntentHash).equals(Buffer.from(sih))).to.equal(true);
+    const r = await program.account.review.fetch(review);
+    expect(Buffer.from(ev!.data.txHash).equals(Buffer.from(r.txHash))).to.equal(true);
   });
 
   it("rejects a second review for the same tx index", async () => {
@@ -104,8 +105,8 @@ describe("request_review", () => {
 
   it("rejects a review requested by anyone other than the vault transaction creator (front-running)", async () => {
     const p = await propose();
-    await expectError(requestReview(desk, p, {}, desk.members[1]), "NotProposer");
-    await expectError(requestReview(desk, p, {}, Keypair.generate()), "NotProposer");
+    await expectError(requestReview(desk, p, desk.members[1]), "NotProposer");
+    await expectError(requestReview(desk, p, Keypair.generate()), "NotProposer");
     // The real proposer can still claim the slot afterwards.
     await requestReview(desk, p);
   });

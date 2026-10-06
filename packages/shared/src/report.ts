@@ -1,23 +1,39 @@
 import { sha256 } from "@noble/hashes/sha256";
 
-// CRE report payload consumed by the guard's on_report. Fixed 107 bytes, little-endian.
-// Sized to fit CRE's 265-byte Solana raw report limit.
-export const REPORT_PAYLOAD_LEN = 107;
+// CRE report payload v1 consumed by the guard's on_report. Fixed 181 bytes, little-endian.
+// CRE's Solana raw report limit is 265 bytes including the 64-byte metadata, so the payload stays <= 201.
+export const REPORT_PAYLOAD_LEN = 181;
+export const REPORT_VERSION = 1;
 export const VERDICT = { APPROVE: 1, REJECT: 2 } as const;
+/** Reviewed payment kind. NONE is only valid on a reject verdict. */
+export const ACTION_KIND = { NONE: 0, SOL: 1, SPL: 2 } as const;
 
 export interface ReportPayload {
   verdict: 1 | 2;
   reason: number;
-  msgHash: Uint8Array;
-  intentHash: Uint8Array;
+  txHash: Uint8Array;
+  /** Commitment over the policy file and the decoder version. */
   policyHash: Uint8Array;
+  actionKind: 0 | 1 | 2;
+  /** SOL: recipient wallet. SPL: destination token account. */
+  destination: Uint8Array;
+  /** SOL: same as destination. SPL: token account owner wallet. */
+  destinationOwner: Uint8Array;
+  /** SOL: zero. SPL: mint. */
+  mint: Uint8Array;
+  issuedAt: bigint;
   expiresAt: bigint;
 }
 
-export function intentHash(settlementIntentHash: Uint8Array, tradeRefHash: Uint8Array): Uint8Array {
-  const joined = new Uint8Array(64);
-  joined.set(settlementIntentHash, 0);
-  joined.set(tradeRefHash, 32);
+const TX_HASH_DOMAIN = new TextEncoder().encode("wysiwys:tx:v1");
+
+/** sha256("wysiwys:tx:v1" || vault_transaction || VaultTransaction account data). Same as tx_hash in the guard. */
+export function txHash(vaultTransaction: Uint8Array, data: Uint8Array): Uint8Array {
+  check32("vaultTransaction", vaultTransaction);
+  const joined = new Uint8Array(TX_HASH_DOMAIN.length + 32 + data.length);
+  joined.set(TX_HASH_DOMAIN, 0);
+  joined.set(vaultTransaction, TX_HASH_DOMAIN.length);
+  joined.set(data, TX_HASH_DOMAIN.length + 32);
   return sha256(joined);
 }
 
@@ -51,31 +67,45 @@ function check32(name: string, v: Uint8Array) {
 }
 
 export function encodeReportPayload(p: ReportPayload): Uint8Array {
-  check32("msgHash", p.msgHash);
-  check32("intentHash", p.intentHash);
+  check32("txHash", p.txHash);
   check32("policyHash", p.policyHash);
+  check32("destination", p.destination);
+  check32("destinationOwner", p.destinationOwner);
+  check32("mint", p.mint);
   const out = new Uint8Array(REPORT_PAYLOAD_LEN);
   const view = new DataView(out.buffer);
-  view.setUint8(0, p.verdict);
-  view.setUint16(1, p.reason, true);
-  out.set(p.msgHash, 3);
-  out.set(p.intentHash, 35);
-  out.set(p.policyHash, 67);
-  view.setBigInt64(99, p.expiresAt, true);
+  view.setUint8(0, REPORT_VERSION);
+  view.setUint8(1, p.verdict);
+  view.setUint16(2, p.reason, true);
+  out.set(p.txHash, 4);
+  out.set(p.policyHash, 36);
+  view.setUint8(68, p.actionKind);
+  out.set(p.destination, 69);
+  out.set(p.destinationOwner, 101);
+  out.set(p.mint, 133);
+  view.setBigInt64(165, p.issuedAt, true);
+  view.setBigInt64(173, p.expiresAt, true);
   return out;
 }
 
 export function decodeReportPayload(bytes: Uint8Array): ReportPayload {
   if (bytes.length !== REPORT_PAYLOAD_LEN) throw new Error(`payload must be ${REPORT_PAYLOAD_LEN} bytes`);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const verdict = view.getUint8(0);
+  if (view.getUint8(0) !== REPORT_VERSION) throw new Error(`unsupported payload version ${view.getUint8(0)}`);
+  const verdict = view.getUint8(1);
   if (verdict !== 1 && verdict !== 2) throw new Error(`invalid verdict ${verdict}`);
+  const actionKind = view.getUint8(68);
+  if (actionKind > 2) throw new Error(`invalid action kind ${actionKind}`);
   return {
     verdict,
-    reason: view.getUint16(1, true),
-    msgHash: bytes.slice(3, 35),
-    intentHash: bytes.slice(35, 67),
-    policyHash: bytes.slice(67, 99),
-    expiresAt: view.getBigInt64(99, true),
+    reason: view.getUint16(2, true),
+    txHash: bytes.slice(4, 36),
+    policyHash: bytes.slice(36, 68),
+    actionKind: actionKind as 0 | 1 | 2,
+    destination: bytes.slice(69, 101),
+    destinationOwner: bytes.slice(101, 133),
+    mint: bytes.slice(133, 165),
+    issuedAt: view.getBigInt64(165, true),
+    expiresAt: view.getBigInt64(173, true),
   };
 }

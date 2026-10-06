@@ -30,23 +30,20 @@ pub struct RequestReview<'info> {
         bump
     )]
     pub review: Account<'info, Review>,
-    /// Creator of the vault transaction. Stops anyone else from claiming the Review slot
-    /// with wrong trade hashes (front-running), which would force a re-proposal.
+    /// Creator of the vault transaction. Stops anyone else from claiming the single Review slot
+    /// and running it into a reject or expiry (griefing), which would force a re-proposal.
     pub proposer: Signer<'info>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
-pub fn handle_request_review(
-    ctx: Context<RequestReview>,
-    settlement_intent_hash: [u8; 32],
-    trade_ref_hash: [u8; 32],
-) -> Result<()> {
+pub fn handle_request_review(ctx: Context<RequestReview>) -> Result<()> {
     let multisig = ctx.accounts.multisig.key();
-    let (vault_tx, msg_hash) = {
+    let vault_transaction = ctx.accounts.vault_transaction.key();
+    let (vault_tx, tx_hash) = {
         let data = ctx.accounts.vault_transaction.try_borrow_data()?;
-        (logic::parse_vault_transaction(&data)?, logic::sha256(&data))
+        (logic::parse_vault_transaction(&data)?, logic::tx_hash(&vault_transaction, &data))
     };
     require_keys_eq!(vault_tx.multisig, multisig, GuardError::WrongMultisig);
     require_keys_eq!(vault_tx.creator, ctx.accounts.proposer.key(), GuardError::NotProposer);
@@ -54,7 +51,6 @@ pub fn handle_request_review(
     require_keys_eq!(proposal.multisig, multisig, GuardError::WrongMultisig);
     require!(proposal.transaction_index == vault_tx.index, GuardError::WrongTxIndex);
 
-    let vault_transaction = ctx.accounts.vault_transaction.key();
     let proposal_key = ctx.accounts.proposal.key();
     let review = &mut ctx.accounts.review;
     review.version = REVIEW_VERSION;
@@ -62,12 +58,15 @@ pub fn handle_request_review(
     review.vault_transaction = vault_transaction;
     review.proposal = proposal_key;
     review.tx_index = vault_tx.index;
-    review.msg_hash = msg_hash;
-    review.settlement_intent_hash = settlement_intent_hash;
-    review.trade_ref_hash = trade_ref_hash;
+    review.tx_hash = tx_hash;
     review.status = ReviewStatus::Pending;
     review.reason = 0;
     review.policy_hash = [0u8; 32];
+    review.action_kind = ACTION_NONE;
+    review.destination = Pubkey::default();
+    review.destination_owner = Pubkey::default();
+    review.mint = Pubkey::default();
+    review.issued_at = 0;
     review.expires_at = 0;
     review.created_at = Clock::get()?.unix_timestamp;
     review.bump = ctx.bumps.review;
@@ -76,9 +75,7 @@ pub fn handle_request_review(
         review: review.key(),
         multisig,
         tx_index: vault_tx.index,
-        msg_hash,
-        settlement_intent_hash,
-        trade_ref_hash,
+        tx_hash,
     });
     Ok(())
 }

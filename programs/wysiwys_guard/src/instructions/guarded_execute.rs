@@ -27,9 +27,11 @@ pub struct GuardedExecute<'info> {
     /// CHECK: must equal review.proposal (handler); Squads re-validates it.
     #[account(mut, owner = SQUADS_PROGRAM_ID @ GuardError::NotSquadsAccount)]
     pub proposal: UncheckedAccount<'info>,
-    /// CHECK: must equal review.vault_transaction and still hash to review.msg_hash (handler).
+    /// CHECK: must equal review.vault_transaction and still hash to review.tx_hash (handler).
     #[account(owner = SQUADS_PROGRAM_ID @ GuardError::NotSquadsAccount)]
     pub vault_transaction: UncheckedAccount<'info>,
+    /// CHECK: must equal review.destination; for SPL its token program, mint and owner are re-checked (handler).
+    pub destination: UncheckedAccount<'info>,
     /// CHECK: executor PDA, signs only the Squads CPI below.
     #[account(seeds = [EXECUTOR_SEED, multisig.key().as_ref()], bump = config.executor_bump)]
     pub executor: UncheckedAccount<'info>,
@@ -51,7 +53,7 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
     let multisig_key = ctx.accounts.multisig.key();
     let proposal_key = ctx.accounts.proposal.key();
     let vault_tx_key = ctx.accounts.vault_transaction.key();
-    let current_hash = logic::sha256(&ctx.accounts.vault_transaction.try_borrow_data()?);
+    let current_hash = logic::tx_hash(&vault_tx_key, &ctx.accounts.vault_transaction.try_borrow_data()?);
     // Security rule 2: if the message names the executor, the runtime merges it with the signed
     // executor account below and Squads could pass the signature to an inner instruction.
     let executor_key = ctx.accounts.executor.key();
@@ -73,7 +75,17 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
         require_keys_eq!(review.vault_transaction, vault_tx_key, GuardError::ReviewMismatch);
         require_keys_eq!(review.proposal, proposal_key, GuardError::ReviewMismatch);
         logic::check_executable(review.status, review.expires_at, now)?;
-        require!(current_hash == review.msg_hash, GuardError::HashMismatch);
+        require!(current_hash == review.tx_hash, GuardError::HashMismatch);
+        let dest = &ctx.accounts.destination;
+        logic::check_destination(
+            review.action_kind,
+            &review.destination,
+            &review.destination_owner,
+            &review.mint,
+            &dest.key(),
+            dest.owner,
+            &dest.try_borrow_data()?,
+        )?;
 
         // Security rule 6: Executed is written before the CPI.
         review.status = ReviewStatus::Executed;
