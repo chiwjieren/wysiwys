@@ -1,5 +1,5 @@
-# @omnicounter/app
+# @wysiwys/app
 
-Next.js web app: Demo mode, Propose, Review, Approve, Execute, Activity feed, /status and the mock trade system API (trades, counterparties, limits).
+Next.js web app: dashboard, transactions, review (verdict + summary + claim vs decoded reality), members, settings and /status. Propose, request review, vote and guarded execute.
 
 See the root AGENTS.md for guidelines.

@@ -5,26 +5,38 @@ package_manager = "npm"
 resolution = true
 skip-lint = false
 
-# Placeholder program ID. Replace with the real one in Task 0 (spike 1): `anchor keys sync`,
-# then update packages/shared and deployments/devnet.json.
 [programs.localnet]
-omnicounter_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+wysiwys_guard = "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya"
+# Local tests only. Never deploy to devnet.
+test_forwarder = "EZFysCCewwyWGMoGPySCLRqNQUcz1sVLJbZCUKFWwkcr"
 
 [programs.devnet]
-omnicounter_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+wysiwys_guard = "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya"
 
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
-
-# Squads v4 cloned from devnet for `anchor test`. Add the Squads ProgramConfig account here in spike 2.
-[test.validator]
-url = "https://api.devnet.solana.com"
-
-[[test.validator.clone]]
-address = "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+test = "NODE_OPTIONS='--import tsx' npx mocha --exit -t 1000000 'tests/**/*.ts'"
 
 [hooks]
+
+[test]
+startup_wait = 30000
+shutdown_wait = 2000
+upgradeable = false
+
+[test.validator]
+bind_address = "127.0.0.1"
+ledger = ".anchor/test-ledger"
+rpc_port = 8899
+
+# Squads v4 loaded from a devnet dump so tests run offline and deterministically.
+[[test.genesis]]
+address = "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+program = "tests/fixtures/squads_multisig.so"
+
+[[test.validator.account]]
+address = "BSTq9w3kZwNwpBXJEvTZz2G9ZTNyKBvoSeXMvwb4cNZr"
+filename = "tests/fixtures/squads_program_config.json"
