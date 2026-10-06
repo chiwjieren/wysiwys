@@ -9,7 +9,14 @@
   "vaultIndex": 0,
   "executorPda": "8TpYUbf5RLGuqosw55hM1VDjgz8Z8z9VqXcynPBxQm1d",
   "configPda": "3CkstZUS4JguoceC12wP9aMkGq41xmAY4dU9McYzQuUb",
-  "guard": null,
+  "guard": {
+    "forwarderProgram": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
+    "forwarderState": "5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7",
+    "policyHash": "402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0",
+    "workflowOwner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "maxReviewLifetime": "3600",
+    "reviewDeadlineSecs": "900"
+  },
   "mint": "J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r",
   "mintMetadata": "BvL4JCy13V2ye8QXwMtAntSe39yPiaos59WkJa65knzz",
   "token": {
