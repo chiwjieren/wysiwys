@@ -62,8 +62,9 @@ anchor build
 anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
 anchor deploy --provider.cluster devnet
 
-# Devnet setup and end-to-end (scripts not written yet)
-npx tsx scripts/bootstrap-devnet.ts        # idempotent; writes deployments/devnet.json
+# Devnet setup and end-to-end (e2e not written yet)
+npx tsx scripts/bootstrap-devnet.ts        # idempotent; mUSD mint + metadata, Squads, recipients,
+                                           # guard config once GUARD_* CRE values are set; writes deployments/devnet.json
 npx tsx scripts/e2e-devnet.ts              # approve path + reject paths
 
 # Decoder + policy
@@ -153,7 +154,7 @@ Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing an
 - Signer keys, RPC keys and the runner token live only in server routes. Nothing secret in client bundles. Rate limit and cap amounts so the devnet vault cannot be drained.
 
 ### Scripts (`scripts/`)
-- `bootstrap-devnet.ts` is idempotent: creates the test mint, signers, Squads multisig (3 of 3 Propose+Vote, executor PDA as sole Execute member, no spending limits), Guard config, vault funding, destination token accounts, verifies bypass closure, and writes `deployments/devnet.json`.
+- `bootstrap-devnet.ts` (logic in `scripts/lib/bootstrap.ts`, tested in `tests/bootstrap.ts`) is idempotent: mUSD legacy SPL mint (6 decimals) with Metaplex metadata, 3 signers topped up with SOL, Squads multisig (3 of 3 Initiate+Vote, executor PDA as sole Execute member, autonomous, verified every run), vault funded with mUSD, whitelisted and lookalike recipient token accounts, Guard config only once all `GUARD_*` CRE values are set (never changed after), and writes `deployments/devnet.json`. Keys in `keys/`.
 - Scenario builders are shared by e2e tests, the app and the video recording.
 
 ## Acceptance checks
