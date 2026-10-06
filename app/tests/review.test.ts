@@ -240,7 +240,7 @@ test("execute gate needs Squads approval and an unexpired approved review", () =
       decodeReview(reviewBytes({ status: 2, reason: 6 })),
       1000,
     ).reason,
-    "Rejected: Blocked: the payment hides an authority change",
+    "Rejected by the Chainlink review: the payment hides an authority change",
   );
   assert.equal(
     executeGate("Approved", null, 1000).reason,

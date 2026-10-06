@@ -145,7 +145,9 @@ export function executeGate(
   if (state === "none") return blocked("No review requested");
   if (state === "pending") return blocked("Waiting for the Chainlink review");
   if (state === "rejected")
-    return blocked(`Rejected: ${reviewReasonText(review!.reason)}`);
+    return blocked(
+      `Rejected by the Chainlink review: ${reviewReasonText(review!.reason).replace(/^Blocked: /, "")}`,
+    );
   if (state === "expired") return blocked("Review expired");
   if (proposalStatus !== "Approved")
     return blocked("Waiting for member approvals");
