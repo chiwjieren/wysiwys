@@ -67,6 +67,19 @@ export async function loadConfig(): Promise<SquadConfig | null> {
     !!process.env.OMNICOUNTER_SETTLEMENT_URL,
   );
 }
+export function isPrepareRequest(
+  input: unknown,
+): input is { action: "propose" | "execute"; index: string; member: unknown } {
+  if (!input || typeof input !== "object") return false;
+  const { action, index } = input as Record<string, unknown>;
+  return (
+    (action === "propose" || action === "execute") &&
+    typeof index === "string" &&
+    /^\d{1,20}$/.test(index) &&
+    BigInt(index) >= 1n &&
+    BigInt(index) <= 18446744073709551615n
+  );
+}
 export function rpcUrl() {
   return process.env.SOLANA_RPC_URL || clusterApiUrl("devnet");
 }

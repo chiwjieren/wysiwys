@@ -1,6 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import {
   assertSameOrigin,
+  isPrepareRequest,
   loadConfig,
   rateLimit,
 } from "@/lib/squads/server-config";
@@ -22,21 +23,13 @@ export async function POST(request: Request) {
     const body = await request.text();
     if (body.length > 2048)
       return Response.json({ error: "Request is too large." }, { status: 413 });
-    const input = JSON.parse(body);
-    if (
-      !["propose", "execute"].includes(input.action) ||
-      !/^\d{1,20}$/.test(input.index) ||
-      BigInt(input.index) < 1n ||
-      BigInt(input.index) > 18446744073709551615n ||
-      (input.action === "propose" &&
-        (typeof input.tradeId !== "string" ||
-          !/^[A-Za-z0-9_-]{1,80}$/.test(input.tradeId)))
-    )
+    const input: unknown = JSON.parse(body);
+    if (!isPrepareRequest(input))
       return Response.json(
         { error: "Invalid settlement request." },
         { status: 400 },
       );
-    const member = new PublicKey(input.member);
+    const member = new PublicKey(input.member as string);
     if (member.toBase58() !== wallet)
       throw new AuthenticationError(
         "Connect the request’s wallet to continue.",
@@ -60,7 +53,6 @@ export async function POST(request: Request) {
           multisig: config.multisig,
           txIndex: input.index,
           member: member.toBase58(),
-          ...(input.action === "propose" ? { tradeId: input.tradeId } : {}),
         }),
         cache: "no-store",
         signal: AbortSignal.timeout(15000),
@@ -79,21 +71,9 @@ export async function POST(request: Request) {
       BigInt(input.index),
       member,
     );
-    if (
-      input.action === "propose" &&
-      (!Array.isArray(prepared.payoutInstructions) ||
-        prepared.payoutInstructions.length < 1 ||
-        prepared.payoutInstructions.length > 8)
-    )
-      throw new Error("Invalid payout");
     // Return only public instruction data. Never return arbitrary upstream fields.
     return Response.json(
-      {
-        guardInstruction: prepared.guardInstruction,
-        ...(input.action === "propose"
-          ? { payoutInstructions: prepared.payoutInstructions }
-          : {}),
-      },
+      { guardInstruction: prepared.guardInstruction },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
