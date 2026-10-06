@@ -65,6 +65,8 @@ anchor deploy --provider.cluster devnet
 # Devnet setup and end-to-end (e2e not written yet)
 npx tsx scripts/bootstrap-devnet.ts        # idempotent; mUSD mint + metadata, Squads, recipients,
                                            # guard config once GUARD_* CRE values are set; writes deployments/devnet.json
+SIGNERS=a,b,c npx tsx scripts/bootstrap-devnet.ts --treasury demo   # demo treasury signed by those wallets;
+                                           # writes deployments/devnet.demo.json
 npx tsx scripts/e2e-devnet.ts              # approve path + reject paths
 
 # Decoder + policy

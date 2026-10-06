@@ -42,6 +42,10 @@ export type BootstrapOptions = {
   /** How many leading base58 characters the lookalike shares with the whitelisted recipient. */
   lookalikePrefix: number;
   guard?: GuardInit | null;
+  /** Named treasury (own multisig create key); default is the original test treasury. */
+  treasury?: string;
+  /** External human signers (e.g. Phantom wallets); default is keys/signer-1..3.json. */
+  signers?: PublicKey[] | null;
   log?: (line: string) => void;
 };
 
@@ -104,6 +108,18 @@ export function guardFromEnv(env: Record<string, string | undefined>): GuardInit
     maxReviewLifetime: BigInt(env.GUARD_MAX_REVIEW_LIFETIME || 3600),
     reviewDeadlineSecs: BigInt(env.GUARD_REVIEW_DEADLINE_SECS || 900),
   };
+}
+
+/** SIGNERS=a,b,c: exactly three distinct on-curve wallet addresses, or null when unset. */
+export function signersFromEnv(value: string | undefined): PublicKey[] | null {
+  if (!value || !value.trim()) return null;
+  const keys = value.split(",").map((s) => new PublicKey(s.trim()));
+  if (keys.length !== 3) throw new Error("SIGNERS must list exactly 3 wallet addresses");
+  if (new Set(keys.map((k) => k.toBase58())).size !== 3) throw new Error("SIGNERS must be distinct");
+  for (const k of keys) {
+    if (!PublicKey.isOnCurve(k.toBytes())) throw new Error(`SIGNERS entry ${k.toBase58()} is not a wallet (off-curve)`);
+  }
+  return keys;
 }
 
 // ---------------------------------------------------------------- keys
@@ -197,17 +213,20 @@ export async function bootstrap(o: BootstrapOptions): Promise<Deployment> {
   mkdirSync(o.keysDir, { recursive: true, mode: 0o700 });
 
   // Keys
-  const createKey = loadOrCreateKey(o.keysDir, "multisig-create-key.json");
-  const signers = [1, 2, 3].map((i) => loadOrCreateKey(o.keysDir, `signer-${i}.json`));
+  const treasury = o.treasury ?? "default";
+  if (!/^[a-z0-9-]{1,32}$/.test(treasury)) throw new Error("treasury name must be lowercase letters, digits or dashes");
+  const createKey = loadOrCreateKey(o.keysDir, treasury === "default" ? "multisig-create-key.json" : `multisig-create-key-${treasury}.json`);
+  const signerKeys: PublicKey[] =
+    o.signers ?? [1, 2, 3].map((i) => loadOrCreateKey(o.keysDir, `signer-${i}.json`).publicKey);
   const mintKp = loadOrCreateKey(o.keysDir, "musd-mint.json");
   const recipient = loadOrCreateKey(o.keysDir, "recipient.json");
   const lookalike = loadOrCreateKey(o.keysDir, "lookalike.json", () => grindLookalike(recipient.publicKey, o.lookalikePrefix));
 
   // Signer fees
   const topups: TransactionInstruction[] = [];
-  for (const s of signers) {
-    if ((await connection.getBalance(s.publicKey, "confirmed")) < SIGNER_MIN_LAMPORTS) {
-      topups.push(SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: s.publicKey, lamports: SIGNER_TOPUP_LAMPORTS }));
+  for (const s of signerKeys) {
+    if ((await connection.getBalance(s, "confirmed")) < SIGNER_MIN_LAMPORTS) {
+      topups.push(SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: s, lamports: SIGNER_TOPUP_LAMPORTS }));
     }
   }
   if (topups.length) {
@@ -278,7 +297,7 @@ export async function bootstrap(o: BootstrapOptions): Promise<Deployment> {
       configAuthority: null,
       threshold: 3,
       members: [
-        ...signers.map((s) => ({ key: s.publicKey, permissions: Permissions.fromPermissions([Permission.Initiate, Permission.Vote]) })),
+        ...signerKeys.map((s) => ({ key: s, permissions: Permissions.fromPermissions([Permission.Initiate, Permission.Vote]) })),
         { key: executorPda, permissions: Permissions.fromPermissions([Permission.Execute]) },
       ],
       timeLock: 0,
@@ -289,6 +308,10 @@ export async function bootstrap(o: BootstrapOptions): Promise<Deployment> {
   }
   const ms = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda, "confirmed");
   checkSoleExecutor(ms, executorPda);
+  const humans = ms.members.filter((m) => !m.key.equals(executorPda)).map((m) => m.key.toBase58()).sort();
+  if (JSON.stringify(humans) !== JSON.stringify(signerKeys.map((k) => k.toBase58()).sort())) {
+    throw new Error(`treasury "${treasury}" already exists with different signers; use a new --treasury name`);
+  }
   if (ms.threshold !== 3) throw new Error(`multisig threshold is ${ms.threshold}, expected 3`);
   const [vault] = multisig.getVaultPda({ multisigPda, index: 0 });
 
@@ -355,7 +378,7 @@ export async function bootstrap(o: BootstrapOptions): Promise<Deployment> {
     mintMetadata: mintMetadata.toBase58(),
     token,
     vaultTokenAccount: vaultTokenAccount.toBase58(),
-    signers: signers.map((s) => s.publicKey.toBase58()),
+    signers: signerKeys.map((s) => s.toBase58()),
     recipients: {
       whitelisted: { wallet: recipient.publicKey.toBase58(), tokenAccount: recipientAta.toBase58() },
       lookalike: { wallet: lookalike.publicKey.toBase58(), tokenAccount: lookalikeAta.toBase58() },
