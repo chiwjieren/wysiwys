@@ -113,6 +113,12 @@ export function buildMemberInvitation({
   ];
 }
 
+// UI-created groups give the creator Squads Execute, which bypasses the guard.
+// Guarded treasuries come from the bootstrap script; UI creation is opt-in.
+export function standardGroupsEnabled(flag: string | undefined) {
+  return flag === "true";
+}
+
 // Display label for a member's on-chain Squads permission mask.
 export function memberRole(address: string, mask: number, executor?: string) {
   if (executor && address === executor && mask === 4)
