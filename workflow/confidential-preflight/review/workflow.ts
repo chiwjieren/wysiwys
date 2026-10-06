@@ -43,6 +43,7 @@ export type Config = z.infer<typeof configSchema>
 const requestSchema = z.object({ multisig: address, txIndex: z.string().regex(/^\d{1,20}$/) }).strict()
 const RPC_SECRETS = ['QUICKNODE_SOLANA_DEVNET_RPC_URL', 'HELIUS_SOLANA_DEVNET_RPC_URL', 'ALCHEMY_SOLANA_DEVNET_RPC_URL'] as const
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
+const PROVIDERS = ['quicknode', 'helius', 'alchemy'] as const
 
 const u64le = (n: bigint) => {
 	const b = new Uint8Array(8)
@@ -63,19 +64,36 @@ function rpc(node: NodeRuntime<Config>, endpoint: string, method: string, params
 			cacheSettings: { store: false },
 		})
 		.result()
-	if (response.statusCode !== 200) throw new Error('HTTP failure')
+	if (response.statusCode !== 200) throw new Error(`HTTP ${response.statusCode}`)
 	return JSON.parse(new TextDecoder().decode(response.body))
 }
 
-/** Per node: every provider must be on devnet; agreed account contents from 2 of 3. */
-function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses: string[]): string {
-	const slots = endpoints.map((endpoint) => {
+/**
+ * Per node: agreed account contents from 2 of 3 providers at finalized. With healthCheck, each provider
+ * must also be on devnet and the read is pinned to a minimum context slot (9 HTTP calls); without it,
+ * only the account read (3 calls), for follow-up reads in the same run. CRE allows 15 calls per run.
+ */
+function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses: string[], healthCheck: boolean): string {
+	if (!healthCheck) {
+		const observations = endpoints.map((endpoint, i) => {
+			try {
+				return normalizeSnapshot(rpc(node, endpoint, 'getMultipleAccounts', [addresses, { commitment: 'finalized', encoding: 'base64' }]), addresses, 0)
+			} catch (e) {
+				node.log(`provider ${PROVIDERS[i]}: account read failed (${e instanceof Error ? e.message : 'error'})`)
+				return null
+			}
+		})
+		return selectQuorum(observations)
+	}
+	const slots = endpoints.map((endpoint, i) => {
 		try {
 			const genesis = (rpc(node, endpoint, 'getGenesisHash', []) as { result?: unknown }).result
-			if (genesis !== DEVNET_GENESIS) return null
+			if (genesis !== DEVNET_GENESIS) throw new Error('not devnet')
 			const slot = (rpc(node, endpoint, 'getSlot', [{ commitment: 'finalized' }]) as { result?: unknown }).result
-			return typeof slot === 'number' && Number.isSafeInteger(slot) ? slot : null
-		} catch {
+			if (typeof slot !== 'number' || !Number.isSafeInteger(slot)) throw new Error('bad slot')
+			return slot
+		} catch (e) {
+			node.log(`provider ${PROVIDERS[i]}: health check failed (${e instanceof Error ? e.message : 'error'})`)
 			return null
 		}
 	})
@@ -87,15 +105,18 @@ function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses:
 		try {
 			const raw = rpc(node, endpoint, 'getMultipleAccounts', [addresses, { commitment: 'finalized', encoding: 'base64', minContextSlot: floor }])
 			return normalizeSnapshot(raw, addresses, floor)
-		} catch {
+		} catch (e) {
+			node.log(`provider ${PROVIDERS[i]}: account read failed (${e instanceof Error ? e.message : 'error'})`)
 			return null
 		}
 	})
+	const distinct = new Set(observations.filter((o) => o !== null)).size
+	node.log(`account read: ${observations.filter((o) => o !== null).length}/3 providers answered, ${distinct} distinct snapshot(s)`)
 	return selectQuorum(observations)
 }
 
-function readAgreed(don: Runtime<Config>, endpoints: string[], addresses: string[]): Array<AccountSnapshot | null> {
-	const agreed = don.runInNodeMode(readAccounts, consensusIdenticalAggregation<string>())(endpoints, addresses).result()
+function readAgreed(don: Runtime<Config>, endpoints: string[], addresses: string[], healthCheck = true): Array<AccountSnapshot | null> {
+	const agreed = don.runInNodeMode(readAccounts, consensusIdenticalAggregation<string>())(endpoints, addresses, healthCheck).result()
 	return (JSON.parse(agreed) as SnapshotAccount[]).map((a) => (a ? { address: a.address, owner: a.owner, data: base64ToBytes(a.data) } : null))
 }
 
@@ -151,7 +172,7 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.TX_HASH_MISMATCH, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'stored transaction changed since review was requested' }
 	} else {
 		const plan = planReview(vaultTxAcc, vault, policy)
-		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination])[0] ?? null, policy)
+		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination], false)[0] ?? null, policy)
 	}
 	if (decision.verdict === VERDICT.APPROVE && config.screening && screen(runtime, decision.wallet!) === 'SANCTIONED') {
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.SCREENING_REJECTED, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'recipient failed sanctions screening' }
@@ -175,7 +196,8 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		.result()
 	const write = new cre.capabilities.SolanaClient(BigInt(config.chainSelector))
 		.writeReport(don, {
-			receiver: bytesToBase64(new PublicKey(config.guardProgram).toBytes()),
+			// JSON form: receiver as 0x-hex (account keys stay base64).
+			receiver: `0x${Array.from(new PublicKey(config.guardProgram).toBytes(), (b) => b.toString(16).padStart(2, '0')).join('')}`,
 			remainingAccounts: solanaAccountMetasToJson(accounts),
 			computeConfig: { computeLimit: config.computeLimit },
 			report,

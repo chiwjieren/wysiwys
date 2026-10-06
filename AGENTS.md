@@ -74,7 +74,9 @@ npx tsx scripts/e2e-devnet.ts [scenario]   # clean, lookalike, drift, overCap, o
 npm test --workspace=packages/decoder
 
 # CRE workflow
-cd workflow/<cre project> && cre workflow simulate <workflow> --target staging-settings   # save output to evidence/cre/
+cd workflow/confidential-preflight && cre workflow simulate review --target staging-settings --non-interactive \
+  --trigger-index 0 [--broadcast] --http-payload '{"multisig":"...","txIndex":"..."}'   # review workflow; see its README
+npx tsx scripts/propose-devnet.ts <scenario> / scripts/finish-devnet.ts <txIndex>   # pending review / vote + execute
 
 # Runner (event adapter)
 npm run dev --workspace=services/runner

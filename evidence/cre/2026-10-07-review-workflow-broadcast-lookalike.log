@@ -1,0 +1,34 @@
+Initializing...
+Loading settings...
+Checking RPC connectivity...
+Compiling workflow...
+✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 1175b3d5eab928fe844a9b339fec4774af982b54396cdeb68661cc2e7374a134
+  Config hash: 294ec326675f25fba229ce9cf76046799f406535e53fbed2e5651b758121524f
+✓ Parsed JSON input successfully
+✓ Created HTTP trigger payload with 2 fields
+2026-10-07T01:20:29Z [SIMULATION] Simulator Initialized
+
+2026-10-07T01:20:29Z [SIMULATION] Running trigger trigger=http-trigger@1.0.0-alpha
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Trigger requested TEE Execution your trigger will run in one of the following Tees:                │
+│     - AWS Nitro in us-west-2                                                                       │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+2026-10-07T01:20:35Z [USER LOG] provider alchemy: health check failed ([2]Unknown: Post "<url>": context deadline exceeded (Client.Timeout exceeded while awaiting headers))
+2026-10-07T01:20:36Z [USER LOG] account read: 2/3 providers answered, 1 distinct snapshot(s)
+
+✓ Workflow Simulation Result:
+"{\"review\":\"47PpHJxyYU2YwWnbvzz6vqpV2w2b6AoUUVWdmZ4xLfMi\",\"verdict\":\"reject\",\"reason\":8,\"summary\":\"recipient is not whitelisted\",\"txStatus\":2,\"receiverStatus\":0,\"txSignature\":\"3i8fEpD9ExSiFSdqbn6pSWpvRwqWe4QRDa1ygCA1mwCyRvtAoQaNmnQewnAMwoCCGaQT4u9e2upzytVMzGXRn87j\",\"error\":null}"
+
+2026-10-07T01:20:41Z [SIMULATION] Execution finished signal received
+2026-10-07T01:20:41Z [SIMULATION] Skipping WorkflowEngineV2
+
+
