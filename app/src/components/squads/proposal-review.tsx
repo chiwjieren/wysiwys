@@ -18,22 +18,35 @@ import {
 } from "@/lib/squads/sdk";
 import { readPaymentPreview, type PaymentPreview } from "@/lib/squads/payments";
 import { assertStandardExecution } from "@/lib/squads/execution";
+import {
+  executeGate,
+  isGuarded,
+  readReviews,
+  reviewPda,
+  reviewReasonText,
+  type Review,
+} from "@/lib/squads/review";
 import { figmaAssets } from "@/lib/figma-assets";
 import {
   Explorer,
   SquadFeedback,
   EmptyState,
   ProposalStatus,
+  ReviewBadge,
 } from "./treasury-ui";
 export function LiveProposal({ id }: { id: string }) {
   const { config, snapshot, account, error, busy, vote, execute } = useSquad();
   const [record, setRecord] = useState<ProposalRecord | null>();
   const [readError, setReadError] = useState("");
   const [decoded, setDecoded] = useState<PaymentPreview>();
+  // On-chain guard Review: undefined = not loaded or unreadable, null = none.
+  const [review, setReview] = useState<Review | null>();
+  const guarded = isGuarded(config);
   useEffect(() => {
     let cancelled = false;
     setRecord(undefined);
     setDecoded(undefined);
+    setReview(undefined);
     setReadError("");
     async function load() {
       if (!config) return;
@@ -57,9 +70,24 @@ export function LiveProposal({ id }: { id: string }) {
                 snapshot.vault,
               )
             : undefined;
+        let onChainReview: Review | null | undefined;
+        if (isGuarded(config))
+          try {
+            onChainReview = (
+              await readReviews(
+                rpc,
+                new PublicKey(config.guardProgram!),
+                new PublicKey(config.multisig),
+                [BigInt(id)],
+              )
+            )[id];
+          } catch {
+            onChainReview = undefined;
+          }
         if (!cancelled) {
           setDecoded(preview);
           setRecord(result);
+          setReview(onChainReview);
           setReadError("");
         }
       } catch (e) {
@@ -135,6 +163,20 @@ export function LiveProposal({ id }: { id: string }) {
   }
   const enabled =
     !!account && !!snapshot && !!record && !error && !readError && !busy;
+  const gate =
+    guarded && record
+      ? review === undefined
+        ? { enabled: false, reason: "The on-chain review could not be read" }
+        : executeGate(record.proposal.status.__kind, review, Date.now() / 1000)
+      : { enabled: true, reason: "" };
+  const reviewAddress =
+    guarded && config
+      ? reviewPda(
+          new PublicKey(config.guardProgram!),
+          new PublicKey(config.multisig),
+          BigInt(/^\d{1,20}$/.test(id) ? id : "0"),
+        ).toBase58()
+      : "";
   return (
     <div className="page-stack">
       <PageHeader
@@ -185,6 +227,50 @@ export function LiveProposal({ id }: { id: string }) {
       {record && (
         <div className="grid items-start gap-6 xl:grid-cols-[2.08fr_1fr]">
           <div className="space-y-5">
+            {guarded &&
+              (record.kind === "vault" || record.kind === "archived") && (
+                <Panel className="gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2>On-chain review</h2>
+                    <ReviewBadge review={review} />
+                  </div>
+                  {review === undefined ? (
+                    <p className="text-muted-foreground">
+                      The guard Review account could not be read. Refresh to try
+                      again.
+                    </p>
+                  ) : review === null ? (
+                    <p className="text-muted-foreground">
+                      No review requested. The guard has no Review account for
+                      this proposal, so it cannot be executed.
+                    </p>
+                  ) : review.status === "Pending" ? (
+                    <p>
+                      Review requested. Waiting for the Chainlink workflow to
+                      record a verdict on-chain.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="font-medium">
+                        {reviewReasonText(review.reason)}
+                      </p>
+                      {review.expiresAt > 0 && review.status !== "Executed" && (
+                        <p className="caption">
+                          {review.expiresAt < Date.now() / 1000
+                            ? "Verdict expired "
+                            : "Verdict valid until "}
+                          {new Date(review.expiresAt * 1000).toLocaleString()}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  <p className="caption">
+                    Recorded by the guard program from the Chainlink CRE report.
+                    This is the authoritative verdict.{" "}
+                    <Explorer address={reviewAddress} />
+                  </p>
+                </Panel>
+              )}
             <div
               className={`rounded-xl p-6 ${supported || record.kind === "archived" ? "bg-success-bg" : "bg-danger-bg"}`}
             >
@@ -194,7 +280,9 @@ export function LiveProposal({ id }: { id: string }) {
                   {record.kind === "archived"
                     ? "Payment executed"
                     : supported
-                      ? "Transaction decoded"
+                      ? guarded
+                        ? "Transaction decoded (preview)"
+                        : "Transaction decoded"
                       : "Unable to fully decode"}
                 </h2>
               </div>
@@ -211,7 +299,7 @@ export function LiveProposal({ id }: { id: string }) {
               <p className="caption mt-3">
                 {standard
                   ? "Decoded from the stored Squads transaction."
-                  : "Local preview · Separate from the Guard’s policy verdict."}
+                  : "Local decoder preview. It never overrides the on-chain review verdict."}
               </p>
             </div>
             <Panel className="gap-5">
@@ -369,22 +457,28 @@ export function LiveProposal({ id }: { id: string }) {
             <Panel className="gap-4">
               <h2>{standard ? "Execution" : "Guard review"}</h2>
               <div>
-                <StatusBadge>
-                  {standard
-                    ? record.proposal.status.__kind === "Executed"
+                {standard ? (
+                  <StatusBadge>
+                    {record.proposal.status.__kind === "Executed"
                       ? "Executed"
                       : record.proposal.status.__kind === "Approved"
                         ? "Approved by group"
-                        : "Awaiting approvals"
-                    : "Pending integration"}
-                </StatusBadge>
+                        : "Awaiting approvals"}
+                  </StatusBadge>
+                ) : record.kind === "vault" || record.kind === "archived" ? (
+                  <ReviewBadge review={review} />
+                ) : (
+                  <StatusBadge>Not applicable</StatusBadge>
+                )}
               </div>
               <p className="text-muted-foreground">
                 {standard
                   ? "An authorized executor can apply this proposal after the required member approvals and any timelock."
                   : record.kind === "vault"
-                    ? "Member votes and Guard approval are separate. No on-chain policy verdict is available yet."
-                    : "Approved settings require protected configuration execution."}
+                    ? "Execution needs the Squads approvals and an unexpired Approved review. The guard enforces both on-chain."
+                    : record.kind === "archived"
+                      ? "This payment has been executed."
+                      : "Approved settings require protected configuration execution."}
               </p>
               {(standard || record.kind === "vault") && (
                 <Button
@@ -394,7 +488,8 @@ export function LiveProposal({ id }: { id: string }) {
                     (standard
                       ? !!executionIssue
                       : !config?.settlementEnabled ||
-                        record.proposal.status.__kind !== "Approved")
+                        record.proposal.status.__kind !== "Approved" ||
+                        !gate.enabled)
                   }
                   onClick={() => void execute(BigInt(id), lines)}
                 >
@@ -407,6 +502,9 @@ export function LiveProposal({ id }: { id: string }) {
               )}
               {standard && executionIssue && (
                 <p className="caption">{executionIssue}</p>
+              )}
+              {!standard && record.kind === "vault" && gate.reason && (
+                <p className="caption">{gate.reason}</p>
               )}
               <p className="caption">
                 Proposal account{" "}

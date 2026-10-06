@@ -44,6 +44,7 @@ import {
 } from "./sdk";
 
 import { assertStandardExecution } from "./execution";
+import { isGuarded, readReviews, type Review } from "./review";
 import { assertDevnet } from "./network";
 import {
   buildGuardedPaymentInstruction,
@@ -60,6 +61,9 @@ type Snapshot = {
   tokens: { address: string; mint: string; amount: string; decimals: number }[];
   records: ProposalRecord[];
   latest: bigint;
+  // Guarded groups only: on-chain Review per proposal index (null = none).
+  // Undefined when the group is standard or the review read failed.
+  reviews?: Record<string, Review | null>;
 };
 type ContextValue = {
   mode: "loading" | "unconfigured" | "live" | "error";
@@ -275,6 +279,21 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           cursor && cursor < latest ? cursor : latest,
         ),
       ]);
+      const visible = records.filter((p): p is ProposalRecord => p !== null);
+      let reviews: Record<string, Review | null> | undefined;
+      if (isGuarded(config))
+        try {
+          reviews = await readReviews(
+            rpc,
+            new PublicKey(config.guardProgram!),
+            new PublicKey(config.multisig),
+            visible
+              .filter((r) => r.kind === "vault" || r.kind === "archived")
+              .map((r) => BigInt(r.proposal.transactionIndex.toString())),
+          );
+        } catch {
+          reviews = undefined;
+        }
       const tokens = tokenAccounts.value.map(({ pubkey, account }) => {
         const parsed = account.data.parsed.info;
         return {
@@ -294,8 +313,9 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         vault,
         sol,
         tokens,
-        records: records.filter((p): p is ProposalRecord => p !== null),
+        records: visible,
         latest,
+        reviews,
       });
       setError("");
     } catch (e) {
