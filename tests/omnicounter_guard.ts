@@ -1,13 +1,13 @@
 import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
+import { testProvider } from "./helpers/provider";
 
 const SQUADS_PROGRAM_ID = new PublicKey("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf");
 const SQUADS_PROGRAM_CONFIG = new PublicKey("BSTq9w3kZwNwpBXJEvTZz2G9ZTNyKBvoSeXMvwb4cNZr");
 
 describe("smoke", () => {
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
+  const provider = testProvider();
   const program = anchor.workspace.omnicounterGuard as anchor.Program;
 
   it("guard is deployed to the local validator", async () => {

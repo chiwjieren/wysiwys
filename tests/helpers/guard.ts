@@ -4,7 +4,7 @@ import { Connection, Keypair, PublicKey, SYSVAR_CLOCK_PUBKEY } from "@solana/web
 import { expect } from "chai";
 import { SEEDS, txIndexSeed } from "@omnicounter/shared";
 import type { OmnicounterGuard } from "../../target/types/omnicounter_guard";
-import { createDesk, DeskFixture, DeskOptions } from "./squads";
+import { createDesk, DeskFixture, DeskOptions, Proposed } from "./squads";
 
 export const provider = () => anchor.getProvider() as anchor.AnchorProvider;
 export const payer = () => (provider().wallet as anchor.Wallet).payer as Keypair;
@@ -73,4 +73,25 @@ export async function setupGuardedDesk(
     .signers([desk.createKey])
     .rpc({ commitment: "confirmed" });
   return { ...desk, config };
+}
+
+export async function requestReview(
+  desk: DeskFixture,
+  p: Proposed,
+  hashes: { sih?: Uint8Array; trh?: Uint8Array } = {},
+) {
+  const sih = hashes.sih ?? randomHash();
+  const trh = hashes.trh ?? randomHash();
+  const review = reviewPda(desk.multisigPda, p.transactionIndex);
+  const sig = await guardProgram()
+    .methods.requestReview(Array.from(sih), Array.from(trh))
+    .accountsPartial({
+      multisig: desk.multisigPda,
+      vaultTransaction: p.transactionPda,
+      proposal: p.proposalPda,
+      review,
+      payer: payer().publicKey,
+    })
+    .rpc({ commitment: "confirmed" });
+  return { review, sig, sih, trh };
 }

@@ -1,11 +1,12 @@
 import * as multisig from "@sqds/multisig";
 import {
-  AccountMeta, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram,
+  AccountMeta, Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction,
   TransactionInstruction, TransactionMessage,
 } from "@solana/web3.js";
 import {
-  AuthorityType, createMint, createSetAuthorityInstruction, createTransferCheckedInstruction,
-  getOrCreateAssociatedTokenAccount, mintTo,
+  AuthorityType, MINT_SIZE, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction,
+  createInitializeMint2Instruction, createMintToInstruction, createSetAuthorityInstruction,
+  createTransferCheckedInstruction, getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { SEEDS } from "@omnicounter/shared";
 
@@ -41,6 +42,24 @@ export async function confirm(connection: Connection, sig: Promise<string> | str
   const s = await sig;
   await connection.confirmTransaction(s, "confirmed");
   return s;
+}
+
+/**
+ * Sends with a blockhash fetched at "confirmed". web3.js's internal blockhash cache (used by the
+ * spl-token convenience helpers) polls "finalized", which lags on the local validator and can hand
+ * out an already expired blockhash ("Blockhash not found").
+ */
+export async function sendWithFreshBlockhash(
+  connection: Connection,
+  ixs: TransactionInstruction[],
+  signers: Keypair[],
+): Promise<string> {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  const tx = new Transaction({ feePayer: signers[0].publicKey, blockhash, lastValidBlockHeight }).add(...ixs);
+  tx.sign(...signers);
+  const sig = await connection.sendRawTransaction(tx.serialize());
+  await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+  return sig;
 }
 
 async function airdrop(connection: Connection, to: PublicKey, sol: number) {
@@ -101,16 +120,34 @@ export async function createDesk(
 
   const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
   await airdrop(connection, vaultPda, 1);
-  const mint = await createMint(connection, payer, payer.publicKey, null, USDC_DECIMALS);
-  const vaultAta = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, vaultPda, true)).address;
-  await mintTo(connection, payer, mint, vaultAta, payer, usdc(2_000_000));
-
+  const mint = Keypair.generate();
   const counterparty = Keypair.generate();
-  const counterpartyAta = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, counterparty.publicKey)).address;
   const lookalike = Keypair.generate();
-  const lookalikeAta = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, lookalike.publicKey)).address;
+  const vaultAta = getAssociatedTokenAddressSync(mint.publicKey, vaultPda, true);
+  const counterpartyAta = getAssociatedTokenAddressSync(mint.publicKey, counterparty.publicKey);
+  const lookalikeAta = getAssociatedTokenAddressSync(mint.publicKey, lookalike.publicKey);
+  const ata = (address: PublicKey, owner: PublicKey) =>
+    createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, address, owner, mint.publicKey);
+  await sendWithFreshBlockhash(
+    connection,
+    [
+      SystemProgram.createAccount({
+        fromPubkey: payer.publicKey,
+        newAccountPubkey: mint.publicKey,
+        space: MINT_SIZE,
+        lamports: await connection.getMinimumBalanceForRentExemption(MINT_SIZE),
+        programId: TOKEN_PROGRAM_ID,
+      }),
+      createInitializeMint2Instruction(mint.publicKey, USDC_DECIMALS, payer.publicKey, null),
+      ata(vaultAta, vaultPda),
+      ata(counterpartyAta, counterparty.publicKey),
+      ata(lookalikeAta, lookalike.publicKey),
+      createMintToInstruction(mint.publicKey, vaultAta, payer.publicKey, usdc(2_000_000)),
+    ],
+    [payer, mint],
+  );
 
-  return { createKey, multisigPda, vaultPda, executorPda, members, mint, vaultAta, counterparty, counterpartyAta, lookalike, lookalikeAta };
+  return { createKey, multisigPda, vaultPda, executorPda, members, mint: mint.publicKey, vaultAta, counterparty, counterpartyAta, lookalike, lookalikeAta };
 }
 
 export function payoutIxs(desk: DeskFixture, destinationAta: PublicKey, amount: bigint): TransactionInstruction[] {

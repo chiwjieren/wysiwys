@@ -3,9 +3,10 @@ import { Keypair } from "@solana/web3.js";
 import { expect } from "chai";
 import { createDesk } from "./helpers/squads";
 import { POLICY_HASH, configPda, executorPda, expectError, guardProgram, payer, setupGuardedDesk } from "./helpers/guard";
+import { testProvider } from "./helpers/provider";
 
 describe("initialize_guard", () => {
-  anchor.setProvider(anchor.AnchorProvider.env());
+  testProvider();
   const program = guardProgram();
 
   const init = (multisig: anchor.web3.PublicKey, createKey: Keypair) =>

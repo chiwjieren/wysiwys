@@ -3,10 +3,10 @@ import * as multisig from "@sqds/multisig";
 import { Keypair } from "@solana/web3.js";
 import { expect } from "chai";
 import { approve, createDesk, payoutIxs, proposePayout, usdc } from "./helpers/squads";
+import { testProvider } from "./helpers/provider";
 
 describe("squads desk fixture", () => {
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
+  const provider = testProvider();
   const payer = (provider.wallet as anchor.Wallet).payer as Keypair;
   const guardId = (anchor.workspace.omnicounterGuard as anchor.Program).programId;
 
