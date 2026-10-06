@@ -11,3 +11,4 @@ next-env.d.ts
 
 .next-build/
 .next-preview/
+!.env.example

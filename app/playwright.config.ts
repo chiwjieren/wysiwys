@@ -26,7 +26,7 @@ export default defineConfig({
   webServer: {
     // Browser specs still cover the opt-in standard group creation path.
     command:
-      "OMNICOUNTER_NEXT_DIST=.next-browser NEXT_PUBLIC_ENABLE_STANDARD_GROUPS=true npm run dev -- --port 3105",
+      "WYSIWYS_NEXT_DIST=.next-browser NEXT_PUBLIC_ENABLE_STANDARD_GROUPS=true npm run dev -- --port 3105",
     url: "http://127.0.0.1:3105",
     reuseExistingServer: false,
     timeout: 120000,

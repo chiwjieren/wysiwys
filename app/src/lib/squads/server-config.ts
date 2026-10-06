@@ -49,7 +49,7 @@ export function parseDeployment(
   };
 }
 export async function loadConfig(): Promise<SquadConfig | null> {
-  const configuredPath = process.env.OMNICOUNTER_DEPLOYMENT_PATH;
+  const configuredPath = process.env.WYSIWYS_DEPLOYMENT_PATH;
   let contents: string;
   try {
     contents = await readFile(
@@ -64,7 +64,7 @@ export async function loadConfig(): Promise<SquadConfig | null> {
   }
   return parseDeployment(
     JSON.parse(contents),
-    !!process.env.OMNICOUNTER_SETTLEMENT_URL,
+    !!process.env.WYSIWYS_SETTLEMENT_URL,
   );
 }
 export function isPrepareRequest(

@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     rateLimit();
     const wallet = await authenticate(request);
     const config = await loadConfig();
-    const base = process.env.OMNICOUNTER_SETTLEMENT_URL;
+    const base = process.env.WYSIWYS_SETTLEMENT_URL;
     if (!config || !config.guardProgram || !config.executor || !base)
       return Response.json(
         { error: "Guard settlement adapter is not configured." },
@@ -43,9 +43,9 @@ export async function POST(request: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(process.env.OMNICOUNTER_SETTLEMENT_TOKEN
+          ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
             ? {
-                Authorization: `Bearer ${process.env.OMNICOUNTER_SETTLEMENT_TOKEN}`,
+                Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
               }
             : {}),
         },

@@ -164,7 +164,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         let saved: { address: string; name: string }[] = [];
         try {
           const stored = JSON.parse(
-            localStorage.getItem("omnicounter.groups") || "[]",
+            localStorage.getItem("wysiwys.groups") || "[]",
           );
           if (Array.isArray(stored))
             saved = stored.filter(
@@ -179,7 +179,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         setGroups(saved);
         const requested =
           new URL(window.location.href).searchParams.get("group") ||
-          localStorage.getItem("omnicounter.activeGroup");
+          localStorage.getItem("wysiwys.activeGroup");
         if (requested) {
           const address = new PublicKey(requested).toBase58();
           const groupResponse =
@@ -705,7 +705,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         { address, name },
       ];
       try {
-        localStorage.setItem("omnicounter.groups", JSON.stringify(next));
+        localStorage.setItem("wysiwys.groups", JSON.stringify(next));
       } catch {
         /* Chain state is authoritative. */
       }
@@ -747,7 +747,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       );
       setMode("live");
       try {
-        localStorage.setItem("omnicounter.activeGroup", key);
+        localStorage.setItem("wysiwys.activeGroup", key);
       } catch {
         /* Public link remains usable. */
       }
