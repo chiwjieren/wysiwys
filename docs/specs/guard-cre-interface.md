@@ -118,8 +118,8 @@ Budget: the full forwarder transaction used well under 290,000 CU in local tests
 |---|---|---|
 | `GUARD_FORWARDER_PROGRAM` | `7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK` (simulator mock forwarder) | CRE Solana onchain-write guide; `chainlink-solana` `mock-forwarder` `declare_id!`; executable on devnet |
 | `GUARD_FORWARDER_STATE` | `5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7` | Same guide; owned by the mock forwarder on devnet |
-| `GUARD_WORKFLOW_OWNER` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | Simulator default owner (`chainlink` `core/services/workflows/cmd/cre/utils/standalone_engine.go`, `defaultOwner`); confirm in the first simulation on the installed CLI |
-| `GUARD_POLICY_HASH` | `npx tsx scripts/policy-hash.ts workflow/policy.json` | `policyHash` in `packages/shared` (below) |
+| `GUARD_WORKFLOW_OWNER` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | Simulator default owner (`chainlink` `core/services/workflows/cmd/cre/utils/standalone_engine.go`, `defaultOwner`); confirmed on CLI v1.33.0 / SDK 1.23.0: `evidence/cre/2026-10-07-solana-report-owner-spike.log` (metadata[42..62] = `aa` x 20, raw report 262 of 265 bytes, payload intact) |
+| `GUARD_POLICY_HASH` | `402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0` for the current private `workflow/policy.json` (recompute with `npx tsx scripts/policy-hash.ts`) | `policyHash` in `packages/shared` (below) |
 
 Live (deployed workflow) forwarder on devnet, for a future config: program `CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5`, state `8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9`. GuardConfig is immutable, so switching means a new multisig and config.
 
