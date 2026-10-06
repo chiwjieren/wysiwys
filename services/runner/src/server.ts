@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Listener } from "./listener";
+import type { CreRunner } from "./cre";
 import { SettlementError, toWire, type Settlement } from "./settlement";
 import type { Store } from "./store";
 
@@ -12,6 +13,10 @@ type Deps = {
   settlement?: Settlement;
   /** Bearer token the app's server must send. Null with settlement present means fail closed (503). */
   settlementToken?: string | null;
+  /** Runs the CRE review simulation; absent means POST /review is not served (404). */
+  review?: Pick<CreRunner, "run">;
+  /** Bearer token for POST /review. Null with review present means fail closed (503). */
+  reviewToken?: string | null;
   rateLimitPerMinute?: number;
   log?: (line: string) => void;
 };
@@ -95,9 +100,29 @@ export function createStatusServer(d: Deps): Server {
     throw new HttpError(404, "not found");
   }
 
+  async function reviewRoute(req: IncomingMessage): Promise<[number, unknown]> {
+    if (!d.reviewToken) throw new HttpError(503, "review runner is not configured");
+    if (!tokenMatches(req.headers.authorization, d.reviewToken)) throw new HttpError(401, "unauthorized");
+    if (!allow(req.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "too many requests");
+    const body = (await readJson(req)) as Record<string, unknown>;
+    let result;
+    try {
+      result = await d.review!.run({ multisig: String(body?.multisig ?? ""), txIndex: String(body?.txIndex ?? "") });
+    } catch (e) {
+      if (e instanceof Error && /invalid/.test(e.message)) throw new HttpError(400, e.message);
+      throw e;
+    }
+    // The outcome on chain is the truth; this is the run log for operators.
+    return [result.ok ? 200 : 502, result];
+  }
+
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
+      if (url.pathname === "/review" && req.method === "POST" && d.review) {
+        const [status, body] = await reviewRoute(req);
+        return send(res, status, body);
+      }
       if (url.pathname.startsWith("/frontend/") && d.settlement) {
         const [status, body] = await settlementRoute(req, url);
         return send(res, status, body);

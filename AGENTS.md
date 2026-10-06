@@ -146,7 +146,7 @@ Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing an
 - Listener: `logsSubscribe` on the Guard program via a configured provider, act only on **finalized** events, parse Anchor events with the IDL, backfill with `getSignaturesForAddress` on startup and every minute from a stored cursor, dedupe events by `(signature, index)` and reviews by `review`. Built: `services/runner/src/listener.ts`.
 - Sends authenticated, idempotent HTTP triggers to CRE (or runs `cre workflow simulate` in the demo setup). `POST /review` is bearer-token protected and rate limited.
 - SQLite stores events for the activity feed. The DB is history, not truth.
-- Adapter down means reviews do not start and payments cannot execute (fail closed). Expose health on `GET /status` (503 when not subscribed or the last backfill is over 2 minutes old) and history on `GET /reviews`. `POST /review` (running `cre workflow simulate`) is not built yet.
+- Adapter down means reviews do not start and payments cannot execute (fail closed). Expose health on `GET /status` (503 when not subscribed or the last backfill is over 2 minutes old) and history on `GET /reviews`. `POST /review` (bearer `REVIEW_TOKEN`) runs `cre workflow simulate --broadcast` for one review; the listener does the same in-process for each new review when `CRE_PROJECT_DIR` is set. Settlement routes for the app: `/frontend/propose`, `/frontend/execute`, `/frontend/groups/:multisig` (bearer `SETTLEMENT_TOKEN`).
 
 ### Web app (`app/`)
 - Next.js App Router, Tailwind CSS, shadcn/ui, built from the approved Figma; see `app/README.md` and `app/docs/implementation-plan.md`.

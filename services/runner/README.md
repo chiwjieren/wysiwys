@@ -4,7 +4,8 @@ EC2 service: listener for the Wysiwys guard, CRE trigger and SQLite history. Pla
 
 - Listens to the guard program at `finalized`: WebSocket `logsSubscribe` plus a `getSignaturesForAddress` backfill on startup and every minute from a stored cursor.
 - Stores `ReviewRequested`, `DecisionRecorded` and `Executed` in SQLite (`reviews`, `events`). History only; the chain is the truth.
-- Sends one CRE trigger per new Pending review (`POST { multisig, txIndex }`, bearer token); failures are retried every tick.
+- With `CRE_PROJECT_DIR` set, runs `cre workflow simulate <CRE_WORKFLOW> --target <CRE_TARGET> --non-interactive --trigger-index 0 --http-payload {multisig,txIndex} [--broadcast]` for each new Pending review: one at a time, identical requests share a run, hard timeout, URLs redacted from the kept log, up to 5 attempts. `POST /review { multisig, txIndex }` (bearer `REVIEW_TOKEN`) reruns one and returns the sanitized log.
+- Otherwise sends one HTTP trigger per new Pending review (`POST { multisig, txIndex }`, bearer token); failures are retried every tick.
 - Settlement routes for the app (bearer `SETTLEMENT_TOKEN`, rate limited, identifiers only): `POST /frontend/propose` returns `request_review`, `POST /frontend/execute` returns `guarded_execute` (Approved reviews only), `GET /frontend/groups/:multisig` describes a guarded group.
 - `GET /status`: 200 when subscribed and the last backfill is under 2 minutes old, else 503. `GET /reviews?limit=`: review history.
 
@@ -25,6 +26,11 @@ Env (root `.env` locally, SSM on EC2):
 | `CRE_TRIGGER_TOKEN` | unset |
 | `BACKFILL_INTERVAL_MS` | `60000` |
 | `SETTLEMENT_TOKEN` | unset: `/frontend/*` routes answer 503 |
+| `CRE_PROJECT_DIR` | unset: no CRE runner (HTTP or log trigger instead) |
+| `CRE_WORKFLOW`, `CRE_TARGET` | `review`, `staging-settings` |
+| `CRE_BROADCAST` | `true` (`false` for dry runs) |
+| `CRE_BIN`, `CRE_TIMEOUT_MS` | `cre`, `300000` |
+| `REVIEW_TOKEN` | unset: `POST /review` answers 503 |
 
 The guard program id comes from `deployments/devnet.json`, else the shared IDL address.
 

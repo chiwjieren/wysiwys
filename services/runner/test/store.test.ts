@@ -97,3 +97,13 @@ test("listReviews returns newest first and counts", () => {
   assert.deepEqual(s.listReviews(10).map((r) => r.review), ["Other", R]);
   assert.deepEqual(s.counts(), { pending: 2 });
 });
+
+test("a review stops being retried after the maximum number of trigger attempts", () => {
+  const s = openStore(":memory:");
+  s.applyEvent(requested, meta("s1"));
+  for (let i = 0; i < 4; i++) s.markTrigger(R, false, "fail");
+  assert.equal(s.pendingTriggers(5).length, 1);
+  s.markTrigger(R, false, "fail");
+  assert.deepEqual(s.pendingTriggers(5), []);
+  assert.equal(s.getReview(R)!.trigger_attempts, 5);
+});

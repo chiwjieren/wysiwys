@@ -250,3 +250,76 @@ test("settlement routes are rate limited per client", async () => {
     s.close();
   }
 });
+
+// ---------------------------------------------------------------- POST /review
+
+async function serveReview(token: string | null) {
+  const runs: unknown[] = [];
+  const server = createStatusServer({
+    programId: "Guard111",
+    store: openStore(":memory:"),
+    health: () => ({ ok: true, subscribed: true, lastBackfillAt: 1, lastBackfillError: null, lastLogAt: null, cursor: null }),
+    review: {
+      run: async (r: any) => {
+        runs.push(r);
+        if (r.txIndex === "x") throw new Error("invalid review identifiers");
+        return { ok: r.txIndex !== "13", exitCode: r.txIndex === "13" ? 1 : 0, timedOut: false, durationMs: 5, log: ["[USER LOG] ok"] };
+      },
+    },
+    reviewToken: token,
+    log: () => {},
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (body: unknown, auth: string | null = `Bearer ${token}`) =>
+    fetch(`${base}/review`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
+      body: JSON.stringify(body),
+    });
+  return { post, runs, close: () => server.close() };
+}
+
+test("POST /review runs the simulation and returns its sanitized result", async () => {
+  const s = await serveReview("rt");
+  try {
+    const res = await s.post({ multisig: "Ms1", txIndex: "7", extra: "ignored" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, exitCode: 0, timedOut: false, durationMs: 5, log: ["[USER LOG] ok"] });
+    assert.deepEqual(s.runs, [{ multisig: "Ms1", txIndex: "7" }]);
+    const failed = await s.post({ multisig: "Ms1", txIndex: "13" });
+    assert.equal(failed.status, 502);
+    assert.equal(((await failed.json()) as any).ok, false);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /review is fail closed and authenticated", async () => {
+  const none = await serveReview(null);
+  try {
+    assert.equal((await none.post({ multisig: "Ms1", txIndex: "7" }, "Bearer x")).status, 503);
+  } finally {
+    none.close();
+  }
+  const s = await serveReview("rt");
+  try {
+    assert.equal((await s.post({ multisig: "Ms1", txIndex: "7" }, null)).status, 401);
+    assert.equal((await s.post({ multisig: "Ms1", txIndex: "x" })).status, 400);
+    assert.equal(s.runs.length, 1);
+  } finally {
+    s.close();
+  }
+});
+
+test("config reads the CRE runner settings", () => {
+  const off = loadConfig({}, () => null);
+  assert.equal(off.cre, null);
+  const cfg = loadConfig(
+    { CRE_PROJECT_DIR: "/w/cre", CRE_WORKFLOW: "review", CRE_TARGET: "staging-settings", CRE_BROADCAST: "false", REVIEW_TOKEN: "rt" },
+    () => null,
+  );
+  assert.deepEqual(cfg.cre, { command: ["cre"], projectDir: "/w/cre", workflow: "review", target: "staging-settings", broadcast: false, timeoutMs: 300000 });
+  assert.equal(cfg.reviewToken, "rt");
+  assert.equal(loadConfig({ CRE_PROJECT_DIR: "/w/cre" }, () => null).cre!.broadcast, true);
+});
