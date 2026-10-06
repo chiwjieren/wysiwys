@@ -23,7 +23,18 @@ export class SettlementError extends Error {
 
 export type WireInstruction = { programId: string; keys: { pubkey: string; isSigner: boolean; isWritable: boolean }[]; data: string };
 export type Ids = { multisig: string; txIndex: string; member: string };
-export type GuardedGroup = { multisig: string; programId: string; executorPda: string; vaultIndex: number; guardReady: true };
+export type TokenInfo = { mint: string; symbol: string; decimals: number };
+export type GuardedGroup = { multisig: string; programId: string; executorPda: string; vaultIndex: number; guardReady: true; token?: TokenInfo };
+/** GuardConfig values for new treasuries, from deployments/devnet.json `guard` (same strings). */
+export type GuardSetup = {
+  forwarderProgram: string;
+  forwarderState: string;
+  policyHash: string;
+  workflowOwner: string;
+  maxReviewLifetime: string;
+  reviewDeadlineSecs: string;
+};
+export type PreparedGroup = Omit<GuardedGroup, "guardReady"> & { guardReady: false; instruction: TransactionInstruction };
 export type Destination = { kind: "sol" | "spl"; destination: string };
 
 export function toWire(ix: TransactionInstruction): WireInstruction {
@@ -49,8 +60,9 @@ export function parseIds(input: unknown): { multisig: PublicKey; txIndex: bigint
   }
 }
 
-export function createSettlement(o: { connection: Connection; programId: PublicKey }) {
+export function createSettlement(o: { connection: Connection; programId: PublicKey; guardSetup?: GuardSetup | null; token?: TokenInfo | null }) {
   const { connection, programId } = o;
+  const token = o.token ?? undefined;
   // Read-only provider: instructions are built here and signed by the member's wallet in the app.
   const wallet = new anchor.Wallet(Keypair.generate());
   const provider = new anchor.AnchorProvider(connection, wallet, { commitment: "finalized" });
@@ -128,10 +140,56 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
     }
     const info = await connection.getAccountInfo(configPda(ms), "confirmed");
     if (!info || !info.owner.equals(programId)) return null;
-    return { multisig: ms.toBase58(), programId: programId.toBase58(), executorPda: executorPda(ms).toBase58(), vaultIndex: 0, guardReady: true };
+    return {
+      multisig: ms.toBase58(), programId: programId.toBase58(), executorPda: executorPda(ms).toBase58(), vaultIndex: 0, guardReady: true,
+      ...(token ? { token } : {}),
+    };
   }
 
-  return { requestReview, guardedExecute, destinationOf, guardedGroup };
+  /**
+   * initialize_guard for a treasury the creator is about to make in the same transaction as
+   * multisigCreateV2 (the guard checks the create key, the multisig PDA and that the executor PDA is the
+   * only Execute member). Uses this deployment's guard values, so every guarded treasury shares the
+   * forwarder, workflow owner and policy commitment.
+   */
+  async function prepareGuardedGroup(input: unknown): Promise<PreparedGroup> {
+    if (!o.guardSetup) throw new SettlementError(503, "guard values are not configured on the runner");
+    const i = (input ?? {}) as Record<string, unknown>;
+    let ms: PublicKey, creator: PublicKey, createKey: PublicKey;
+    try {
+      ms = new PublicKey(String(i.multisig));
+      creator = new PublicKey(String(i.creator));
+      createKey = new PublicKey(String(i.createKey));
+    } catch {
+      throw new SettlementError(400, "invalid identifiers: expected { multisig, creator, createKey }");
+    }
+    if (!sqds.getMultisigPda({ createKey })[0].equals(ms)) throw new SettlementError(400, "multisig is not derived from this create key");
+    if (await connection.getAccountInfo(configPda(ms), "confirmed")) throw new SettlementError(409, "guard config already exists for this multisig");
+    const g = o.guardSetup;
+    const hex = (s: string, n: number) => {
+      const b = Buffer.from(s.replace(/^0x/, ""), "hex");
+      if (b.length !== n) throw new SettlementError(503, "guard values are malformed on the runner");
+      return Array.from(b);
+    };
+    const instruction = await program.methods
+      .initializeGuard(
+        new PublicKey(g.forwarderProgram),
+        new PublicKey(g.forwarderState),
+        hex(g.policyHash, 32),
+        hex(g.workflowOwner, 20),
+        new anchor.BN(g.maxReviewLifetime),
+        new anchor.BN(g.reviewDeadlineSecs),
+      )
+      .accountsPartial({ multisig: ms, createKey, config: configPda(ms), executor: executorPda(ms), payer: creator })
+      .instruction();
+    return {
+      multisig: ms.toBase58(), programId: programId.toBase58(), executorPda: executorPda(ms).toBase58(), vaultIndex: 0, guardReady: false,
+      ...(token ? { token } : {}),
+      instruction,
+    };
+  }
+
+  return { requestReview, guardedExecute, destinationOf, guardedGroup, prepareGuardedGroup };
 }
 
 export type Settlement = ReturnType<typeof createSettlement>;

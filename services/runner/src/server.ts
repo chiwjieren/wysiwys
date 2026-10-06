@@ -94,7 +94,10 @@ export function createStatusServer(d: Deps): Server {
       return group ? [200, group] : [404, { error: "not a guarded group" }];
     }
     if (req.method !== "POST") throw new HttpError(405, "method not allowed");
-    if (url.pathname === "/frontend/groups/prepare") return [501, { error: "guarded groups are created by the bootstrap" }];
+    if (url.pathname === "/frontend/groups/prepare") {
+      const { instruction, ...group } = await s.prepareGuardedGroup(await readJson(req));
+      return [200, { ...group, guardInstruction: toWire(instruction) }];
+    }
     if (url.pathname === "/frontend/propose") return [200, { guardInstruction: toWire(await s.requestReview(await readJson(req))) }];
     if (url.pathname === "/frontend/execute") return [200, { guardInstruction: toWire(await s.guardedExecute(await readJson(req))) }];
     throw new HttpError(404, "not found");

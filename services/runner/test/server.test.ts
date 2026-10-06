@@ -74,6 +74,14 @@ test("config takes the program id from deployments/devnet.json when present", ()
   assert.equal(cfg.programId, "FromDeployments111");
 });
 
+test("config takes guard values and token from deployments/devnet.json for new treasuries", () => {
+  const dep = { programId: "P1", guard: { forwarderProgram: "F", forwarderState: "S", policyHash: "ab", workflowOwner: "cd", maxReviewLifetime: "3600", reviewDeadlineSecs: "900" }, token: { name: "Mock USD", symbol: "mUSD", decimals: 6, uri: "" }, mint: "M" };
+  const cfg = loadConfig({}, (p) => (p.endsWith("devnet.json") ? JSON.stringify(dep) : null));
+  assert.deepEqual(cfg.guardSetup, dep.guard);
+  assert.deepEqual(cfg.token, { mint: "M", symbol: "mUSD", decimals: 6 });
+  assert.equal(loadConfig({}, () => null).guardSetup, null);
+});
+
 test("config falls back to the shared IDL address and public devnet RPC", () => {
   const cfg = loadConfig({}, () => null);
   assert.equal(cfg.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");
@@ -132,6 +140,11 @@ function fakeSettlement(calls: string[]): Settlement {
       return ix;
     },
     destinationOf: async () => ({ kind: "spl", destination: "x" }),
+    prepareGuardedGroup: async (input: any) => {
+      calls.push(`prepareGroup:${input.multisig}`);
+      if (input.multisig === "Exists") throw new SettlementError(409, "guard config already exists for this multisig");
+      return { multisig: input.multisig, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: false as const, instruction: ix };
+    },
     guardedGroup: async (ms: string) =>
       ms === "Guarded1111111111111111111111111111111111111"
         ? { multisig: ms, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: true as const }
@@ -226,7 +239,7 @@ test("settlement routes reject bad JSON and oversized bodies", async () => {
   }
 });
 
-test("GET /frontend/groups/:multisig returns guarded groups, 404 otherwise; group creation is 501", async () => {
+test("GET /frontend/groups/:multisig returns guarded groups, 404 otherwise; POST prepare returns initialize_guard", async () => {
   const s = await serveSettlement("tok");
   try {
     const auth = { authorization: "Bearer tok" };
@@ -234,7 +247,14 @@ test("GET /frontend/groups/:multisig returns guarded groups, 404 otherwise; grou
     assert.equal(ok.status, 200);
     assert.equal(((await ok.json()) as any).executorPda, "E");
     assert.equal((await fetch(`${s.base}/frontend/groups/Other`, { headers: auth })).status, 404);
-    assert.equal((await s.post("/frontend/groups/prepare", { multisig: "x", creator: "y" })).status, 501);
+    const prep = await s.post("/frontend/groups/prepare", { multisig: "New1", creator: "C", createKey: "K" });
+    assert.equal(prep.status, 200);
+    const body: any = await prep.json();
+    assert.equal(body.executorPda, "E");
+    assert.equal(body.guardReady, false);
+    assert.equal(body.guardInstruction.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");
+    assert.equal(body.instruction, undefined);
+    assert.equal((await s.post("/frontend/groups/prepare", { multisig: "Exists", creator: "C", createKey: "K" })).status, 409);
   } finally {
     s.close();
   }

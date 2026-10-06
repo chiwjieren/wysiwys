@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import idl from "@wysiwys/shared/idl/wysiwys_guard.json" with { type: "json" };
+import type { GuardSetup, TokenInfo } from "./settlement";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEPLOYMENTS = resolve(here, "../../../deployments/devnet.json");
@@ -22,6 +23,10 @@ export type RunnerConfig = {
   cre: { command: string[]; projectDir: string; workflow: string; target: string; broadcast: boolean; timeoutMs: number } | null;
   /** Bearer token for POST /review. */
   reviewToken: string | null;
+  /** GuardConfig values for treasuries created in the app (deployments/devnet.json `guard`). */
+  guardSetup: GuardSetup | null;
+  /** Treasury token (mUSD) for group descriptions. */
+  token: TokenInfo | null;
 };
 
 const readOrNull = (path: string): string | null => {
@@ -38,7 +43,8 @@ const readOrNull = (path: string): string | null => {
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: string) => string | null = readOrNull): RunnerConfig {
   const deployments = read(DEPLOYMENTS);
-  const programId = (deployments ? JSON.parse(deployments).programId : undefined) ?? idl.address;
+  const dep = deployments ? JSON.parse(deployments) : {};
+  const programId = dep.programId ?? idl.address;
   return {
     programId,
     rpcUrl: env.HELIUS_DEVNET_RPC_URL || "https://api.devnet.solana.com",
@@ -60,5 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
         }
       : null,
     reviewToken: env.REVIEW_TOKEN || null,
+    guardSetup: dep.guard ?? null,
+    token: dep.mint && dep.token ? { mint: dep.mint, symbol: dep.token.symbol, decimals: dep.token.decimals } : null,
   };
 }

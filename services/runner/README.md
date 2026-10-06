@@ -6,7 +6,7 @@ EC2 service: listener for the Wysiwys guard, CRE trigger and SQLite history. Pla
 - Stores `ReviewRequested`, `DecisionRecorded` and `Executed` in SQLite (`reviews`, `events`). History only; the chain is the truth.
 - With `CRE_PROJECT_DIR` set, runs `cre workflow simulate <CRE_WORKFLOW> --target <CRE_TARGET> --non-interactive --trigger-index 0 --http-payload {multisig,txIndex} [--broadcast]` for each new Pending review: one at a time, identical requests share a run, hard timeout, URLs redacted from the kept log, up to 5 attempts. `POST /review { multisig, txIndex }` (bearer `REVIEW_TOKEN`) reruns one and returns the sanitized log.
 - Otherwise sends one HTTP trigger per new Pending review (`POST { multisig, txIndex }`, bearer token); failures are retried every tick.
-- Settlement routes for the app (bearer `SETTLEMENT_TOKEN`, rate limited, identifiers only): `POST /frontend/propose` returns `request_review`, `POST /frontend/execute` returns `guarded_execute` (Approved reviews only), `GET /frontend/groups/:multisig` describes a guarded group.
+- Settlement routes for the app (bearer `SETTLEMENT_TOKEN`, rate limited, identifiers only): `POST /frontend/propose` returns `request_review`, `POST /frontend/execute` returns `guarded_execute` (Approved reviews only), `GET /frontend/groups/:multisig` describes a guarded group, `POST /frontend/groups/prepare { multisig, creator, createKey }` returns `initialize_guard` (with this deployment's guard values) for a treasury the app creates in the same transaction as `multisigCreateV2`.
 - `GET /status`: 200 when subscribed and the last backfill is under 2 minutes old, else 503. `GET /reviews?limit=`: review history.
 
 ```bash

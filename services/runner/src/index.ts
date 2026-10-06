@@ -44,7 +44,7 @@ const server = createStatusServer({
   programId: cfg.programId,
   store,
   health: () => listener.health(),
-  settlement: createSettlement({ connection, programId }),
+  settlement: createSettlement({ connection, programId, guardSetup: cfg.guardSetup, token: cfg.token }),
   settlementToken: cfg.settlementToken,
   review: creRunner ?? undefined,
   reviewToken: cfg.reviewToken,

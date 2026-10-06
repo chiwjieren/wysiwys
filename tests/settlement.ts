@@ -9,6 +9,16 @@ import { expectError, guardProgram, statusOf } from "./helpers/guard";
 import { approvePayload, deliverReport, setupForwardedDesk, type ForwardedDesk } from "./helpers/forwarder";
 import { VERDICT } from "@wysiwys/shared";
 
+const GUARD_SETUP = {
+  forwarderProgram: Keypair.generate().publicKey.toBase58(),
+  forwarderState: Keypair.generate().publicKey.toBase58(),
+  policyHash: "07".repeat(32),
+  workflowOwner: "11".repeat(20),
+  maxReviewLifetime: "3600",
+  reviewDeadlineSecs: "900",
+};
+const TOKEN = { mint: "J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r", symbol: "mUSD", decimals: 6 };
+
 // The app proposes, requests review and executes with instructions the runner prepares.
 describe("runner settlement endpoints (instruction builders)", () => {
   const provider = testProvider();
@@ -19,7 +29,7 @@ describe("runner settlement endpoints (instruction builders)", () => {
 
   before(async () => {
     desk = await setupForwardedDesk();
-    settlement = createSettlement({ connection, programId: program.programId });
+    settlement = createSettlement({ connection, programId: program.programId, guardSetup: GUARD_SETUP, token: TOKEN });
   });
 
   const member = () => desk.members[0];
@@ -116,6 +126,7 @@ describe("runner settlement endpoints (instruction builders)", () => {
       executorPda: desk.executorPda.toBase58(),
       vaultIndex: 0,
       guardReady: true,
+      token: TOKEN,
     });
     expect(await settlement.guardedGroup(Keypair.generate().publicKey.toBase58())).to.equal(null);
   });
@@ -125,5 +136,61 @@ describe("runner settlement endpoints (instruction builders)", () => {
     expect(w.programId).to.equal(program.programId.toBase58());
     expect(Buffer.from(w.data, "base64").length).to.equal(8);
     expect(w.keys[0]).to.have.keys(["pubkey", "isSigner", "isWritable"]);
+  });
+
+  it("creates a guarded treasury from the UI: multisigCreateV2 + runner-built initialize_guard in one transaction", async () => {
+    const creator = Keypair.generate();
+    await sendWithFreshBlockhash(connection, [SystemProgram.transfer({ fromPubkey: provider.wallet.publicKey, toPubkey: creator.publicKey, lamports: 1e9 })], [(provider.wallet as any).payer]);
+    const createKey = Keypair.generate();
+    const [ms] = multisig.getMultisigPda({ createKey: createKey.publicKey });
+    const others = [Keypair.generate().publicKey, Keypair.generate().publicKey];
+    const prepared = await settlement.prepareGuardedGroup({ multisig: ms.toBase58(), creator: creator.publicKey.toBase58(), createKey: createKey.publicKey.toBase58() });
+    expect(prepared.guardReady).to.equal(false);
+    expect(prepared.token).to.deep.equal(TOKEN);
+    const executor = new PublicKey(prepared.executorPda);
+    const ix = prepared.instruction;
+    expect(ix.keys.map((k) => [k.isSigner, k.isWritable])).to.deep.equal([[false, false], [true, false], [false, true], [false, false], [true, true], [false, false]]);
+    expect(ix.keys[1]!.pubkey.toBase58()).to.equal(createKey.publicKey.toBase58());
+    expect(ix.keys[4]!.pubkey.toBase58()).to.equal(creator.publicKey.toBase58());
+    const [programConfigPda] = multisig.getProgramConfigPda({});
+    const programConfig = await multisig.accounts.ProgramConfig.fromAccountAddress(connection, programConfigPda);
+    const { Permission, Permissions } = multisig.types;
+    await sendWithFreshBlockhash(
+      connection,
+      [
+        multisig.instructions.multisigCreateV2({
+          treasury: programConfig.treasury, creator: creator.publicKey, multisigPda: ms, configAuthority: null, threshold: 3, timeLock: 0,
+          createKey: createKey.publicKey, rentCollector: null,
+          members: [
+            ...[creator.publicKey, ...others].map((key) => ({ key, permissions: Permissions.fromPermissions([Permission.Initiate, Permission.Vote]) })),
+            { key: executor, permissions: Permissions.fromPermissions([Permission.Execute]) },
+          ],
+        }),
+        ix,
+      ],
+      [creator, createKey],
+    );
+    const cfg = await program.account.guardConfig.fetch(PublicKey.findProgramAddressSync([Buffer.from("config"), ms.toBuffer()], program.programId)[0]);
+    expect(cfg.forwarderProgram.toBase58()).to.equal(GUARD_SETUP.forwarderProgram);
+    expect(Buffer.from(cfg.policyHash).toString("hex")).to.equal(GUARD_SETUP.policyHash);
+    expect(cfg.reviewDeadlineSecs.toString()).to.equal("900");
+    expect((await settlement.guardedGroup(ms.toBase58()))?.guardReady).to.equal(true);
+    // A second prepare for the same treasury is refused: the config already exists.
+    await expectError(settlement.prepareGuardedGroup({ multisig: ms.toBase58(), creator: creator.publicKey.toBase58(), createKey: createKey.publicKey.toBase58() }), "already");
+  });
+
+  it("refuses to prepare a guard config for a multisig that the create key does not derive", async () => {
+    const createKey = Keypair.generate();
+    await expectError(
+      settlement.prepareGuardedGroup({ multisig: Keypair.generate().publicKey.toBase58(), creator: Keypair.generate().publicKey.toBase58(), createKey: createKey.publicKey.toBase58() }),
+      "create key",
+    );
+  });
+
+  it("refuses to prepare when the runner has no guard values", async () => {
+    const bare = createSettlement({ connection, programId: program.programId });
+    const createKey = Keypair.generate();
+    const [ms] = multisig.getMultisigPda({ createKey: createKey.publicKey });
+    await expectError(bare.prepareGuardedGroup({ multisig: ms.toBase58(), creator: Keypair.generate().publicKey.toBase58(), createKey: createKey.publicKey.toBase58() }), "not configured");
   });
 });
