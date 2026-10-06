@@ -1,0 +1,38 @@
+Command (from workflow/confidential-preflight):
+cre workflow simulate confidential-check --target staging-settings --non-interactive --trigger-index 0
+
+Real HTTPS Scorechain sanctions request; simulated TEE and simulated DON report generation.
+Credential consumed opaquely by CLI from gitignored local .env.
+The minimal diagnostic report is not delivered on-chain and is not the Guard ABI.
+Result: SANCTIONED; paymentAuthorized=false. Process exit code: 0.
+
++✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 721a3a9b2e27688de74be97d371770f62c4975782a0d91c1cbea4f6316e155df
+  Config hash: f5e71d2c0e6fbe10cfe44f24927726aa2796d20f1c835320a679ac4c1d8f222e
+2026-10-06T20:49:49Z [SIMULATION] Simulator Initialized
+
+2026-10-06T20:49:49Z [SIMULATION] Running trigger trigger=cron-trigger@1.0.0
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Trigger requested TEE Execution your trigger will run in one of the following Tees:                │
+│     - AWS Nitro in us-west-2                                                                       │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+✓ Workflow Simulation Result:
+"{\"mode\":\"report-preflight\",\"provider\":\"scorechain\",\"address\":\"Fc1EwQUZyTEagaDvA1utHXCcZNyG1x2PLt2DfNu1cJdH\",\"sanctionsStatus\":\"SANCTIONED\",\"paymentAuthorized\":false}"
+
+2026-10-06T20:49:50Z [SIMULATION] Execution finished signal received
+2026-10-06T20:49:50Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

@@ -62,6 +62,11 @@ npm test --workspace=packages/decoder
 # CRE workflow
 cd workflow && cre workflow simulate       # save output to evidence/cre/
 
+# Isolated Wysiwys preflights (run from workflow/confidential-preflight)
+cre workflow simulate confidential-check --target local-simulation --non-interactive --trigger-index 0
+cre workflow simulate confidential-check/rpc-preflight --target local-simulation --non-interactive --trigger-index 0
+# Tests/typecheck: run bun test and bun run typecheck from confidential-check
+
 # Runner (listener + CRE runner)
 npm run dev --workspace=services/runner
 

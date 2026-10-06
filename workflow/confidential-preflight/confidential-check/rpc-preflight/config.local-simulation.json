@@ -1,0 +1,7 @@
+{
+  "mode": "local-simulation",
+  "operation": "network-probe",
+  "schedule": "0 */5 * * * *",
+  "addresses": [],
+  "maxSlotLag": 32
+}
