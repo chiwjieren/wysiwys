@@ -3,7 +3,7 @@ import { Buffer } from "buffer";
 type Session = {
   connected: boolean;
   address?: string;
-  assertConnected: () => void;
+  assertConnected: (address?: string) => void;
 };
 export function walletRpcFetch(
   session: () => Session,
@@ -20,7 +20,7 @@ export function walletRpcFetch(
       if (!current.connected || current.address !== payer)
         throw new Error("Connect the transaction’s wallet to continue.");
       // Read the extension's live accounts, not only React state, immediately before broadcasting.
-      current.assertConnected();
+      current.assertConnected(payer);
     }
     return transport(url, init);
   };

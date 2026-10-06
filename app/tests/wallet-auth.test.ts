@@ -144,28 +144,81 @@ test("direct-wallet submissions require the current connected fee payer", async 
 });
 
 test("a live account switch blocks sending even when rendered state still names the old signer", async () => {
-  const tx = transaction(); tx.sign([signer]);
+  const tx = transaction();
+  tx.sign([signer]);
   const liveAddress = Keypair.generate().publicKey.toBase58();
   let sent = false;
-  const rpc = walletRpcFetch(()=>({connected:true,address:signer.publicKey.toBase58(),assertConnected:(expected = liveAddress)=>{if(expected !== liveAddress) throw new Error("Wallet session changed");}}),async()=>{sent=true;return new Response();});
-  await assert.rejects(rpc("http://localhost",{body:JSON.stringify({method:"sendTransaction",params:[Buffer.from(tx.serialize()).toString("base64")]})}),/session changed/);
-  assert.equal(sent,false);
+  const rpc = walletRpcFetch(
+    () => ({
+      connected: true,
+      address: signer.publicKey.toBase58(),
+      assertConnected: (expected = liveAddress) => {
+        if (expected !== liveAddress) throw new Error("Wallet session changed");
+      },
+    }),
+    async () => {
+      sent = true;
+      return new Response();
+    },
+  );
+  await assert.rejects(
+    rpc("http://localhost", {
+      body: JSON.stringify({
+        method: "sendTransaction",
+        params: [Buffer.from(tx.serialize()).toString("base64")],
+      }),
+    }),
+    /session changed/,
+  );
+  assert.equal(sent, false);
 });
 test("missing or corrupted additional signatures cannot pass the RPC boundary", () => {
   const second = Keypair.generate();
-  const tx = new VersionedTransaction(new TransactionMessage({payerKey:signer.publicKey,recentBlockhash:Keypair.generate().publicKey.toBase58(),instructions:[SystemProgram.transfer({fromPubkey:second.publicKey,toPubkey:signer.publicKey,lamports:1})]}).compileToV0Message());
+  const tx = new VersionedTransaction(
+    new TransactionMessage({
+      payerKey: signer.publicKey,
+      recentBlockhash: Keypair.generate().publicKey.toBase58(),
+      instructions: [
+        SystemProgram.transfer({
+          fromPubkey: second.publicKey,
+          toPubkey: signer.publicKey,
+          lamports: 1,
+        }),
+      ],
+    }).compileToV0Message(),
+  );
   tx.sign([signer]);
-  assert.throws(()=>verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")));
+  assert.throws(() =>
+    verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")),
+  );
   tx.sign([second]);
-  assert.equal(verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")),signer.publicKey.toBase58());
+  assert.equal(
+    verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")),
+    signer.publicKey.toBase58(),
+  );
   tx.signatures[1][0] ^= 1;
-  assert.throws(()=>verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")));
+  assert.throws(() =>
+    verifySignedSubmission(Buffer.from(tx.serialize()).toString("base64")),
+  );
 });
 test("only one concurrent Guard request proof is accepted, including Next bound-host URLs", async () => {
   const source = await proof();
-  const request = new Request("http://0.0.0.0:3001/api/squads/prepare",{method:"POST",headers:source.headers,body:await source.text()});
-  request.headers.set("host","localhost:3001");
-  const results = await Promise.allSettled([authenticate(request),authenticate(request)]);
-  assert.equal(results.filter(result=>result.status==="fulfilled").length,1);
-  assert.equal(results.filter(result=>result.status==="rejected").length,1);
+  const request = new Request("http://0.0.0.0:3001/api/squads/prepare", {
+    method: "POST",
+    headers: source.headers,
+    body: await source.text(),
+  });
+  request.headers.set("host", "localhost:3001");
+  const results = await Promise.allSettled([
+    authenticate(request),
+    authenticate(request),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    results.filter((result) => result.status === "rejected").length,
+    1,
+  );
 });

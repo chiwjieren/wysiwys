@@ -29,19 +29,23 @@ type SolanaWallet = Wallet & {
     StandardEventsFeature &
     SolanaSignTransactionFeature;
 };
-export function isSolanaWallet(wallet: Wallet): wallet is SolanaWallet {
+function isSolanaWallet(wallet: Wallet): wallet is SolanaWallet {
+  const connect = wallet.features["standard:connect"] as
+    Partial<StandardConnectFeature["standard:connect"]> | undefined;
+  const events = wallet.features["standard:events"] as
+    Partial<StandardEventsFeature["standard:events"]> | undefined;
+  const sign = wallet.features["solana:signTransaction"] as
+    Partial<SolanaSignTransactionFeature["solana:signTransaction"]> | undefined;
   return (
     wallet.chains.includes("solana:devnet") &&
-    !!wallet.features["standard:connect"] &&
-    !!wallet.features["standard:events"] &&
-    !!wallet.features["solana:signTransaction"] &&
-    (
-      wallet.features[
-        "solana:signTransaction"
-      ] as SolanaSignTransactionFeature["solana:signTransaction"]
-    ).supportedTransactionVersions.includes(0)
+    typeof connect?.connect === "function" &&
+    typeof events?.on === "function" &&
+    typeof sign?.signTransaction === "function" &&
+    Array.isArray(sign.supportedTransactionVersions) &&
+    sign.supportedTransactionVersions.includes(0)
   );
 }
+
 function solanaAccounts(wallet: Wallet): WalletAccount[] {
   return wallet.accounts.filter((account) => {
     try {
@@ -82,7 +86,7 @@ type WalletConnection = {
   connect: () => void;
   disconnect: () => Promise<void>;
   select: (address: string) => void;
-  assertConnected: () => void;
+  assertConnected: (address?: string) => void;
   authorizeRequest: (
     path: string,
     body: string,
@@ -264,8 +268,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           )
             update(state.wallet, address);
         },
-        assertConnected: () => {
-          check();
+        assertConnected: (address) => {
+          check(address);
         },
         sign: async (transaction, address) => {
           const { wallet, account, epoch } = check(address);
