@@ -10,11 +10,11 @@ if [ -f .env ]; then
   set +a
 fi
 RPC="${HELIUS_DEVNET_RPC_URL:-https://api.devnet.solana.com}"
-PROGRAM_KEYPAIR=keys/omnicounter_guard-program-keypair.json
+PROGRAM_KEYPAIR=keys/wysiwys_guard-program-keypair.json
 PROGRAM_ID=$(solana-keygen pubkey "$PROGRAM_KEYPAIR")
 
-anchor build -p omnicounter_guard
-solana program deploy target/deploy/omnicounter_guard.so \
+anchor build -p wysiwys_guard
+solana program deploy target/deploy/wysiwys_guard.so \
   --program-id "$PROGRAM_KEYPAIR" \
   ${BUFFER:+--buffer "$BUFFER"} \
   -u "$RPC" \

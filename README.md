@@ -1,10 +1,12 @@
-# OmniCounter
+# Wysiwys
 
-An OTC pre-settlement firewall for Solana. No proof, no payout.
+What You See Is What You Sign: a treasury payment firewall for Solana. A Squads v4 payment executes only with human approval AND a matching, current, unexpired, unused Guard review from a Chainlink CRE workflow. Design: `docs/plans/architecture.md`.
 
 ## Security (guard program)
 
-The guard (`programs/omnicounter_guard`) holds the only Execute permission on the desk's Squads v4 multisig. A payout runs only through `guarded_execute`, after a Chainlink CRE report approved that exact vault transaction for that exact trade.
+This section describes the guard as currently implemented (OTC-era interfaces). It is being migrated to the Wysiwys design.
+
+The guard (`programs/wysiwys_guard`) holds the only Execute permission on the desk's Squads v4 multisig. A payout runs only through `guarded_execute`, after a Chainlink CRE report approved that exact vault transaction for that exact trade.
 
 | # | Check | Covered by |
 |---|---|---|
@@ -13,7 +15,7 @@ The guard (`programs/omnicounter_guard`) holds the only Execute permission on th
 | 3 | `GuardConfig` is immutable: the program exposes only `initialize_guard`, `request_review`, `on_report`, `guarded_execute` | `tests/structure.ts` |
 | 4 | Instructions sysvar address checked before the durable-nonce check (`InvalidInstructionsSysvar`, `DurableNonceDetected`) | `tests/guarded_execute.ts` |
 | 5 | Owner, discriminator and seed checks on every account; `has_one = multisig` (`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`) | `tests/request_review.ts`, `tests/guarded_execute.ts` |
-| 6 | Review bound to its vault transaction and proposal; vault transaction re-hashed at execute (`ReviewMismatch`, `HashMismatch`) | `tests/guarded_execute.ts`, `programs/omnicounter_guard/src/logic.rs` |
+| 6 | Review bound to its vault transaction and proposal; vault transaction re-hashed at execute (`ReviewMismatch`, `HashMismatch`) | `tests/guarded_execute.ts`, `programs/wysiwys_guard/src/logic.rs` |
 | 7 | One-way status Pending → Approved or Rejected; Approved → Executed; Executed written before the CPI (`InvalidStatusTransition`, `AlreadyExecuted`, `NotApproved`) | `tests/on_report.ts`, `tests/guarded_execute.ts` |
 | 8 | `on_report` accepts only the configured Keystone forwarder state, owner and signed authority PDA, reports whose metadata names the configured CRE workflow owner, and matching `msg_hash`, `intent_hash`, `policy_hash` (`InvalidForwarder`, `InvalidWorkflow`, `HashMismatch`, `IntentMismatch`, `PolicyMismatch`) | `tests/on_report.ts`, `logic.rs` |
 | 9 | Expiry uses `Clock::get()` (`Expired`) | `tests/guarded_execute.ts` |

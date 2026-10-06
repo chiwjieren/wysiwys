@@ -18,5 +18,5 @@
 - Program `3jNv1XjPNeWUiZ8aiYheKJHknyjS81cpZfnPEp57CaH2`, deployed with `scripts/deploy-guard-devnet.sh` via the Helius devnet RPC.
 - Signature `27M9KYXVnvD388oUS9VoqLfq6fxwjoo3wgUa1jM4DtwmdaoWNatFR2uySE8UZXs1jDWYW6A4tgWucWKRoc5JhrRZ` (finalized), slot 508039295.
 - ProgramData `FDLBNBsE4n66oe4fCR8tz6SCTACauBbLgSkfMTUBsq7V`, 208,792 bytes; upgrade authority is the deployer `6GsXSpGrQYQfMesz1uxTWJDkLzZJ2tAWiSSy3UBp6Vm6`.
-- Verified: the dumped on-chain program is byte-identical to `target/deploy/omnicounter_guard.so` at commit b7cc3ea.
+- Verified: the dumped on-chain program is byte-identical to `target/deploy/wysiwys_guard.so` at commit b7cc3ea.
 - Includes the review fixes (workflow owner check, executor-in-message check, proposer signer).

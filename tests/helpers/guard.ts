@@ -2,13 +2,13 @@ import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { Connection, Keypair, PublicKey, SYSVAR_CLOCK_PUBKEY } from "@solana/web3.js";
 import { expect } from "chai";
-import { SEEDS, txIndexSeed } from "@omnicounter/shared";
-import type { OmnicounterGuard } from "../../target/types/omnicounter_guard";
+import { SEEDS, txIndexSeed } from "@wysiwys/shared";
+import type { WysiwysGuard } from "../../target/types/wysiwys_guard";
 import { createDesk, DeskFixture, DeskOptions, Proposed } from "./squads";
 
 export const provider = () => anchor.getProvider() as anchor.AnchorProvider;
 export const payer = () => (provider().wallet as anchor.Wallet).payer as Keypair;
-export const guardProgram = () => anchor.workspace.omnicounterGuard as Program<OmnicounterGuard>;
+export const guardProgram = () => anchor.workspace.wysiwysGuard as Program<WysiwysGuard>;
 
 export const POLICY_HASH = new Uint8Array(32).fill(7);
 /** Expected CRE workflow owner (20-byte EVM address) stored in GuardConfig. */

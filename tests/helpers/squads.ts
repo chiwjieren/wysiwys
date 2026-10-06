@@ -8,7 +8,7 @@ import {
   createInitializeMint2Instruction, createMintToInstruction, createSetAuthorityInstruction,
   createTransferCheckedInstruction, getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { SEEDS } from "@omnicounter/shared";
+import { SEEDS } from "@wysiwys/shared";
 
 export const SQUADS_PROGRAM_ID = new PublicKey("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf");
 export const USDC_DECIMALS = 6;

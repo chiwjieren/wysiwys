@@ -8,7 +8,7 @@ import { testProvider } from "./helpers/provider";
 describe("squads desk fixture", () => {
   const provider = testProvider();
   const payer = (provider.wallet as anchor.Wallet).payer as Keypair;
-  const guardId = (anchor.workspace.omnicounterGuard as anchor.Program).programId;
+  const guardId = (anchor.workspace.wysiwysGuard as anchor.Program).programId;
 
   it("creates an Active payout proposal", async () => {
     const desk = await createDesk(provider.connection, payer, guardId);

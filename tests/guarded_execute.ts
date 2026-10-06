@@ -6,7 +6,7 @@ import {
 } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { expect } from "chai";
-import { VERDICT } from "@omnicounter/shared";
+import { VERDICT } from "@wysiwys/shared";
 import { testProvider } from "./helpers/provider";
 import {
   approve, executeRemainingAccounts, payoutIxs, proposePayout, sendWithFreshBlockhash, usdc, Proposed, SQUADS_PROGRAM_ID,

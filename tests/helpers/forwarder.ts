@@ -1,7 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload, intentHash } from "@omnicounter/shared";
+import { ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload, intentHash } from "@wysiwys/shared";
 import type { TestForwarder } from "../../target/types/test_forwarder";
 import { GuardedDesk, POLICY_HASH, WORKFLOW_OWNER, chainNow, guardProgram, payer, setupGuardedDesk } from "./guard";
 

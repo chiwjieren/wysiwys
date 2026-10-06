@@ -1,7 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
-import { VERDICT } from "@omnicounter/shared";
+import { VERDICT } from "@wysiwys/shared";
 import { testProvider } from "./helpers/provider";
 import { payoutIxs, proposePayout, usdc } from "./helpers/squads";
 import { chainNow, expectError, guardEvents, guardProgram, randomHash, requestReview, setupGuardedDesk, statusOf } from "./helpers/guard";

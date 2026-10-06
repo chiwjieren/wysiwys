@@ -14,7 +14,7 @@ export function txIndexSeed(txIndex: bigint): Uint8Array {
   return out;
 }
 
-// Order must match programs/omnicounter_guard/src/errors.rs (Anchor codes start at 6000).
+// Order must match programs/wysiwys_guard/src/errors.rs (Anchor codes start at 6000).
 const GUARD_ERRORS = [
   "NotSquadsAccount",
   "WrongMultisig",

@@ -1,10 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "chai";
-import { GuardErrorCode } from "@omnicounter/shared";
+import { GuardErrorCode } from "@wysiwys/shared";
 
-const idl = JSON.parse(readFileSync("target/idl/omnicounter_guard.json", "utf8"));
-const srcDir = "programs/omnicounter_guard/src";
+const idl = JSON.parse(readFileSync("target/idl/wysiwys_guard.json", "utf8"));
+const srcDir = "programs/wysiwys_guard/src";
 const sources = [
   ...readdirSync(srcDir).filter((f) => f.endsWith(".rs")).map((f) => join(srcDir, f)),
   ...readdirSync(join(srcDir, "instructions")).map((f) => join(srcDir, "instructions", f)),

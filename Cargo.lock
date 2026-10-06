@@ -650,7 +650,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omnicounter_guard"
+name = "wysiwys_guard"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
