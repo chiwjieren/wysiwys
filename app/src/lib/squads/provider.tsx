@@ -664,11 +664,9 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   }, [account?.address, snapshot]);
   async function deposit(value: string, tokenAddress?: string) {
     await run("deposit", async (rpc, key) => {
-      const member = (await readMultisig(rpc, config!)).members.find((m) =>
-        m.key.equals(key),
-      );
-      if (!member || key.toBase58() === config!.executor)
-        throw new Error("Connect with a funded member wallet.");
+      // Any connected wallet may fund the vault; deposits need no membership.
+      if (key.toBase58() === config!.executor)
+        throw new Error("Connect with a funded wallet.");
       const vault = sqds.getVaultPda({
         multisigPda: new PublicKey(config!.multisig),
         index: config!.vaultIndex,
