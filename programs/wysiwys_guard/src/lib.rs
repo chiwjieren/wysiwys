@@ -9,7 +9,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("3jNv1XjPNeWUiZ8aiYheKJHknyjS81cpZfnPEp57CaH2");
+declare_id!("9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");
 
 #[program]
 pub mod wysiwys_guard {
