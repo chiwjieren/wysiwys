@@ -5,6 +5,7 @@ import {
   SystemProgram,
   TransactionMessage,
   type Connection,
+  type TransactionInstruction,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -31,6 +32,14 @@ export function tokenAmount(raw: string, decimals: number) {
         "",
       )
     : padded;
+}
+// Unit label for an amount: SOL, the deployment token symbol, or generic tokens.
+export function assetLabel(
+  config: { token?: { mint: string; symbol: string } } | undefined,
+  mint: string | undefined,
+) {
+  if (!mint) return "SOL";
+  return config?.token?.mint === mint ? config.token.symbol : "tokens";
 }
 export function buildPaymentInstructions({
   vault,
@@ -68,6 +77,37 @@ export function buildPaymentInstructions({
       input.token.decimals,
     ),
   ];
+}
+// The guard's policy approves a stored transaction with exactly one instruction:
+// a System SOL transfer or a legacy SPL TransferChecked into an existing account.
+export async function buildGuardedPaymentInstruction(
+  rpc: Pick<Connection, "getAccountInfo">,
+  input: PaymentInput & { vault: PublicKey },
+): Promise<TransactionInstruction> {
+  const instructions = buildPaymentInstructions(input);
+  const transfer = instructions[instructions.length - 1];
+  if (!input.token) return transfer;
+  const mint = new PublicKey(input.token.mint);
+  const recipient = new PublicKey(input.recipient);
+  const destination = getAssociatedTokenAddressSync(mint, recipient);
+  const missing = new Error(
+    "The recipient has no token account for this token. Guarded payouts cannot create accounts, so ask the recipient to create one first.",
+  );
+  const info = await rpc.getAccountInfo(destination, "finalized");
+  if (!info || !info.owner.equals(TOKEN_PROGRAM_ID)) throw missing;
+  try {
+    const account = unpackAccount(destination, info);
+    if (
+      !account.isInitialized ||
+      account.isFrozen ||
+      !account.mint.equals(mint) ||
+      !account.owner.equals(recipient)
+    )
+      throw missing;
+  } catch {
+    throw missing;
+  }
+  return transfer;
 }
 export function buildPaymentProposal(args: {
   multisig: PublicKey;

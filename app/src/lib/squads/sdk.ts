@@ -1,6 +1,7 @@
 import { Buffer } from "buffer";
 import * as sqds from "@sqds/multisig";
 import {
+  ComputeBudgetProgram,
   Connection,
   PublicKey,
   TransactionInstruction,
@@ -16,6 +17,8 @@ export type SquadConfig = {
   vaultIndex: number;
   settlementEnabled: boolean;
   executionMode?: "standard" | "guarded";
+  // Public display metadata for the deployment mint (e.g. mUSD).
+  token?: { mint: string; symbol: string; decimals: number };
 };
 export type WireInstruction = {
   programId: string;
@@ -111,6 +114,22 @@ export function validateGuardInstruction(
   if (ix.keys.some((k) => k.isSigner && !k.pubkey.equals(member)))
     throw new Error("Unexpected guard instruction signer.");
   return ix;
+}
+// guarded_execute CPIs into Squads execute, which needs more than the default compute.
+export const GUARDED_EXECUTE_COMPUTE_UNITS = 400_000;
+export function buildGuardedExecute(
+  ix: TransactionInstruction,
+  guard: PublicKey,
+  multisig: PublicKey,
+  index: bigint,
+  member: PublicKey,
+) {
+  return [
+    ComputeBudgetProgram.setComputeUnitLimit({
+      units: GUARDED_EXECUTE_COMPUTE_UNITS,
+    }),
+    validateGuardInstruction(ix, guard, multisig, index, member),
+  ];
 }
 export function buildPayoutProposal(args: {
   multisig: PublicKey;

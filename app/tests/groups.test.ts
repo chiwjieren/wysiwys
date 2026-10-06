@@ -10,7 +10,9 @@ const executor = PublicKey.findProgramAddressSync(
 import {
   buildGroupCreation,
   buildMemberInvitation,
+  memberRole,
   standardGroupConfig,
+  standardGroupsEnabled,
 } from "../src/lib/squads/groups";
 
 test("group creation derives SDK multisig and vault, sets threshold and never grants humans Execute", () => {
@@ -143,5 +145,27 @@ test("standard classification depends on chain executor permissions, not Guard s
       { key: executor, permissions: { mask: 4 } },
     ]),
     null,
+  );
+});
+
+test("UI group creation is opt-in through an explicit flag", () => {
+  assert.equal(standardGroupsEnabled("true"), true);
+  for (const value of [undefined, "", "false", "1", "TRUE", " true"])
+    assert.equal(standardGroupsEnabled(value), false);
+});
+test("member roles label humans and the guard executor from on-chain permissions", () => {
+  const human = Keypair.generate().publicKey.toBase58();
+  assert.equal(memberRole(human, 3, executor.toBase58()), "Initiate + Vote");
+  assert.equal(
+    memberRole(executor.toBase58(), 4, executor.toBase58()),
+    "Guard executor (Execute only)",
+  );
+  assert.equal(memberRole(human, 7), "Initiate + Vote + Execute");
+  assert.equal(memberRole(human, 2), "Vote");
+  assert.equal(memberRole(human, 0), "No permissions");
+  // A configured executor holding extra permissions is not labelled Execute only.
+  assert.equal(
+    memberRole(executor.toBase58(), 7, executor.toBase58()),
+    "Initiate + Vote + Execute",
   );
 });

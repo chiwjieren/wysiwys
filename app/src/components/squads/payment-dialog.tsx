@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import {
+  assetLabel,
+  buildGuardedPaymentInstruction,
   buildPaymentInstructions,
   tokenAmount,
   type PaymentInput,
@@ -68,7 +70,9 @@ export function PaymentButton() {
     input: PaymentInput;
     multisig: string;
     vault: string;
+    guarded: boolean;
   }>();
+  const guarded = !!config?.executor;
   const [decoded, setDecoded] = useState<PaymentPreview>();
   const token = snapshot?.tokens.find((t) => t.address === asset);
   const member = snapshot?.squad.members.find(
@@ -82,18 +86,26 @@ export function PaymentButton() {
       const load = async () => {
         try {
           const vault = new PublicKey(reviewed.vault);
-          const compiled = new TransactionMessage({
-            payerKey: vault,
-            recentBlockhash: reviewed.input.recipient,
-            instructions: buildPaymentInstructions({
-              ...reviewed.input,
-              vault,
-            }),
-          }).compileToV0Message();
           const rpc = new Connection(
             new URL("/api/squads/rpc", window.location.origin).toString(),
             "finalized",
           );
+          // Preview exactly what proposePayment will store for this group type.
+          const compiled = new TransactionMessage({
+            payerKey: vault,
+            recentBlockhash: reviewed.input.recipient,
+            instructions: reviewed.guarded
+              ? [
+                  await buildGuardedPaymentInstruction(rpc, {
+                    ...reviewed.input,
+                    vault,
+                  }),
+                ]
+              : buildPaymentInstructions({
+                  ...reviewed.input,
+                  vault,
+                }),
+          }).compileToV0Message();
           const result = await readPaymentPreview(
             rpc,
             {
@@ -138,7 +150,8 @@ export function PaymentButton() {
       const input: PaymentInput = {
         recipient,
         amount,
-        memo,
+        // Guarded payouts store exactly one instruction and no memo.
+        memo: guarded ? undefined : memo,
         token: token
           ? {
               mint: token.mint,
@@ -163,6 +176,7 @@ export function PaymentButton() {
         input,
         multisig: config.multisig,
         vault: snapshot.vault.toBase58(),
+        guarded,
       });
       setValidation("");
       setStep("decoding");
@@ -227,8 +241,11 @@ export function PaymentButton() {
                 <option value="">SOL</option>
                 {snapshot?.tokens.map((t) => (
                   <option value={t.address} key={t.address}>
-                    {t.mint.slice(0, 6)}… · {tokenAmount(t.amount, t.decimals)}{" "}
-                    tokens
+                    {assetLabel(config, t.mint) === "tokens"
+                      ? `${t.mint.slice(0, 6)}… · `
+                      : ""}
+                    {tokenAmount(t.amount, t.decimals)}{" "}
+                    {assetLabel(config, t.mint)}
                   </option>
                 ))}
               </select>
@@ -243,15 +260,17 @@ export function PaymentButton() {
                 onChange={(e) => setAmount(e.target.value)}
               />
             </label>
-            <label className="block space-y-2">
-              <span>Memo (optional)</span>
-              <Input
-                maxLength={180}
-                placeholder="What is this payment for?"
-                value={memo}
-                onChange={(e) => setMemo(e.target.value)}
-              />
-            </label>
+            {!guarded && (
+              <label className="block space-y-2">
+                <span>Memo (optional)</span>
+                <Input
+                  maxLength={180}
+                  placeholder="What is this payment for?"
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                />
+              </label>
+            )}
             {validation && (
               <p role="alert" className="text-destructive">
                 {validation}
@@ -270,15 +289,16 @@ export function PaymentButton() {
               <p className="caption">Decoded payment preview</p>
               <p className="mt-2 text-lg font-semibold">
                 Send {reviewed?.input.amount}{" "}
-                {reviewed?.input.token ? "tokens" : "SOL"}
+                {assetLabel(config, reviewed?.input.token?.mint)}
               </p>
               <p className="mt-3 break-all text-sm">
                 To {reviewed?.input.recipient}
               </p>
               {reviewed?.input.token && (
                 <p className="caption mt-2 break-all">
-                  Mint {reviewed.input.token.mint}. Create recipient token
-                  account if needed; treasury pays rent.
+                  {reviewed.guarded
+                    ? `Mint ${reviewed.input.token.mint}. Paid into the recipient's existing token account.`
+                    : `Mint ${reviewed.input.token.mint}. Create recipient token account if needed; treasury pays rent.`}
                 </p>
               )}
               {decoded?.lines.map((line, i) => (

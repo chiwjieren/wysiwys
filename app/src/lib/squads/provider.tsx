@@ -29,13 +29,14 @@ import * as sqds from "@sqds/multisig";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   actionsForMember,
+  buildGuardedExecute,
+  buildPayoutProposal,
   buildVote,
   fromWire,
   readMultisig,
   readProposal,
   readProposalPage,
   signAndConfirm,
-  validateGuardInstruction,
   type SquadConfig,
   type ProposalRecord,
   type VoteAction,
@@ -45,6 +46,7 @@ import {
 import { assertStandardExecution } from "./execution";
 import { assertDevnet } from "./network";
 import {
+  buildGuardedPaymentInstruction,
   buildPaymentInstructions,
   buildPaymentProposal,
   readPaymentPreview,
@@ -162,7 +164,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         let saved: { address: string; name: string }[] = [];
         try {
           const stored = JSON.parse(
-            localStorage.getItem("omnicounter.groups") || "[]",
+            localStorage.getItem("wysiwys.groups") || "[]",
           );
           if (Array.isArray(stored))
             saved = stored.filter(
@@ -177,7 +179,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         setGroups(saved);
         const requested =
           new URL(window.location.href).searchParams.get("group") ||
-          localStorage.getItem("omnicounter.activeGroup");
+          localStorage.getItem("wysiwys.activeGroup");
         if (requested) {
           const address = new PublicKey(requested).toBase58();
           const groupResponse =
@@ -378,17 +380,12 @@ export function SquadProvider({ children }: { children: ReactNode }) {
     action: "propose" | "execute",
     index: bigint,
     member: PublicKey,
-    tradeId?: string,
-  ): Promise<{
-    guardInstruction: WireInstruction;
-    payoutInstructions?: WireInstruction[];
-  }> {
+  ): Promise<{ guardInstruction: WireInstruction }> {
     const body = JSON.stringify({
       multisig: config!.multisig,
       action,
       index: index.toString(),
       member: member.toBase58(),
-      tradeId,
     });
     const response = await fetch("/api/squads/prepare", {
       method: "POST",
@@ -503,15 +500,13 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       )
         throw new Error("Proposal is not executable.");
       const prepared = await prepare("execute", index, key);
-      return [
-        validateGuardInstruction(
-          fromWire(prepared.guardInstruction),
-          new PublicKey(config!.guardProgram!),
-          new PublicKey(config!.multisig),
-          index,
-          key,
-        ),
-      ];
+      return buildGuardedExecute(
+        fromWire(prepared.guardInstruction),
+        new PublicKey(config!.guardProgram!),
+        new PublicKey(config!.multisig),
+        index,
+        key,
+      );
     });
   }
   async function proposePayment(input: PaymentInput) {
@@ -556,6 +551,33 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       )
         throw new Error("Keep SOL in the vault for account rent and payments.");
       const index = BigInt(squad.transactionIndex.toString()) + 1n;
+      if (config!.executor) {
+        if (!config!.settlementEnabled || !config!.guardProgram)
+          throw new Error("Guard settlement adapter is unavailable.");
+        // The guard policy approves exactly one payment instruction.
+        const payment = await buildGuardedPaymentInstruction(rpc, {
+          ...input,
+          vault,
+        });
+        const message = new TransactionMessage({
+          payerKey: vault,
+          recentBlockhash: (await rpc.getLatestBlockhash("finalized"))
+            .blockhash,
+          instructions: [payment],
+        });
+        const prepared = await prepare("propose", index, key);
+        id = index.toString();
+        // vaultTransactionCreate + proposalCreate + request_review in one transaction.
+        return buildPayoutProposal({
+          multisig,
+          member: key,
+          index,
+          vaultIndex: config!.vaultIndex,
+          message,
+          guard: new PublicKey(config!.guardProgram),
+          requestReview: fromWire(prepared.guardInstruction),
+        });
+      }
       const message = new TransactionMessage({
         payerKey: vault,
         recentBlockhash: (await rpc.getLatestBlockhash("finalized")).blockhash,
@@ -683,7 +705,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         { address, name },
       ];
       try {
-        localStorage.setItem("omnicounter.groups", JSON.stringify(next));
+        localStorage.setItem("wysiwys.groups", JSON.stringify(next));
       } catch {
         /* Chain state is authoritative. */
       }
@@ -725,7 +747,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       );
       setMode("live");
       try {
-        localStorage.setItem("omnicounter.activeGroup", key);
+        localStorage.setItem("wysiwys.activeGroup", key);
       } catch {
         /* Public link remains usable. */
       }

@@ -19,7 +19,7 @@ Run these commands from `app/`. Browser tests use port 3105 and ephemeral test w
 ## Standard Squads workflow
 
 1. Connect an installed Solana wallet through the Wallet Standard picker (Phantom, Solflare, Backpack, or another compatible wallet).
-2. Click **Create group** on the dashboard, enter a name and member addresses, and choose the approval threshold. The connected creator joins automatically. Creation uses `multisigCreateV2`, the actual program configuration treasury, and an ephemeral create-key signer.
+2. With `NEXT_PUBLIC_ENABLE_STANDARD_GROUPS=true`, click **Create group** on the dashboard (hidden by default because UI-created groups bypass the Guard; guarded treasuries come from `scripts/bootstrap-devnet.ts`), enter a name and member addresses, and choose the approval threshold. The connected creator joins automatically. Creation uses `multisigCreateV2`, the actual program configuration treasury, and an ephemeral create-key signer.
 3. The creator has Propose, Vote and Execute permissions. Other members have Propose and Vote. Configuration authority is unset, so settings changes require group approval rather than an admin override.
 4. Use **Receive** to copy the derived vault address or deposit SOL/classic SPL tokens. Treasury funds live in the vault; members keep their own SOL for fees.
 5. Create a payment, wait for decoding, review its exact amount, mint and recipient, then sign the proposal. SDK `vaultTransactionCreate` and active `proposalCreate` are submitted together; proposing does not transfer funds.
@@ -32,12 +32,16 @@ Vault, configuration and Batch proposal accounts are readable. Batch creation, f
 
 ## Configuration
 
-| Variable                       | Purpose                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| `SOLANA_RPC_URL`               | Server-only Devnet RPC endpoint. Defaults to Solana’s public Devnet endpoint. |
-| `OMNICOUNTER_DEPLOYMENT_PATH`  | Optional existing guarded-group deployment configuration.                     |
-| `OMNICOUNTER_SETTLEMENT_URL`   | Optional Guard adapter for guarded groups.                                    |
-| `OMNICOUNTER_SETTLEMENT_TOKEN` | Server-only Guard adapter credential.                                         |
+Copy `.env.example` to `.env.local` and fill in what you need.
+
+| Variable                             | Purpose                                                                                                          |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `SOLANA_RPC_URL`                     | Server-only Devnet RPC endpoint. Defaults to Solana’s public Devnet endpoint.                                    |
+| `WYSIWYS_DEPLOYMENT_PATH`            | Optional path to the guarded deployment file. Defaults to `../deployments/devnet.json`.                          |
+| `WYSIWYS_SETTLEMENT_URL`             | Runner settlement service for guarded groups, for example `http://127.0.0.1:8787`.                               |
+| `WYSIWYS_SETTLEMENT_TOKEN`           | Server-only bearer token for the settlement service. Must equal the runner’s `SETTLEMENT_TOKEN`.                 |
+| `NEXT_PUBLIC_ENABLE_STANDARD_GROUPS` | Set to `true` to show UI group creation. Off by default: guarded treasuries are created by the bootstrap script. |
+| `WYSIWYS_NEXT_DIST`                  | Optional Next.js build directory. Defaults to `.next`; browser tests use `.next-browser`.                        |
 
 Wallets are detected through Wallet Standard. Connecting requests permission to expose an account, without a sign-in message or external authentication service. Transaction signatures are requested only for treasury actions. Disconnect and account changes invalidate pending signing operations. The picker supports wallets with Solana Devnet and versioned transaction signing. Install a compatible browser wallet if none is detected.
 

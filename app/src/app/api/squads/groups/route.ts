@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function guardGroup(multisig: string, creator?: string) {
-  const base = process.env.OMNICOUNTER_SETTLEMENT_URL;
+  const base = process.env.WYSIWYS_SETTLEMENT_URL;
   if (!base) throw new Error("Group protection is unavailable.");
   const url = new URL(
     creator ? "frontend/groups/prepare" : `frontend/groups/${multisig}`,
@@ -24,9 +24,9 @@ async function guardGroup(multisig: string, creator?: string) {
     method: creator ? "POST" : "GET",
     headers: {
       "Content-Type": "application/json",
-      ...(process.env.OMNICOUNTER_SETTLEMENT_TOKEN
+      ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
         ? {
-            Authorization: `Bearer ${process.env.OMNICOUNTER_SETTLEMENT_TOKEN}`,
+            Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
           }
         : {}),
     },
