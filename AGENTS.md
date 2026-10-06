@@ -142,8 +142,9 @@ Keep this section accurate. Update it in the same commit that changes a command.
 
 ## Working style
 
-- **TDD always.** Failing test → run → implement → run → commit. Use superpowers skills (brainstorming, writing-plans, executing-plans) for non-trivial work.
-- **Small commits**, conventional style: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, scoped by component (`feat(decoder): ...`).
+- **TDD always.** Failing test → run → implement → run. Use superpowers skills (brainstorming, writing-plans, executing-plans) for non-trivial work.
+- **Never commit or push automatically.** Run `git commit` or `git push` only when the user explicitly asks. Stop after tests pass and report.
+- **Small commits** (when asked), conventional style: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, scoped by component (`feat(decoder): ...`).
 - **Ask before changing a frozen interface**, the security rules or the policy layers.
 - **Integrate early.** Use mocks to unblock (dev-key `on_report`, stub decoder, fake Review data) but replace them before the 7 Oct 12:00 integration milestone.
 - **Prefer cutting scope over adding it.** Stretch items only after the full flow works on devnet.
