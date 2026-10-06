@@ -11,7 +11,8 @@
     "start": "tsx src/index.ts",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "pretest": "npm run build --workspace=packages/decoder"
+    "pretest": "npm --prefix ../../packages/decoder run build",
+    "predev": "npm --prefix ../../packages/decoder run build"
   },
   "dependencies": {
     "@anchor-lang/core": "^1.2.0",
