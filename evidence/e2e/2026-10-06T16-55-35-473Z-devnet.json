@@ -1,0 +1,112 @@
+{
+  "cluster": "devnet",
+  "multisig": "Boz5Dukxrwi5MGRam8bGimokhZwFRLHFdVeEsjaTLgPH",
+  "reviewer": "local stand-in via mock forwarder",
+  "results": [
+    {
+      "name": "clean",
+      "txIndex": "1",
+      "reviewStatus": "executed",
+      "reason": 0,
+      "executed": true,
+      "signatures": {
+        "propose": "2fB4oEV57NXsV3jjrGqd8zu8NxLAA19VXAAPFjEBip3y6JrM9yrz6jaucSFj5hK6YodmnLixjqJ8nbkYUaBtveQe",
+        "report": "3raWrZwyMpfxxYeaMDbXP2VWj1GSXyXPG92DMKbNGGT7iLDCGd1patfHz5gmfedbkmi9JbXcWiXJAqq8MAL9infN",
+        "vote1": "3S9ohRgvbgoPacYj8zQGjR7YhNhbBNdJQ5j4LQbN5DjHzQQaHgHJF7sQjkRV3mSb1YRkCpHzazXZHSQ7pQLtN22S",
+        "vote2": "3HteMtgiRkKTL5v7neZhvdcdj3obMqTt1mwz2p7jx4K8nChPT3Z2MZmqBUnzcPg4xmxxp87nku3CqNrms8XRWKqL",
+        "vote3": "2XkPCUZKXYz8rkYUD4JVCaWG8on1auKroX9ARmMnx13g1B9supzsAZo5Uc7Mk7XJoUiKRbqbENgmTR9RkMCviNJW",
+        "execute": "5rgg6rqnBvUrzXk6KUqe5scc9WhkTDAgP2GZz9vKWbtPKzLYERzabs6AdiWE82BxJyfyRzsRW3GccMDAHqHGKw8K"
+      },
+      "matches": true,
+      "summary": "pay 250000000 base units of J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r to bEJC2AGffiJF7NCJNofGRLn7S2bAwQZQbA15Xmw6wJU"
+    },
+    {
+      "name": "lookalike",
+      "txIndex": "2",
+      "reviewStatus": "rejected",
+      "reason": 8,
+      "executed": false,
+      "signatures": {
+        "propose": "31nHuzSUyi3yiz5qEVetzzQrtkfoGqPd5AgiQHHfAuDjwwKizU8rtERdVAgg4xFe7rfxmyB7w8UdiCcSd9VKLxfN",
+        "report": "59dqdc4qGXbd28pDahiShqvceWGdhggVEjTaG9B4qg7LfaUaM7ptkbTUTdRcPwb1LvA9e7iibZ48K4bZKVS1zvPK",
+        "vote1": "EobvSzi6CBFseQbhKPEppxGSRNWUee1v6XkMW2LuaEi3SC9k9NkzbZ59knq9TKvjyak5SpuLpk1MwrrPmgKWYp1",
+        "vote2": "qjeWLRWmDsG4vhXtntYa197AYFaegWjspa5cdxnxSFro6FZmcV4y32YupjvSyBrjF8MkBL5mUHFQdjfjjXdLZgt",
+        "vote3": "2JdHAiuacXUMoNDsXsecSf4UDAiZbXaFnUc9w9YyHkzesX2QmArDX2LJ2J9233t5XENQyhiWX1LUBAJ1XTabSx61"
+      },
+      "matches": true,
+      "summary": "owner bEJKgY6qbhav8sEXrJhvZtc8yAZiBU9AgJoe1aeXvpw is not whitelisted",
+      "executeError": "review is not approved"
+    },
+    {
+      "name": "drift",
+      "txIndex": "3",
+      "reviewStatus": "rejected",
+      "reason": 6,
+      "executed": false,
+      "signatures": {
+        "propose": "2CG4hWj3AkW61EeqKUerbHTUQfhk9iJEEsEGzLHrSyrxaBGcWcNvHWEbvJqDD2bDnHAUsZR44RN3B2Pdnt8sD362",
+        "report": "5ghj2exKPb63TQk6W4nnCsuqKM8s5ncACenLLeAqCT7pvw4AwhHKpZyMtbmZ6sCG2ERccKMn8yDFdecwUyrzwiYW",
+        "vote1": "3TLTqVp3XMU76z3KcRryoqnSNJBGVVSyXZeomdef6cWwve6ZotRGArjv2AnPF3LfdpAcGMfLPwY9Q1vJsbbKTi2a",
+        "vote2": "2qQ9x5WBbguA4QiH8XXLVYwnK8gR8CQtDazwZ3zqsiNVCEE8QuY7p9mZpdWJMDCXSFxpKLuub22UEy2ooTFeM91",
+        "vote3": "5rhM7TmnNpBd2xmBw8mRzm39SEUixMJLAh3oqFxxiJdujC1knpJRL5skdkr2Wh5f5f9oRdmmPzUjAzU1RCvZWbpk"
+      },
+      "matches": true,
+      "summary": "authority change in payload",
+      "executeError": "review is not approved"
+    },
+    {
+      "name": "overCap",
+      "txIndex": "4",
+      "reviewStatus": "rejected",
+      "reason": 11,
+      "executed": false,
+      "signatures": {
+        "propose": "65BK2wDc8gtEtmmK5ruk5BLmL5oSDw1sh9c9ffVTQoTG4RcqRBXH3qTvkiE4ceJtyXb1K3cG42iZ4rPpRpMfsz3W",
+        "report": "ZDR1pFmp4Qf3gvP9CtYvTXGkqR5Az7upr1QF6LyQCwnuefMAagWiHiDyzgoi8XfFk4i9CQKMnJG1dNwJa7xD67h",
+        "vote1": "4iPd79BPLDHvG4aBic2b8aHWDtWpDg5CWdHSgiDJJDnK79cNppR3H3pxratQH3e1dDNHH7cRHnYA64dKjXhkTx16",
+        "vote2": "5wr1vYx8VKHfod1cyTKQNoYVPD7GL9FSj8FYLEYuqwvqrXV6iLKrS6uD1f9KnsXUgE6Z5hNVxEj5w5CMt3Q38se4",
+        "vote3": "5ercgXpsjtENqbCbAn6nG9AHCid3FYk7GsKBubNKu711EL8boPaFrUzpJYtwSWqQ27q3UtKR1jChp5HJyqxBCERE"
+      },
+      "matches": true,
+      "summary": "amount over cap",
+      "executeError": "review is not approved"
+    },
+    {
+      "name": "ownershipSwap",
+      "txIndex": "5",
+      "reviewStatus": "approved",
+      "reason": 0,
+      "executed": false,
+      "signatures": {
+        "tokenAccount": "5qBxUpZQcKNuZfPRtDXWdYAHxxxgj6EwJ3u1qwUHRfuqv8Bbwb9uMRgRczVyoZuzahquQZBzddJQB27x8zVAaHkB",
+        "propose": "2x8jyMPb9YvVXT3SCFLgpKwfyWnUhm7h74LhbSq9iWybCpQWDEiGDnwzcDCMAT5hUm5bd1jJZx2Y1AVMVXefiDJP",
+        "report": "qsQieWKHZS8mTVABjVY2M6U7ge29Kf7fHHteGFxBwHfg2i7zSMBEhKQ8UgSdCqwHBkr1pjWJyy84PN7JZcut7xi",
+        "vote1": "4k9ZYm1uwAqkX4rBqGJ4TpftwtWLvfxtRR7Y8JMHC9uoGmbk27trZS8sAF4B2aeZsp35PAXbxUgj9wevKw5bLrJt",
+        "vote2": "3X2D8KYFkvKmu9MNGCwVDMjEjB2hRZc3Tcie8ej3FXe2mBtRYrJoDPDTbNx6ULQ16dbtmYgwD1kiP3by4ySyavX7",
+        "vote3": "3uAizyRt9at2rjxSAedaZRudpeGGthr8BPArWwU9bFSSgpgTTh3Y6qk23sc1uwcFuJyN4mMg13zCcxzrCxHVVTuv",
+        "swap": "2L45gQuWj7U6wncyzjJYwY13sPHywqiFUGhj3kckiBZpRGXeMWUcHrqNfqjgCJN1mHdKYtda4mbPmfe3TUf4YBEc"
+      },
+      "matches": true,
+      "summary": "pay 10000000 base units of J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r to bEJC2AGffiJF7NCJNofGRLn7S2bAwQZQbA15Xmw6wJU",
+      "executeError": "Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 1: custom program error: 0x1783. \nLogs: \n[\n  \"Program ComputeBudget111111111111111111111111111111 invoke [1]\",\n  \"Program ComputeBudget111111111111111111111111111111 success\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya invoke [1]\",\n  \"Program log: Instruction: GuardedExecute\",\n  \"Program log: AnchorError thrown in programs/wysiwys_guard/src/logic.rs:192. Error Code: DestinationChanged. Error Number: 6019. Error Message: Destination account no longer matches the reviewed destination.\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya consumed 13270 of 399850 compute units\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya failed: custom program error: 0x1783\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.\nProgram ComputeBudget111111111111111111111111111111 invoke [1]\nProgram ComputeBudget111111111111111111111111111111 success\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya invoke [1]\nProgram log: Instruction: GuardedExecute\nProgram log: AnchorError thrown in programs/wysiwys_guard/src/logic.rs:192. Error Code: DestinationChanged. Error Number: 6019. Error Message: Destination account no longer matches the reviewed destination.\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya consumed 13270 of 399850 compute units\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya failed: custom program error: 0x1783"
+    },
+    {
+      "name": "durableNonce",
+      "txIndex": "6",
+      "reviewStatus": "executed",
+      "reason": 0,
+      "executed": true,
+      "signatures": {
+        "propose": "4BknnCMdBimKhPY6tuEJpKMShast8iTPesx2V77DSXQMnGD4DwNRgnbigscfupYwSqH2GQUu935ZvHXMjgKnp4x1",
+        "report": "hydDSDrvQf7eaDA79ENn9px9M3aymMafKfj1ZTdrVTmjyEu5FF5CojGveTA1qBkAkmnsvZFEr8kGMkUFe5UEfQ4",
+        "vote1": "45PGfkom7SsoMfuusJT5Na2itDdAEv7Qe6v8JcCwjCHFLfPqMY9X58pA4zDTjEb5U55pvbQiTaS4r4Xh89DVAzJ8",
+        "vote2": "EXjBAdyzSamWBQShZd2yH9UNyJ62irLLUNAais37SPFiuYm5PxjCYyuhygBnFsJ2HkBKRHuJg55pqw12KziCPgm",
+        "vote3": "3pkzYeRpk8FttoHpHD9PRwy7ry6HrgQyyTkPR58YJv6my163r6hHh9ciBK1gZLgUiHM39Z36xDRyQoNt85SfrbEf",
+        "execute": "nZJNWjLGDKEo8hpNq7m6Hu2wGVhFgoCw8xrPVNHTMYKcciLmoXdekfShKiPB8c26q6RkDrcQTGdGtnpBwAJbpXZ"
+      },
+      "matches": true,
+      "summary": "pay 5000000 base units of J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r to bEJC2AGffiJF7NCJNofGRLn7S2bAwQZQbA15Xmw6wJU",
+      "executeError": "Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 2: custom program error: 0x1779. \nLogs: \n[\n  \"Program 11111111111111111111111111111111 invoke [1]\",\n  \"Program 11111111111111111111111111111111 success\",\n  \"Program ComputeBudget111111111111111111111111111111 invoke [1]\",\n  \"Program ComputeBudget111111111111111111111111111111 success\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya invoke [1]\",\n  \"Program log: Instruction: GuardedExecute\",\n  \"Program log: AnchorError thrown in programs/wysiwys_guard/src/instructions/guarded_execute.rs:51. Error Code: DurableNonceDetected. Error Number: 6009. Error Message: Durable nonce transactions cannot execute payouts.\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya consumed 11164 of 399700 compute units\",\n  \"Program 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya failed: custom program error: 0x1779\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.\nProgram 11111111111111111111111111111111 invoke [1]\nProgram 11111111111111111111111111111111 success\nProgram ComputeBudget111111111111111111111111111111 invoke [1]\nProgram ComputeBudget111111111111111111111111111111 success\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya invoke [1]\nProgram log: Instruction: GuardedExecute\nProgram log: AnchorError thrown in programs/wysiwys_guard/src/instructions/guarded_execute.rs:51. Error Code: DurableNonceDetected. Error Number: 6009. Error Message: Durable nonce transactions cannot execute payouts.\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya consumed 11164 of 399700 compute units\nProgram 9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya failed: custom program error: 0x1779"
+    }
+  ]
+}
