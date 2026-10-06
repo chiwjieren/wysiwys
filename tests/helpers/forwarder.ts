@@ -1,7 +1,9 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { ACTION_KIND, ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload } from "@wysiwys/shared";
+import {
+  ACTION_KIND, ReportPayload, SEEDS, VERDICT, destinationHash, encodeReportMetadata, encodeReportPayload,
+} from "@wysiwys/shared";
 import type { TestForwarder } from "../../target/types/test_forwarder";
 import { GuardedDesk, POLICY_HASH, WORKFLOW_OWNER, chainNow, guardProgram, payer, setupGuardedDesk } from "./guard";
 
@@ -31,6 +33,10 @@ export async function setupForwardedDesk(): Promise<ForwardedDesk> {
   return { ...desk, forwarderState };
 }
 
+/** destination_hash of the desk's counterparty token account (owner counterparty, desk mint). */
+export const deskDestinationHash = (desk: GuardedDesk) =>
+  destinationHash(ACTION_KIND.SPL, desk.counterpartyAta.toBytes(), desk.counterparty.publicKey.toBytes(), desk.mint.toBytes());
+
 /**
  * Approve payload that echoes the Review's tx_hash and names the desk's counterparty token
  * account (owner counterparty, desk mint) as the SPL destination, valid for 10 minutes.
@@ -48,9 +54,7 @@ export async function approvePayload(
     txHash: Uint8Array.from(r.txHash),
     policyHash: POLICY_HASH,
     actionKind: ACTION_KIND.SPL,
-    destination: desk.counterpartyAta.toBytes(),
-    destinationOwner: desk.counterparty.publicKey.toBytes(),
-    mint: desk.mint.toBytes(),
+    destinationHash: deskDestinationHash(desk),
     issuedAt: now,
     expiresAt: now + 600n,
     ...overrides,

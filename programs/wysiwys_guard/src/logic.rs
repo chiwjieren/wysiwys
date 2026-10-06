@@ -115,9 +115,7 @@ pub struct ReportPayload {
     pub tx_hash: [u8; 32],
     pub policy_hash: [u8; 32],
     pub action_kind: u8,
-    pub destination: Pubkey,
-    pub destination_owner: Pubkey,
-    pub mint: Pubkey,
+    pub destination_hash: [u8; 32],
     pub issued_at: i64,
     pub expires_at: i64,
 }
@@ -130,7 +128,13 @@ fn i64_at(b: &[u8], off: usize) -> i64 {
     i64::from_le_bytes(b[off..off + 8].try_into().unwrap())
 }
 
-/// Fixed 181-byte little-endian layout v1, see packages/shared/src/report.ts.
+/// Binds the reviewed destination. Same as `destinationHash` in packages/shared.
+/// SOL: destination = owner = recipient wallet, mint zero. SPL: token account, its owner wallet, its mint.
+pub fn destination_hash(kind: u8, destination: &Pubkey, owner: &Pubkey, mint: &Pubkey) -> [u8; 32] {
+    solana_sha256_hasher::hashv(&[DEST_HASH_DOMAIN, &[kind], destination.as_ref(), owner.as_ref(), mint.as_ref()]).to_bytes()
+}
+
+/// Fixed 117-byte little-endian layout v2, see packages/shared/src/report.ts.
 pub fn decode_report(bytes: &[u8], now: i64) -> Result<ReportPayload> {
     require!(bytes.len() == REPORT_PAYLOAD_LEN, GuardError::InvalidPayload);
     require!(bytes[0] == REPORT_VERSION, GuardError::InvalidPayload);
@@ -145,19 +149,16 @@ pub fn decode_report(bytes: &[u8], now: i64) -> Result<ReportPayload> {
         tx_hash: bytes32(bytes, 4),
         policy_hash: bytes32(bytes, 36),
         action_kind: bytes[68],
-        destination: Pubkey::new_from_array(bytes32(bytes, 69)),
-        destination_owner: Pubkey::new_from_array(bytes32(bytes, 101)),
-        mint: Pubkey::new_from_array(bytes32(bytes, 133)),
-        issued_at: i64_at(bytes, 165),
-        expires_at: i64_at(bytes, 173),
+        destination_hash: bytes32(bytes, 69),
+        issued_at: i64_at(bytes, 101),
+        expires_at: i64_at(bytes, 109),
     };
     match p.action_kind {
-        ACTION_NONE => require!(verdict == VERDICT_REJECT, GuardError::InvalidPayload),
-        ACTION_SOL => {
-            require_keys_eq!(p.destination_owner, p.destination, GuardError::InvalidPayload);
-            require_keys_eq!(p.mint, Pubkey::default(), GuardError::InvalidPayload);
+        ACTION_NONE => {
+            require!(verdict == VERDICT_REJECT, GuardError::InvalidPayload);
+            require!(p.destination_hash == [0u8; 32], GuardError::InvalidPayload);
         }
-        ACTION_SPL => require!(p.mint != Pubkey::default(), GuardError::InvalidPayload),
+        ACTION_SOL | ACTION_SPL => require!(p.destination_hash != [0u8; 32], GuardError::InvalidPayload),
         _ => return err!(GuardError::InvalidPayload),
     }
     require!(p.issued_at <= now + MAX_CLOCK_SKEW, GuardError::InvalidPayload);
@@ -172,30 +173,24 @@ pub fn check_report_times(p: &ReportPayload, created_at: i64, now: i64, config: 
     Ok(())
 }
 
-/// The destination passed to guarded_execute must be the reviewed one and, for SPL, still be a live
-/// legacy token account with the reviewed mint and owner (an owner change after review is refused).
-pub fn check_destination(
-    action_kind: u8,
-    expected: &Pubkey,
-    expected_owner: &Pubkey,
-    expected_mint: &Pubkey,
-    key: &Pubkey,
-    owner_program: &Pubkey,
-    data: &[u8],
-) -> Result<()> {
-    require_keys_eq!(*key, *expected, GuardError::DestinationChanged);
-    match action_kind {
-        ACTION_SOL => Ok(()),
+/// Recomputes the destination hash from the account passed to guarded_execute and its live data.
+/// SPL: must still be a legacy Token account, initialized and not frozen, with the reviewed mint and
+/// owner wallet. Any difference (other account, new owner, other mint) is DestinationChanged.
+pub fn check_destination(action_kind: u8, expected_hash: &[u8; 32], key: &Pubkey, owner_program: &Pubkey, data: &[u8]) -> Result<()> {
+    let current = match action_kind {
+        ACTION_SOL => destination_hash(ACTION_SOL, key, key, &Pubkey::default()),
         ACTION_SPL => {
             require_keys_eq!(*owner_program, SPL_TOKEN_PROGRAM_ID, GuardError::DestinationChanged);
             require!(data.len() == SPL_TOKEN_ACCOUNT_LEN, GuardError::DestinationChanged);
-            require!(data[0..32] == expected_mint.as_ref()[..], GuardError::DestinationChanged);
-            require!(data[32..64] == expected_owner.as_ref()[..], GuardError::DestinationChanged);
             require!(data[SPL_TOKEN_STATE_OFFSET] == SPL_TOKEN_STATE_INITIALIZED, GuardError::DestinationChanged);
-            Ok(())
+            let mint = Pubkey::new_from_array(bytes32(data, 0));
+            let owner = Pubkey::new_from_array(bytes32(data, 32));
+            destination_hash(ACTION_SPL, key, &owner, &mint)
         }
-        _ => err!(GuardError::DestinationChanged),
-    }
+        _ => return err!(GuardError::DestinationChanged),
+    };
+    require!(current == *expected_hash, GuardError::DestinationChanged);
+    Ok(())
 }
 
 /// Keystone forwarder check: configured state, owned by the configured forwarder program,
@@ -317,20 +312,18 @@ mod tests {
         verdict: u8,
         reason: u16,
         kind: u8,
-        destination: Pubkey,
-        owner: Pubkey,
-        mint: Pubkey,
+        dest_hash: [u8; 32],
         issued_at: i64,
         expires_at: i64,
     }
 
     /// SPL approve, issued at 1_000, expiring at 1_600.
     fn spl() -> P {
-        P { version: 1, verdict: VERDICT_APPROVE, reason: 0, kind: ACTION_SPL, destination: key(30), owner: key(31), mint: key(32), issued_at: 1_000, expires_at: 1_600 }
+        P { version: 2, verdict: VERDICT_APPROVE, reason: 0, kind: ACTION_SPL, dest_hash: [9u8; 32], issued_at: 1_000, expires_at: 1_600 }
     }
 
     fn sol() -> P {
-        P { kind: ACTION_SOL, destination: key(33), owner: key(33), mint: Pubkey::default(), ..spl() }
+        P { kind: ACTION_SOL, ..spl() }
     }
 
     fn bytes(p: &P) -> Vec<u8> {
@@ -339,9 +332,7 @@ mod tests {
         d.extend_from_slice(&[1u8; 32]); // tx_hash
         d.extend_from_slice(&[3u8; 32]); // policy_hash
         d.push(p.kind);
-        d.extend_from_slice(p.destination.as_ref());
-        d.extend_from_slice(p.owner.as_ref());
-        d.extend_from_slice(p.mint.as_ref());
+        d.extend_from_slice(&p.dest_hash);
         d.extend_from_slice(&p.issued_at.to_le_bytes());
         d.extend_from_slice(&p.expires_at.to_le_bytes());
         d
@@ -485,39 +476,35 @@ mod tests {
     #[test]
     fn decodes_spl_payload() {
         let p = decode_report(&bytes(&spl()), NOW).unwrap();
-        assert_eq!(REPORT_PAYLOAD_LEN, 181);
+        assert_eq!(REPORT_PAYLOAD_LEN, 117);
         assert_eq!(p.verdict, VERDICT_APPROVE);
         assert_eq!(p.reason, 0);
         assert_eq!(p.tx_hash, [1u8; 32]);
         assert_eq!(p.policy_hash, [3u8; 32]);
         assert_eq!(p.action_kind, ACTION_SPL);
-        assert_eq!(p.destination, key(30));
-        assert_eq!(p.destination_owner, key(31));
-        assert_eq!(p.mint, key(32));
+        assert_eq!(p.destination_hash, [9u8; 32]);
         assert_eq!(p.issued_at, 1_000);
         assert_eq!(p.expires_at, 1_600);
     }
 
     #[test]
     fn decodes_sol_payload() {
-        let p = decode_report(&bytes(&sol()), NOW).unwrap();
-        assert_eq!(p.action_kind, ACTION_SOL);
-        assert_eq!(p.destination, key(33));
+        assert_eq!(decode_report(&bytes(&sol()), NOW).unwrap().action_kind, ACTION_SOL);
     }
 
     #[test]
     fn payload_length_must_be_exact() {
         let b = bytes(&spl());
-        assert_eq!(code_of(decode_report(&b[..180], NOW)), code(GuardError::InvalidPayload));
+        assert_eq!(code_of(decode_report(&b[..116], NOW)), code(GuardError::InvalidPayload));
         let mut long = b.clone();
         long.push(0);
         assert_eq!(code_of(decode_report(&long, NOW)), code(GuardError::InvalidPayload));
     }
 
     #[test]
-    fn version_must_be_1() {
-        invalid(P { version: 0, ..spl() });
-        invalid(P { version: 2, ..spl() });
+    fn version_must_be_2() {
+        invalid(P { version: 1, ..spl() });
+        invalid(P { version: 3, ..spl() });
     }
 
     #[test]
@@ -534,25 +521,20 @@ mod tests {
 
     #[test]
     fn approve_needs_a_destination() {
-        invalid(P { kind: ACTION_NONE, ..spl() });
-        let none = P { verdict: VERDICT_REJECT, reason: 8, kind: ACTION_NONE, destination: Pubkey::default(), owner: Pubkey::default(), mint: Pubkey::default(), ..spl() };
+        invalid(P { kind: ACTION_NONE, dest_hash: [0u8; 32], ..spl() });
+        invalid(P { dest_hash: [0u8; 32], ..spl() });
+        let none = P { verdict: VERDICT_REJECT, reason: 8, kind: ACTION_NONE, dest_hash: [0u8; 32], ..spl() };
         assert!(decode_report(&bytes(&none), NOW).is_ok());
+    }
+
+    #[test]
+    fn no_destination_must_have_a_zero_hash() {
+        invalid(P { verdict: VERDICT_REJECT, reason: 8, kind: ACTION_NONE, ..spl() });
     }
 
     #[test]
     fn unknown_action_kind_is_invalid() {
         invalid(P { kind: 3, ..spl() });
-    }
-
-    #[test]
-    fn sol_needs_owner_equal_destination_and_no_mint() {
-        invalid(P { owner: key(34), ..sol() });
-        invalid(P { mint: key(32), ..sol() });
-    }
-
-    #[test]
-    fn spl_needs_a_mint() {
-        invalid(P { mint: Pubkey::default(), ..spl() });
     }
 
     #[test]
@@ -594,7 +576,23 @@ mod tests {
         assert_eq!(code_of(check_report_times(&p, 500, NOW, &config(key(20), key(21)))), code(GuardError::InvalidPayload));
     }
 
-    // Destination re-check at execution
+    // Destination binding and re-check at execution
+
+    fn from_hex(h: &str) -> [u8; 32] {
+        core::array::from_fn(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap())
+    }
+
+    #[test]
+    fn destination_hash_matches_shared_ts_vectors() {
+        assert_eq!(
+            destination_hash(ACTION_SPL, &key(3), &key(4), &key(5)),
+            from_hex("7c55facd8ebf19ba72048503dd3e5852e51992c9d921d14f19eb731a15a4fe27")
+        );
+        assert_eq!(
+            destination_hash(ACTION_SOL, &key(7), &key(7), &Pubkey::default()),
+            from_hex("f19d30a01abfca20f15278b788f55568b87bd01ea9834782df2d5b5e84933deb")
+        );
+    }
 
     /// SPL token account: mint 0..32, owner 32..64, amount, delegate, state at 108, ... (165 bytes).
     fn token_account(mint: Pubkey, owner: Pubkey, state: u8) -> Vec<u8> {
@@ -605,8 +603,13 @@ mod tests {
         d
     }
 
+    /// Reviewed: token account key(30) owned by wallet key(31), mint key(32).
+    fn reviewed_spl() -> [u8; 32] {
+        destination_hash(ACTION_SPL, &key(30), &key(31), &key(32))
+    }
+
     fn check_spl(key_: Pubkey, program: Pubkey, data: &[u8]) -> Result<()> {
-        check_destination(ACTION_SPL, &key(30), &key(31), &key(32), &key_, &program, data)
+        check_destination(ACTION_SPL, &reviewed_spl(), &key_, &program, data)
     }
 
     #[test]
@@ -626,19 +629,24 @@ mod tests {
     }
 
     #[test]
-    fn sol_destination_only_needs_the_same_address() {
+    fn sol_destination_must_be_the_reviewed_wallet() {
         let sys = anchor_lang::solana_program::system_program::ID;
-        check_destination(ACTION_SOL, &key(33), &key(33), &Pubkey::default(), &key(33), &sys, &[]).unwrap();
-        assert_eq!(
-            code_of(check_destination(ACTION_SOL, &key(33), &key(33), &Pubkey::default(), &key(34), &sys, &[])),
-            code(GuardError::DestinationChanged)
-        );
+        let reviewed = destination_hash(ACTION_SOL, &key(33), &key(33), &Pubkey::default());
+        check_destination(ACTION_SOL, &reviewed, &key(33), &sys, &[]).unwrap();
+        assert_eq!(code_of(check_destination(ACTION_SOL, &reviewed, &key(34), &sys, &[])), code(GuardError::DestinationChanged));
+    }
+
+    #[test]
+    fn a_hash_for_another_kind_does_not_match() {
+        let sys = anchor_lang::solana_program::system_program::ID;
+        // An SPL hash cannot be satisfied by passing a SOL-style account and vice versa.
+        assert_eq!(code_of(check_destination(ACTION_SOL, &reviewed_spl(), &key(30), &sys, &[])), code(GuardError::DestinationChanged));
     }
 
     #[test]
     fn no_destination_is_never_executable() {
         assert_eq!(
-            code_of(check_destination(ACTION_NONE, &Pubkey::default(), &Pubkey::default(), &Pubkey::default(), &Pubkey::default(), &key(1), &[])),
+            code_of(check_destination(ACTION_NONE, &[0u8; 32], &Pubkey::default(), &key(1), &[])),
             code(GuardError::DestinationChanged)
         );
     }

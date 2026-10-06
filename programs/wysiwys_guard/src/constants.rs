@@ -22,11 +22,13 @@ pub const SPL_TOKEN_STATE_INITIALIZED: u8 = 1;
 
 /// tx_hash = sha256(TX_HASH_DOMAIN || vault_transaction || VaultTransaction account data).
 pub const TX_HASH_DOMAIN: &[u8] = b"wysiwys:tx:v1";
+/// destination_hash = sha256(DEST_HASH_DOMAIN || kind || destination || owner || mint).
+pub const DEST_HASH_DOMAIN: &[u8] = b"wysiwys:dest:v1";
 
-// Report payload v1, see packages/shared/src/report.ts. With the 64-byte metadata it must fit
-// CRE's 265-byte Solana raw report limit.
-pub const REPORT_PAYLOAD_LEN: usize = 181;
-pub const REPORT_VERSION: u8 = 1;
+// Report payload v2, see packages/shared/src/report.ts. CRE caps the Solana raw report at 265 bytes
+// (109 forwarder metadata + 32 account hash + 4 length + payload), so the payload must be <= 120.
+pub const REPORT_PAYLOAD_LEN: usize = 117;
+pub const REPORT_VERSION: u8 = 2;
 pub const VERDICT_APPROVE: u8 = 1;
 pub const VERDICT_REJECT: u8 = 2;
 pub const MAX_REASON: u16 = 13;
