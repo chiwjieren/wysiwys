@@ -25,6 +25,7 @@ Implement decoder code in `packages/decoder`. Define shared `DecodedAction` and 
 - Supported records preserve the full base58 program ID and relevant public keys with their semantic roles, canonical instruction name, and exact base-unit amounts as decimal strings. Never convert amounts to floating point or display units. Preserve encoded decimals, authority type, and an explicit null new authority where relevant.
 - Unsupported records include a stable category, instruction index, full program ID where resolvable, recoverable account keys, and instruction data in a documented lossless encoding. Structural parse failures use stable error categories and never look like successful empty actions.
 - Any nonempty `address_table_lookups` is an explicit overall unsupported result in v1, before instruction decoding. No ALT resolution.
+- Any nonempty `ephemeralSignerBumps` is an explicit overall unsupported result (`ephemeral_signers`), before instruction decoding or generic inspection. Empty lists remain supported. Regression fixtures cover both SOL and SPL payments with zero-valued, single and multiple bumps.
 - The package is pure deterministic TypeScript suitable for the actual CRE target and shared web-preview import: no Node.js runtime API, filesystem, RPC, network, clock, randomness, AI, signing, execution, policy, hash verification, Guard, or report-building dependency.
 
 ### MVP instruction set

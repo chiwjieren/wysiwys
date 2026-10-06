@@ -163,9 +163,10 @@ function parseVaultAccount(data: Uint8Array):
     reader.key(); // creator
     reader.take(8); // index u64
     reader.take(3); // bump, vaultIndex, vaultBump
-    reader.bytesVec(); // ephemeralSignerBumps
+    const ephemeralSignerBumps = reader.bytesVec();
     const message = readMessage(reader);
     if (reader.offset !== data.length) return { schemaVersion: 1, status: 'malformed', error: 'trailing_data' };
+    if (ephemeralSignerBumps.length > 0) return { schemaVersion: 1, status: 'unsupported', error: 'ephemeral_signers', unsupportedInstructions: [] };
     if (message.lookups > 0) return { schemaVersion: 1, status: 'unsupported', error: 'address_table_lookups', unsupportedInstructions: [] };
     if (message.instructions.length === 0) return { schemaVersion: 1, status: 'malformed', error: 'empty_instructions' };
     for (const ix of message.instructions) {

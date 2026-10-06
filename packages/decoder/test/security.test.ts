@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeVaultTransaction } from '../src/index.ts';
+import { decodeVaultTransaction, inspectVaultTransaction } from '../src/index.ts';
 import { ATA_PROGRAM, encodeU64, fixtureKeys as k, makeVaultTransaction, makeVaultTransactionMany, SYSTEM_PROGRAM, TOKEN_PROGRAM } from './account-fixture.ts';
 import phaseOneFixture from '../fixtures/transfer-checked.json' with { type: 'json' };
 
@@ -86,6 +86,22 @@ test('ALT content is explicitly unsupported before instruction decoding', () => 
     error: 'address_table_lookups',
     unsupportedInstructions: [],
   });
+});
+
+test('nonempty ephemeral signer bumps reject otherwise supported payments without exposing actions', () => {
+  const payments = [
+    { programId: SYSTEM_PROGRAM, accounts: [k[0]!, k[1]!], instructionData: [2, 0, 0, 0, ...encodeU64(1n)] },
+    { programId: TOKEN_PROGRAM, accounts: [k[0]!, k[1]!, k[2]!, k[3]!], instructionData: [12, ...encodeU64(1n), 6] },
+  ];
+  for (const payment of payments) {
+    assert.equal(decodeVaultTransaction(makeVaultTransactionMany([payment])).status, 'success');
+    for (const bumps of [[0], [254], [0, 255]]) {
+      const bytes = makeVaultTransactionMany([payment], bumps);
+      const expected = { schemaVersion: 1, status: 'unsupported', error: 'ephemeral_signers', unsupportedInstructions: [] };
+      assert.deepEqual(decodeVaultTransaction(bytes), expected);
+      assert.deepEqual(inspectVaultTransaction(bytes), expected);
+    }
+  }
 });
 
 test('TransferChecked followed by SetAuthority preserves order and explicit null', () => {

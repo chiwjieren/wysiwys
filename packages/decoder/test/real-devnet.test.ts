@@ -54,7 +54,7 @@ test('ATA Create accepts the empty payload recognized by the official processor'
   });
 });
 
-test('real devnet ATA instruction has an empty payload but uses out-of-scope Token-2022', () => {
+test('real devnet ATA fixture rejects ephemeral signers and its derived instruction rejects Token-2022', () => {
   const fixture = fixtures[1]!;
   const bytes = bytesOf(fixture.accountDataHex);
   assert.equal(fixture.accountAddress, '18PTVHBFMj1nyWaV26u1Q8hSw83djpKLiJfwBtRZmNg');
@@ -66,7 +66,21 @@ test('real devnet ATA instruction has an empty payload but uses out-of-scope Tok
   assert.deepEqual(sdkAccount.serialize()[0], bytes);
   assert.equal(sdkAccount.message.instructions[0]?.data.length, 0);
   assert.equal(sdkAccount.message.accountKeys[5]?.toBase58(), 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+  assert.ok(sdkAccount.ephemeralSignerBumps.length > 0);
   assert.deepEqual(decodeVaultTransaction(bytes), {
+    schemaVersion: 1,
+    status: 'unsupported',
+    error: 'ephemeral_signers',
+    unsupportedInstructions: [],
+  });
+  // Preserve the Token-2022 rejection check independently of the earlier account-level gate.
+  const instruction = sdkAccount.message.instructions[0]!;
+  const derived = makeVaultTransaction(
+    sdkAccount.message.accountKeys[instruction.programIdIndex]!.toBase58(),
+    Array.from(instruction.accountIndexes, (index) => sdkAccount.message.accountKeys[index]!.toBase58()),
+    Array.from(instruction.data),
+  );
+  assert.deepEqual(decodeVaultTransaction(derived), {
     schemaVersion: 1,
     status: 'unsupported',
     error: 'unsupported_instruction',

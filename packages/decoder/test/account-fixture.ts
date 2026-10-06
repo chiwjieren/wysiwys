@@ -60,7 +60,7 @@ export function makeVaultTransaction(programId: string, accounts: string[], inst
   return makeVaultTransactionMany([{ programId, accounts, instructionData }]);
 }
 
-export function makeVaultTransactionMany(instructions: { programId: string; accounts: string[]; instructionData: number[] }[]): Uint8Array {
+export function makeVaultTransactionMany(instructions: { programId: string; accounts: string[]; instructionData: number[] }[], ephemeralSignerBumps: number[] = []): Uint8Array {
   const keys: Uint8Array[] = [];
   const compiled = instructions.map(({ programId, accounts, instructionData }) => {
     const startIndex = keys.length;
@@ -74,7 +74,7 @@ export function makeVaultTransactionMany(instructions: { programId: string; acco
     168, 250, 162, 100, 81, 14, 162, 207,
     ...decodeBase58(fixtureKeys[0]!), ...decodeBase58(fixtureKeys[1]!),
     ...Array(8).fill(0), 254, 0, 253,
-    ...byteVec([]),
+    ...byteVec(ephemeralSignerBumps),
     keys.length === 0 ? 0 : 1, keys.length === 0 ? 0 : 1, 0,
     ...itemVec(keys.length, accountKeyBytes),
     ...itemVec(compiled.length, compiled.flat()),
