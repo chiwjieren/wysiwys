@@ -15,7 +15,13 @@ export type RunnerConfig = {
   dbPath: string;
   triggerUrl: string | null;
   triggerToken: string | null;
+  /** Bearer token the app's server sends to /frontend/*. Unset: those routes answer 503. */
+  settlementToken: string | null;
   backfillIntervalMs: number;
+  /** CRE review simulation; null unless CRE_PROJECT_DIR is set. */
+  cre: { command: string[]; projectDir: string; workflow: string; target: string; broadcast: boolean; timeoutMs: number } | null;
+  /** Bearer token for POST /review. */
+  reviewToken: string | null;
 };
 
 const readOrNull = (path: string): string | null => {
@@ -41,6 +47,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
     dbPath: env.RUNNER_DB_PATH ?? resolve(here, "../data/runner.db"),
     triggerUrl: env.CRE_TRIGGER_URL || null,
     triggerToken: env.CRE_TRIGGER_TOKEN || null,
+    settlementToken: env.SETTLEMENT_TOKEN || null,
     backfillIntervalMs: Number(env.BACKFILL_INTERVAL_MS ?? 60_000),
+    cre: env.CRE_PROJECT_DIR
+      ? {
+          command: [env.CRE_BIN || "cre"],
+          projectDir: env.CRE_PROJECT_DIR,
+          workflow: env.CRE_WORKFLOW || "review",
+          target: env.CRE_TARGET || "staging-settings",
+          broadcast: env.CRE_BROADCAST !== "false",
+          timeoutMs: Number(env.CRE_TIMEOUT_MS || 300_000),
+        }
+      : null,
+    reviewToken: env.REVIEW_TOKEN || null,
   };
 }

@@ -13,6 +13,12 @@ import {
 import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
+import { standardGroupsEnabled } from "@/lib/squads/groups";
+
+// Next.js inlines NEXT_PUBLIC_* only for literal property access.
+const creationEnabled = standardGroupsEnabled(
+  process.env.NEXT_PUBLIC_ENABLE_STANDARD_GROUPS,
+);
 
 export function CreateGroupButton({
   label = "Create group",
@@ -30,6 +36,12 @@ export function CreateGroupButton({
   const [threshold, setThreshold] = useState("1");
   const invitees = members.split(/[\s,]+/).filter(Boolean);
   const count = invitees.length + 1;
+  if (!creationEnabled)
+    return (
+      <p className="caption">
+        Guarded treasuries are created by the bootstrap script.
+      </p>
+    );
   return (
     <Dialog
       open={open}
@@ -187,7 +199,9 @@ export function GroupManage({
       <DialogContent className="bg-card">
         <DialogTitle>Your treasuries</DialogTitle>
         <DialogDescription>
-          Open a shared treasury using its group address, or create a new one.
+          {creationEnabled
+            ? "Open a shared treasury using its group address, or create a new one."
+            : "Open a shared treasury using its group address."}
         </DialogDescription>
         <GroupSwitcher />
         <form

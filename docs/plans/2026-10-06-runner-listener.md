@@ -59,3 +59,16 @@ cursor(id INTEGER PRIMARY KEY CHECK (id = 1), last_signature TEXT)
 - [x] **Task 3: trigger.** `HttpTrigger` POSTs `{ multisig, txIndex }` with `Authorization: Bearer`, throws on non-2xx (tested with a local `node:http` server).
 - [x] **Task 4: listener.** Fake connection: backfill pages `getSignaturesForAddress` (`before`) until the cursor, processes oldest first, skips failed transactions, stores the newest signature as cursor; WebSocket callback path and backfill path dedupe; `runTriggers()` fires once per review and retries failures; health reflects WS state and last backfill time.
 - [x] **Task 5: server + entry.** `GET /status` returns 200 with JSON when healthy, 503 when not. `GET /reviews?limit=` (max 200) serves history for the app's activity feed. `npm run dev --workspace=services/runner` starts against devnet.
+
+## Addendum (7 Oct): settlement endpoints for the app
+
+The app's server routes call `${OMNICOUNTER_SETTLEMENT_URL}/frontend/*` with a bearer token and validate the returned instruction (`app/src/lib/squads/sdk.ts` `validateGuardInstruction`: guard program id, includes multisig, vault transaction and proposal PDAs, no signer other than the member). The runner serves them:
+
+| Route | Returns |
+|---|---|
+| `POST /frontend/propose { multisig, txIndex, member }` | `{ guardInstruction }`: `request_review` for that index (proposer = payer = member). Built from PDAs only, so it can go in the same transaction as `vaultTransactionCreate` + `proposalCreate`. |
+| `POST /frontend/execute { multisig, txIndex, member }` | `{ guardInstruction }`: `guarded_execute` with the destination decoded from the stored transaction (`@wysiwys/decoder`, exactly one SOL transfer or SPL `TransferChecked`) and the Squads execute accounts. 409 unless the Review is Approved. |
+| `GET /frontend/groups/:multisig` | `{ multisig, programId, executorPda, vaultIndex, guardReady }` when a GuardConfig exists for it, else 404. |
+| `POST /frontend/groups/prepare` | 501: guarded groups are created by the bootstrap, not the UI. |
+
+Fail closed: no `SETTLEMENT_TOKEN` configured means 503; wrong or missing bearer token 401; strict identifier validation (base58 pubkeys, u64 index); 2 KB body cap; per-client rate limit. Tested end to end against the local validator (Squads, guard, test forwarder): propose with the runner's `request_review`, approve, report, execute with the runner's `guarded_execute`, funds arrive.

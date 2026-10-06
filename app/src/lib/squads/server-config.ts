@@ -10,16 +10,23 @@ export function parseDeployment(
   if (!input || typeof input !== "object")
     throw new Error("Invalid deployment configuration.");
   const record = input as Record<string, unknown>;
-  const keys = ["multisig", "guardProgram", "executor"] as const;
-  const addresses = {} as Record<(typeof keys)[number], string>;
+  // devnet.json and the runner's group response name the guard program
+  // `programId` and the executor `executorPda`; SquadConfig keeps its own names.
+  const keys = {
+    multisig: "multisig",
+    guardProgram: "programId",
+    executor: "executorPda",
+  } as const;
+  const addresses = {} as Record<keyof typeof keys, string>;
   try {
-    for (const key of keys) {
-      if (typeof record[key] !== "string") throw new Error();
-      addresses[key] = new PublicKey(record[key]).toBase58();
+    for (const field of Object.keys(keys) as (keyof typeof keys)[]) {
+      const value = record[keys[field]];
+      if (typeof value !== "string") throw new Error();
+      addresses[field] = new PublicKey(value).toBase58();
     }
   } catch {
     throw new Error(
-      "Invalid deployment addresses. Expected multisig, guardProgram and executor.",
+      "Invalid deployment addresses. Expected multisig, programId and executorPda.",
     );
   }
   if (PublicKey.isOnCurve(new PublicKey(addresses.executor).toBytes()))
@@ -34,10 +41,35 @@ export function parseDeployment(
     vaultIndex > 255
   )
     throw new Error("Invalid vault index.");
-  return { ...addresses, vaultIndex, settlementEnabled };
+  return {
+    ...addresses,
+    vaultIndex,
+    settlementEnabled,
+    executionMode: "guarded",
+    ...(record.mint === undefined ? {} : { token: parseToken(record) }),
+  };
+}
+function parseToken(record: Record<string, unknown>) {
+  const token = record.token as Record<string, unknown> | undefined;
+  try {
+    const mint = new PublicKey(record.mint as string).toBase58();
+    const { symbol, decimals } = token ?? {};
+    if (
+      typeof symbol !== "string" ||
+      !/^[A-Za-z0-9]{1,10}$/.test(symbol) ||
+      typeof decimals !== "number" ||
+      !Number.isInteger(decimals) ||
+      decimals < 0 ||
+      decimals > 9
+    )
+      throw new Error();
+    return { mint, symbol, decimals };
+  } catch {
+    throw new Error("Invalid deployment token metadata.");
+  }
 }
 export async function loadConfig(): Promise<SquadConfig | null> {
-  const configuredPath = process.env.OMNICOUNTER_DEPLOYMENT_PATH;
+  const configuredPath = process.env.WYSIWYS_DEPLOYMENT_PATH;
   let contents: string;
   try {
     contents = await readFile(
@@ -52,7 +84,20 @@ export async function loadConfig(): Promise<SquadConfig | null> {
   }
   return parseDeployment(
     JSON.parse(contents),
-    !!process.env.OMNICOUNTER_SETTLEMENT_URL,
+    !!process.env.WYSIWYS_SETTLEMENT_URL,
+  );
+}
+export function isPrepareRequest(
+  input: unknown,
+): input is { action: "propose" | "execute"; index: string; member: unknown } {
+  if (!input || typeof input !== "object") return false;
+  const { action, index } = input as Record<string, unknown>;
+  return (
+    (action === "propose" || action === "execute") &&
+    typeof index === "string" &&
+    /^\d{1,20}$/.test(index) &&
+    BigInt(index) >= 1n &&
+    BigInt(index) <= 18446744073709551615n
   );
 }
 export function rpcUrl() {

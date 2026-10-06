@@ -8,9 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Panel } from "@/components/design";
 import { useSquad } from "@/lib/squads/provider";
 import { Explorer } from "./treasury-ui";
-import { tokenAmount as formatTokenAmount } from "@/lib/squads/payments";
+import {
+  assetLabel,
+  tokenAmount as formatTokenAmount,
+} from "@/lib/squads/payments";
 export function VaultFunding() {
-  const { snapshot, account, funding, deposit, busy, error } = useSquad();
+  const { config, snapshot, account, funding, deposit, busy, error } =
+    useSquad();
   const [asset, setAsset] = useState("");
   const [amount, setAmount] = useState("");
   const member = snapshot?.squad.members.some(
@@ -53,7 +57,7 @@ export function VaultFunding() {
             {token
               ? formatTokenAmount(token.amount, token.decimals)
               : formatTokenAmount(String(funding.sol), 9)}{" "}
-            {token ? "tokens" : "SOL"}
+            {assetLabel(config, token?.mint)}
           </p>
           <label htmlFor="deposit-amount">Deposit amount</label>
           <Input

@@ -6,7 +6,7 @@ import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "chai";
-import { bootstrap, checkSoleExecutor, guardFromEnv, type BootstrapOptions, type GuardInit } from "../scripts/lib/bootstrap";
+import { bootstrap, checkSoleExecutor, guardFromEnv, signersFromEnv, type BootstrapOptions, type GuardInit } from "../scripts/lib/bootstrap";
 import { testProvider } from "./helpers/provider";
 import { expectError, guardProgram, payer } from "./helpers/guard";
 
@@ -144,6 +144,30 @@ describe("bootstrap", () => {
     const withoutExecutor = { ...ms, members: ms.members.filter((m) => !m.key.equals(executor)) };
     expect(() => checkSoleExecutor(withoutExecutor as any, executor)).to.throw(/not a member/);
   });
+
+  it("creates a separately named treasury with external signers (Phantom wallets), sharing mint and recipients", async () => {
+    const wallets = [Keypair.generate(), Keypair.generate(), Keypair.generate()].map((k) => k.publicKey);
+    const demo = await bootstrap({ ...base(), treasury: "demo", signers: wallets });
+    expect(demo.multisig).to.not.equal(first.multisig);
+    expect(demo.mint).to.equal(first.mint);
+    expect(demo.recipients).to.deep.equal(first.recipients);
+    expect(demo.signers).to.deep.equal(wallets.map((w) => w.toBase58()));
+    expect(statSync(join(keysDir, "multisig-create-key-demo.json")).mode & 0o777).to.equal(0o600);
+    const ms = await multisig.accounts.Multisig.fromAccountAddress(connection, new PublicKey(demo.multisig));
+    const byKey = new Map(ms.members.map((m) => [m.key.toBase58(), m.permissions.mask]));
+    for (const w of wallets) expect(byKey.get(w.toBase58())).to.equal(Permission.Initiate | Permission.Vote);
+    expect(byKey.get(demo.executorPda)).to.equal(Permission.Execute);
+    for (const w of wallets) expect(await connection.getBalance(w)).to.be.at.least(50_000_000);
+    const vault = await getAccount(connection, new PublicKey(demo.vaultTokenAccount));
+    expect(vault.amount).to.equal(10_000_000n * 10n ** 6n);
+    // Idempotent with the same signers.
+    expect(await bootstrap({ ...base(), treasury: "demo", signers: wallets })).to.deep.equal(demo);
+  });
+
+  it("refuses to rerun a treasury with a different signer set", async () => {
+    const other = [Keypair.generate(), Keypair.generate(), Keypair.generate()].map((k) => k.publicKey);
+    await expectError(bootstrap({ ...base(), treasury: "demo", signers: other }), "different signers");
+  });
 });
 
 describe("guardFromEnv", () => {
@@ -177,5 +201,28 @@ describe("guardFromEnv", () => {
     expect(() => guardFromEnv({ ...full, GUARD_POLICY_HASH: "ab" })).to.throw(/32 bytes/);
     expect(() => guardFromEnv({ ...full, GUARD_WORKFLOW_OWNER: "cd".repeat(19) })).to.throw(/20 bytes/);
     expect(() => guardFromEnv({ ...full, GUARD_FORWARDER_STATE: "not-a-key" })).to.throw();
+  });
+});
+
+describe("signersFromEnv", () => {
+  const w = () => Keypair.generate().publicKey.toBase58();
+
+  it("returns null when SIGNERS is unset or empty", () => {
+    expect(signersFromEnv(undefined)).to.equal(null);
+    expect(signersFromEnv("")).to.equal(null);
+  });
+
+  it("parses three distinct wallet addresses", () => {
+    const [a, b, c] = [w(), w(), w()];
+    expect(signersFromEnv(` ${a}, ${b},${c} `)!.map((k) => k.toBase58())).to.deep.equal([a, b, c]);
+  });
+
+  it("refuses the wrong count, duplicates, bad keys and off-curve addresses (PDAs)", () => {
+    const a = w();
+    expect(() => signersFromEnv(`${a},${w()}`)).to.throw(/exactly 3/);
+    expect(() => signersFromEnv(`${a},${a},${w()}`)).to.throw(/distinct/);
+    expect(() => signersFromEnv(`${a},${w()},nope`)).to.throw();
+    const pda = PublicKey.findProgramAddressSync([Buffer.from("x")], PublicKey.default)[0].toBase58();
+    expect(() => signersFromEnv(`${a},${w()},${pda}`)).to.throw(/wallet/);
   });
 });

@@ -62,23 +62,25 @@ anchor build
 anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
 anchor deploy --provider.cluster devnet
 
-# Devnet setup and end-to-end (e2e not written yet)
+# Devnet setup and end-to-end
 npx tsx scripts/bootstrap-devnet.ts        # idempotent; mUSD mint + metadata, Squads, recipients,
                                            # guard config once GUARD_* CRE values are set; writes deployments/devnet.json
-npx tsx scripts/e2e-devnet.ts              # approve path + reject paths
+SIGNERS=a,b,c npx tsx scripts/bootstrap-devnet.ts --treasury demo   # demo treasury signed by those wallets;
+                                           # writes deployments/devnet.demo.json
+npx tsx scripts/e2e-devnet.ts [scenario]   # clean, lookalike, drift, overCap, ownershipSwap, durableNonce on the test
+                                           # treasury; review step = local stand-in via the mock forwarder; evidence/e2e/
 
 # Decoder + policy
 npm test --workspace=packages/decoder
 
 # CRE workflow
-cd workflow && cre workflow simulate       # save output to evidence/cre/
+cd workflow/<cre project> && cre workflow simulate <workflow> --target staging-settings   # save output to evidence/cre/
 
 # Runner (event adapter)
 npm run dev --workspace=services/runner
 
-# Web app (installed with workspaces disabled to protect the root lockfile)
-cd app && npm install --workspaces=false
-npm run dev | npm test | npm run test:e2e | npm run typecheck | npm run build
+# Web app (root npm workspace; env in app/.env.example)
+npm run dev --workspace=app    # also: test, test:e2e, typecheck, build
 ```
 
 Keep this section accurate. Update it in the same commit that changes a command.
@@ -146,12 +148,13 @@ Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing an
 - Listener: `logsSubscribe` on the Guard program via a configured provider, act only on **finalized** events, parse Anchor events with the IDL, backfill with `getSignaturesForAddress` on startup and every minute from a stored cursor, dedupe events by `(signature, index)` and reviews by `review`. Built: `services/runner/src/listener.ts`.
 - Sends authenticated, idempotent HTTP triggers to CRE (or runs `cre workflow simulate` in the demo setup). `POST /review` is bearer-token protected and rate limited.
 - SQLite stores events for the activity feed. The DB is history, not truth.
-- Adapter down means reviews do not start and payments cannot execute (fail closed). Expose health on `GET /status` (503 when not subscribed or the last backfill is over 2 minutes old) and history on `GET /reviews`. `POST /review` (running `cre workflow simulate`) is not built yet.
+- Adapter down means reviews do not start and payments cannot execute (fail closed). Expose health on `GET /status` (503 when not subscribed or the last backfill is over 2 minutes old) and history on `GET /reviews`. `POST /review` (bearer `REVIEW_TOKEN`) runs `cre workflow simulate --broadcast` for one review; the listener does the same in-process for each new review when `CRE_PROJECT_DIR` is set. Settlement routes for the app: `/frontend/propose`, `/frontend/execute`, `/frontend/groups/:multisig` (bearer `SETTLEMENT_TOKEN`).
 
 ### Web app (`app/`)
 - Next.js App Router, Tailwind CSS, shadcn/ui, built from the approved Figma; see `app/README.md` and `app/docs/implementation-plan.md`.
 - Screens: dashboard, transactions, transaction review (verdict + summary + proposer claim vs decoded reality), members, settings, `/status`. Propose, request review, vote and guarded-execute actions.
-- `src/lib/mock` holds UI-only view models (still OTC-flavoured from the first pass). They are not protocol contracts; map authoritative records from `packages/shared` into them when wiring the backend.
+- Real Squads v4 actions from the browser wallet (Wallet Standard). Guarded treasuries (executor PDA in `deployments/devnet.json`, or a group the runner reports as guarded) propose exactly one payment (SOL transfer or `TransferChecked` to an existing token account) together with the runner-built `request_review` in one transaction, and execute only through the runner-built `guarded_execute`. Server routes call the runner at `WYSIWYS_SETTLEMENT_URL` with `WYSIWYS_SETTLEMENT_TOKEN` (= runner `SETTLEMENT_TOKEN`).
+- UI group creation is hidden unless `NEXT_PUBLIC_ENABLE_STANDARD_GROUPS=true`: those groups give the creator Execute and bypass the guard. Guarded treasuries come from the bootstrap.
 - Read current state (balances, votes, Review status) from chain via a server route proxy; read history from the runner DB. Show the on-chain verdict first; a local decoder preview is labelled "preview" and never overrides it. A frontend button is never a permission boundary.
 - Signer keys, RPC keys and the runner token live only in server routes. Nothing secret in client bundles. Rate limit and cap amounts so the devnet vault cannot be drained.
 

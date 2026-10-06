@@ -1,8 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Keypair, SystemProgram, TransactionMessage } from "@solana/web3.js";
+import {
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  TransactionMessage,
+} from "@solana/web3.js";
+import {
+  ACCOUNT_SIZE,
+  AccountLayout,
+  TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import * as sqds from "@sqds/multisig";
 import {
+  buildGuardedPaymentInstruction,
   buildPaymentInstructions,
   buildPaymentProposal,
   previewMessage,
@@ -170,5 +182,108 @@ test("approval rejects changed recipient details and missing or incomplete previ
         reason: "Owner unavailable",
       }),
     /Owner unavailable/,
+  );
+});
+
+function tokenAccountInfo(
+  mint: PublicKey,
+  owner: PublicKey,
+  programOwner = TOKEN_PROGRAM_ID,
+) {
+  const data = Buffer.alloc(ACCOUNT_SIZE);
+  AccountLayout.encode(
+    {
+      mint,
+      owner,
+      amount: 0n,
+      delegateOption: 0,
+      delegate: PublicKey.default,
+      state: 1,
+      isNativeOption: 0,
+      isNative: 0n,
+      delegatedAmount: 0n,
+      closeAuthorityOption: 0,
+      closeAuthority: PublicKey.default,
+    },
+    data,
+  );
+  return {
+    data,
+    owner: programOwner,
+    lamports: 2039280,
+    executable: false,
+  };
+}
+const fakeRpc = (info: ReturnType<typeof tokenAccountInfo> | null) => ({
+  getAccountInfo: async () => info,
+});
+
+test("guarded SOL payouts are exactly one System transfer", async () => {
+  const ix = await buildGuardedPaymentInstruction(fakeRpc(null), {
+    vault,
+    recipient: recipient.toBase58(),
+    amount: "0.5",
+  });
+  assert.ok(ix.programId.equals(SystemProgram.programId));
+  assert.equal(ix.data.readUInt32LE(0), 2);
+  assert.equal(ix.data.readBigUInt64LE(4), 500_000_000n);
+});
+test("guarded token payouts are one TransferChecked to the recipient's existing token account", async () => {
+  const mint = Keypair.generate().publicKey;
+  const source = Keypair.generate().publicKey;
+  const destination = getAssociatedTokenAddressSync(mint, recipient);
+  const ix = await buildGuardedPaymentInstruction(
+    fakeRpc(tokenAccountInfo(mint, recipient)),
+    {
+      vault,
+      recipient: recipient.toBase58(),
+      amount: "2.5",
+      token: { mint: mint.toBase58(), source: source.toBase58(), decimals: 6 },
+    },
+  );
+  assert.ok(ix.programId.equals(TOKEN_PROGRAM_ID));
+  assert.equal(ix.data[0], 12);
+  assert.equal(ix.data.readBigUInt64LE(1), 2_500_000n);
+  assert.equal(ix.data[9], 6);
+  assert.ok(ix.keys[0].pubkey.equals(source));
+  assert.ok(ix.keys[2].pubkey.equals(destination));
+  assert.ok(ix.keys[3].pubkey.equals(vault));
+});
+test("guarded token payouts never create a missing or mismatched destination account", async () => {
+  const mint = Keypair.generate().publicKey;
+  const input = {
+    vault,
+    recipient: recipient.toBase58(),
+    amount: "1",
+    token: {
+      mint: mint.toBase58(),
+      source: Keypair.generate().publicKey.toBase58(),
+      decimals: 6,
+    },
+  };
+  await assert.rejects(
+    buildGuardedPaymentInstruction(fakeRpc(null), input),
+    /token account/i,
+  );
+  await assert.rejects(
+    buildGuardedPaymentInstruction(
+      fakeRpc(tokenAccountInfo(Keypair.generate().publicKey, recipient)),
+      input,
+    ),
+    /token account/i,
+  );
+  await assert.rejects(
+    buildGuardedPaymentInstruction(
+      fakeRpc(tokenAccountInfo(mint, Keypair.generate().publicKey)),
+      input,
+    ),
+    /token account/i,
+  );
+  await assert.rejects(
+    buildGuardedPaymentInstruction(
+      fakeRpc(tokenAccountInfo(mint, recipient, Keypair.generate().publicKey)),
+      input,
+    ),
+    /token account/i,
   );
 });

@@ -105,3 +105,221 @@ test("config reads RPC, port, DB path and trigger settings from env", () => {
   assert.equal(cfg.triggerUrl, "https://cre.example/trigger");
   assert.equal(cfg.triggerToken, "tok");
 });
+
+test("config reads the settlement token; empty means unset (routes fail closed)", () => {
+  assert.equal(loadConfig({ SETTLEMENT_TOKEN: "s3cr3t" }, () => null).settlementToken, "s3cr3t");
+  assert.equal(loadConfig({ SETTLEMENT_TOKEN: "" }, () => null).settlementToken, null);
+});
+
+// ---------------------------------------------------------------- settlement routes
+
+import { SettlementError, type Settlement } from "../src/settlement";
+import { PublicKey, TransactionInstruction } from "@solana/web3.js";
+
+const ix = new TransactionInstruction({
+  programId: new PublicKey("9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya"),
+  keys: [{ pubkey: PublicKey.default, isSigner: false, isWritable: true }],
+  data: Buffer.from([1, 2, 3]),
+});
+
+function fakeSettlement(calls: string[]): Settlement {
+  return {
+    requestReview: async (input: any) => (calls.push(`propose:${input.txIndex}`), ix),
+    guardedExecute: async (input: any) => {
+      calls.push(`execute:${input.txIndex}`);
+      if (input.txIndex === "9") throw new SettlementError(409, "review is not approved");
+      if (input.txIndex === "8") throw new Error("rpc exploded with https://secret.example/?api-key=x");
+      return ix;
+    },
+    destinationOf: async () => ({ kind: "spl", destination: "x" }),
+    guardedGroup: async (ms: string) =>
+      ms === "Guarded1111111111111111111111111111111111111"
+        ? { multisig: ms, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: true as const }
+        : null,
+  };
+}
+
+async function serveSettlement(token: string | null, rateLimitPerMinute = 100) {
+  const calls: string[] = [];
+  const store = openStore(":memory:");
+  const server = createStatusServer({
+    programId: "Guard111",
+    store,
+    health: () => ({ ok: true, subscribed: true, lastBackfillAt: 1, lastBackfillError: null, lastLogAt: null, cursor: null }),
+    settlement: fakeSettlement(calls),
+    settlementToken: token,
+    rateLimitPerMinute,
+    log: () => {},
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (path: string, body: unknown, auth: string | null = `Bearer ${token}`) =>
+    fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  return { base, post, calls, close: () => server.close() };
+}
+
+const ids = { multisig: "Ms1", txIndex: "3", member: "Mem1" };
+
+test("settlement routes fail closed (503) when no token is configured", async () => {
+  const s = await serveSettlement(null);
+  try {
+    assert.equal((await s.post("/frontend/propose", ids, "Bearer anything")).status, 503);
+    assert.deepEqual(s.calls, []);
+  } finally {
+    s.close();
+  }
+});
+
+test("settlement routes reject a missing or wrong bearer token (401)", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    assert.equal((await s.post("/frontend/propose", ids, null)).status, 401);
+    assert.equal((await s.post("/frontend/propose", ids, "Bearer nope")).status, 401);
+    assert.equal((await fetch(`${s.base}/frontend/groups/Guarded1111111111111111111111111111111111111`)).status, 401);
+    assert.deepEqual(s.calls, []);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/propose returns the request_review instruction in wire format", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    const res = await s.post("/frontend/propose", ids);
+    assert.equal(res.status, 200);
+    const body: any = await res.json();
+    assert.equal(body.guardInstruction.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");
+    assert.equal(body.guardInstruction.data, Buffer.from([1, 2, 3]).toString("base64"));
+    assert.deepEqual(body.guardInstruction.keys, [{ pubkey: PublicKey.default.toBase58(), isSigner: false, isWritable: true }]);
+    assert.deepEqual(s.calls, ["propose:3"]);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/execute maps settlement errors to their status and hides internal errors", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    assert.equal((await s.post("/frontend/execute", ids)).status, 200);
+    const notReady = await s.post("/frontend/execute", { ...ids, txIndex: "9" });
+    assert.equal(notReady.status, 409);
+    assert.equal(((await notReady.json()) as any).error, "review is not approved");
+    const boom = await s.post("/frontend/execute", { ...ids, txIndex: "8" });
+    assert.equal(boom.status, 502);
+    assert.doesNotMatch(await boom.text(), /api-key|secret/);
+  } finally {
+    s.close();
+  }
+});
+
+test("settlement routes reject bad JSON and oversized bodies", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    assert.equal((await s.post("/frontend/propose", "{not json")).status, 400);
+    assert.equal((await s.post("/frontend/propose", { ...ids, pad: "x".repeat(3000) })).status, 413);
+  } finally {
+    s.close();
+  }
+});
+
+test("GET /frontend/groups/:multisig returns guarded groups, 404 otherwise; group creation is 501", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    const auth = { authorization: "Bearer tok" };
+    const ok = await fetch(`${s.base}/frontend/groups/Guarded1111111111111111111111111111111111111`, { headers: auth });
+    assert.equal(ok.status, 200);
+    assert.equal(((await ok.json()) as any).executorPda, "E");
+    assert.equal((await fetch(`${s.base}/frontend/groups/Other`, { headers: auth })).status, 404);
+    assert.equal((await s.post("/frontend/groups/prepare", { multisig: "x", creator: "y" })).status, 501);
+  } finally {
+    s.close();
+  }
+});
+
+test("settlement routes are rate limited per client", async () => {
+  const s = await serveSettlement("tok", 2);
+  try {
+    assert.equal((await s.post("/frontend/propose", ids)).status, 200);
+    assert.equal((await s.post("/frontend/propose", ids)).status, 200);
+    assert.equal((await s.post("/frontend/propose", ids)).status, 429);
+  } finally {
+    s.close();
+  }
+});
+
+// ---------------------------------------------------------------- POST /review
+
+async function serveReview(token: string | null) {
+  const runs: unknown[] = [];
+  const server = createStatusServer({
+    programId: "Guard111",
+    store: openStore(":memory:"),
+    health: () => ({ ok: true, subscribed: true, lastBackfillAt: 1, lastBackfillError: null, lastLogAt: null, cursor: null }),
+    review: {
+      run: async (r: any) => {
+        runs.push(r);
+        if (r.txIndex === "x") throw new Error("invalid review identifiers");
+        return { ok: r.txIndex !== "13", exitCode: r.txIndex === "13" ? 1 : 0, timedOut: false, durationMs: 5, log: ["[USER LOG] ok"] };
+      },
+    },
+    reviewToken: token,
+    log: () => {},
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (body: unknown, auth: string | null = `Bearer ${token}`) =>
+    fetch(`${base}/review`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
+      body: JSON.stringify(body),
+    });
+  return { post, runs, close: () => server.close() };
+}
+
+test("POST /review runs the simulation and returns its sanitized result", async () => {
+  const s = await serveReview("rt");
+  try {
+    const res = await s.post({ multisig: "Ms1", txIndex: "7", extra: "ignored" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, exitCode: 0, timedOut: false, durationMs: 5, log: ["[USER LOG] ok"] });
+    assert.deepEqual(s.runs, [{ multisig: "Ms1", txIndex: "7" }]);
+    const failed = await s.post({ multisig: "Ms1", txIndex: "13" });
+    assert.equal(failed.status, 502);
+    assert.equal(((await failed.json()) as any).ok, false);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /review is fail closed and authenticated", async () => {
+  const none = await serveReview(null);
+  try {
+    assert.equal((await none.post({ multisig: "Ms1", txIndex: "7" }, "Bearer x")).status, 503);
+  } finally {
+    none.close();
+  }
+  const s = await serveReview("rt");
+  try {
+    assert.equal((await s.post({ multisig: "Ms1", txIndex: "7" }, null)).status, 401);
+    assert.equal((await s.post({ multisig: "Ms1", txIndex: "x" })).status, 400);
+    assert.equal(s.runs.length, 1);
+  } finally {
+    s.close();
+  }
+});
+
+test("config reads the CRE runner settings", () => {
+  const off = loadConfig({}, () => null);
+  assert.equal(off.cre, null);
+  const cfg = loadConfig(
+    { CRE_PROJECT_DIR: "/w/cre", CRE_WORKFLOW: "review", CRE_TARGET: "staging-settings", CRE_BROADCAST: "false", REVIEW_TOKEN: "rt" },
+    () => null,
+  );
+  assert.deepEqual(cfg.cre, { command: ["cre"], projectDir: "/w/cre", workflow: "review", target: "staging-settings", broadcast: false, timeoutMs: 300000 });
+  assert.equal(cfg.reviewToken, "rt");
+  assert.equal(loadConfig({ CRE_PROJECT_DIR: "/w/cre" }, () => null).cre!.broadcast, true);
+});

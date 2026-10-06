@@ -121,6 +121,7 @@ export function openStore(path: string) {
   const selectPendingTriggers = db.prepare(
     `SELECT review, multisig, tx_index AS txIndex FROM reviews
      WHERE status = 'pending' AND trigger_status IN ('none', 'failed') AND multisig IS NOT NULL AND tx_index IS NOT NULL
+       AND trigger_attempts < ?
      ORDER BY updated_at`,
   );
   const updateTrigger = db.prepare(
@@ -137,7 +138,8 @@ export function openStore(path: string) {
   return {
     applyEvent,
     getReview,
-    pendingTriggers: () => selectPendingTriggers.all().map((r) => plain<TriggerRequest>(r)),
+    /** Pending reviews not yet triggered, or failed fewer than maxAttempts times. */
+    pendingTriggers: (maxAttempts = 5) => selectPendingTriggers.all(maxAttempts).map((r) => plain<TriggerRequest>(r)),
     markTrigger: (review: string, ok: boolean, error?: string) =>
       void updateTrigger.run(ok ? "sent" : "failed", ok ? null : (error ?? "unknown error"), review),
     getCursor: () => ((selectCursor.get() as { last_signature: string } | undefined)?.last_signature ?? null),
