@@ -35,7 +35,7 @@
 - `request_review(settlement_intent_hash: [u8; 32], trade_ref_hash: [u8; 32])`; accounts `multisig, vault_transaction, proposal, review (init), payer, system_program`
 - `on_report(metadata: Vec<u8>, report: Vec<u8>)`; accounts `forwarder_state, forwarder_authority (signer), config, review` (forwarder accounts first, per Chainlink's `kv_store_receiver`)
 
-**CRE report payload (Borsh, fixed 171 bytes)**: `{ review: Pubkey, verdict: u8 (1 = approve, 2 = reject), reason: u16, msg_hash: [u8; 32], settlement_intent_hash: [u8; 32], trade_ref_hash: [u8; 32], policy_hash: [u8; 32], expires_at: i64 }`. `expires_at` = min(policy expiry, trade `valid_until`), set by the workflow.
+**CRE report payload (fixed 107 bytes, little-endian, decided 6 Oct)**: `{ verdict: u8 (1 = approve, 2 = reject), reason: u16, msg_hash: [u8; 32], intent_hash: [u8; 32], policy_hash: [u8; 32], expires_at: i64 }`, with `intent_hash` = SHA-256(`settlement_intent_hash || trade_ref_hash`). The Review is the account passed to `on_report`. Cut from 171 bytes to fit CRE's 265-byte Solana raw report limit. `expires_at` = min(policy expiry, trade `valid_until`), set by the workflow, always in the future.
 
 **Reason codes** (`ReviewReason`, u16, shared with workflow and UI): 0 WITHIN_POLICY, 1 RPC_NO_CONSENSUS, 2 TX_HASH_MISMATCH, 3 TRADE_NOT_FOUND, 4 TRADE_NOT_READY, 5 TRADE_EXPIRED, 6 TRADE_CANCELLED, 7 TRADE_ALREADY_SETTLED, 8 INTENT_HASH_MISMATCH, 9 COUNTERPARTY_LEG_NOT_RECEIVED, 10 ASSET_MISMATCH, 11 AMOUNT_MISMATCH, 12 DESTINATION_MISMATCH, 13 UNEXPECTED_INSTRUCTION, 14 UNKNOWN_PROGRAM, 15 AUTHORITY_CHANGE_BLOCKED, 16 DURABLE_NONCE_DETECTED, 17 COUNTERPARTY_SUSPENDED, 18 WALLET_NOT_VERIFIED, 19 SANCTIONED_WALLET, 20 WALLET_RISK_REJECTED, 21 LIMIT_EXCEEDED, 22 POLICY_HASH_MISMATCH. The guard only range-checks `reason` (<= 22); it never interprets it.
 
@@ -49,14 +49,14 @@
 
 ## Accounts
 
-**GuardConfig** (immutable after init): `multisig`, `forwarder_program`, `forwarder_state`, `policy_hash`, `bump`, `executor_bump`.
+**GuardConfig** (immutable after init): `multisig`, `forwarder_program`, `forwarder_state`, `policy_hash`, `bump`, `executor_bump`. `initialize_guard` requires the Squads `create_key` signer and checks the executor PDA is the sole Execute member of an autonomous multisig.
 - No admin update instruction. Changing config means re-running bootstrap with a new multisig. This removes the admin backdoor.
 
 **Review**: `version`, `multisig`, `vault_transaction`, `proposal`, `tx_index`, `msg_hash`, `settlement_intent_hash`, `trade_ref_hash`, `status` (Pending, Approved, Rejected, Executed), `reason`, `policy_hash`, `expires_at`, `created_at`, `bump`. One status enum; no separate `used` flag.
 
 ## Errors
 
-`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`, `ReviewMismatch`, `HashMismatch`, `NotApproved`, `Expired`, `AlreadyExecuted`, `InvalidStatusTransition`, `DurableNonceDetected`, `InvalidPayload`, `InvalidSquadsProgram`, `InvalidInstructionsSysvar`, `PolicyMismatch`, `IntentMismatch`, `InvalidForwarder`.
+`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`, `ReviewMismatch`, `HashMismatch`, `NotApproved`, `Expired`, `AlreadyExecuted`, `InvalidStatusTransition`, `DurableNonceDetected`, `InvalidPayload`, `InvalidSquadsProgram`, `InvalidInstructionsSysvar`, `PolicyMismatch`, `IntentMismatch`, `InvalidForwarder`, `InvalidMultisigConfig`.
 
 ---
 
@@ -69,9 +69,9 @@
 5. 🟠 Owner checks: `VaultTransaction` and `Proposal` owned by Squads; `Review` and `GuardConfig` owned by the guard; seeds and bumps re-derived; `has_one = multisig`.
 6. 🟠 `Review.multisig` and `Review.tx_index` must match the `VaultTransaction` being executed; re-hash its data at execute.
 7. 🟠 One-way status: Pending → Approved | Rejected → Executed. No re-report after Executed. Set Executed before the CPI.
-8. 🟠 `on_report`: `forwarder_state` owned by `forwarder_program` and equal to config; `forwarder_authority` == PDA `["forwarder", state, guard_id]` under the forwarder program and signed (`InvalidForwarder`); payload `review` equals the Review passed; `msg_hash` equal (`HashMismatch`); `settlement_intent_hash` and `trade_ref_hash` equal (`IntentMismatch`); `policy_hash` equals config (`PolicyMismatch`).
+8. 🟠 `on_report`: `forwarder_state` owned by `forwarder_program` and equal to config; `forwarder_authority` == PDA `["forwarder", state, guard_id]` under the forwarder program and signed (`InvalidForwarder`); Review PDA re-derived; `msg_hash` equal (`HashMismatch`); `intent_hash` equals SHA-256 of the Review's two trade hashes (`IntentMismatch`); `policy_hash` equals config (`PolicyMismatch`).
 9. 🟡 Expiry from `Clock::get()`, never from caller input.
-10. 🟡 Payload: exactly 171 bytes, no trailing bytes, verdict in {1, 2}, reason <= 22, `expires_at` > now.
+10. 🟡 Payload: exactly 107 bytes, no trailing bytes, verdict in {1, 2}, reason <= 22, `expires_at` > now.
 11. 🟡 `init` only, never `init_if_needed`.
 12. 🟡 Upgrade authority stays with the deployer key during the hackathon; README states it moves to governance or the program is made immutable before mainnet.
 
@@ -131,12 +131,12 @@ Record answers in `docs/spikes.md`.
 **Tests first (local validator with a test forwarder that mirrors the mock forwarder's PDA scheme):**
 - Valid payload via the forwarder sets status, reason, policy hash, expiry; emits `DecisionRecorded`.
 - Wrong forwarder state owner, wrong authority PDA or unsigned authority → `InvalidForwarder`.
-- Payload `review` or `msg_hash` mismatch → `ReviewMismatch` / `HashMismatch`.
-- `settlement_intent_hash` or `trade_ref_hash` mismatch → `IntentMismatch`.
+- `msg_hash` mismatch → `HashMismatch`.
+- `intent_hash` mismatch → `IntentMismatch`.
 - `policy_hash` different from config → `PolicyMismatch`.
-- Malformed payload (not 171 bytes, trailing bytes, verdict 0 or 3, reason > 22, expired `expires_at`) → `InvalidPayload`.
+- Malformed payload (not 107 bytes, trailing bytes, verdict 0 or 3, reason > 22, expired `expires_at`) → `InvalidPayload`.
 - Report after Executed → `InvalidStatusTransition`.
-- Re-report while still Pending/Approved is either rejected or idempotent (decide and document).
+- Re-report on a non-Pending Review → `InvalidStatusTransition` (decided 6 Oct).
 
 **Then:** implement with the Task 0 account order. Single `verify_forwarder()` function. Keep compute well under 290,000 CU.
 

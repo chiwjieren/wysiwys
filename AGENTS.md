@@ -51,6 +51,7 @@ npm test                                   # all TS workspaces
 anchor build
 anchor test                                # local validator, Squads cloned from devnet
 anchor deploy --provider.cluster devnet
+cargo test -p omnicounter_guard --lib      # guard pure logic unit tests
 
 # Devnet setup and end-to-end
 npx tsx scripts/bootstrap-devnet.ts        # idempotent; writes deployments/devnet.json
@@ -87,7 +88,7 @@ Keep this section accurate. Update it in the same commit that changes a command.
 - Events: `ReviewRequested { review, multisig, tx_index, msg_hash, settlement_intent_hash, trade_ref_hash }`, `DecisionRecorded { review, verdict, reason, policy_hash, expires_at }`, `Executed { review, multisig, tx_index }`
 - `request_review(settlement_intent_hash [32], trade_ref_hash [32])`; accounts `multisig, vault_transaction, proposal, review (init), payer`
 - `on_report(metadata: Vec<u8>, report: Vec<u8>)`; accounts `forwarder_state, forwarder_authority (signer), config, review`
-- Report payload (Borsh, fixed 171 bytes): `{ review Pubkey, verdict u8 (1 approve, 2 reject), reason u16, msg_hash [32], settlement_intent_hash [32], trade_ref_hash [32], policy_hash [32], expires_at i64 }`. `expires_at` = min(policy expiry, trade `valid_until`).
+- Report payload (fixed 107 bytes, little-endian, no Borsh framing): `{ verdict u8 (1 approve, 2 reject), reason u16, msg_hash [32], intent_hash [32], policy_hash [32], expires_at i64 }`, where `intent_hash` = SHA-256(`settlement_intent_hash || trade_ref_hash`). The Review is the account passed to `on_report`, not a payload field. Sized for CRE's 265-byte Solana raw report limit. Fields echo the Review's stored values; problems are reported through `reason`. `expires_at` = min(policy expiry, trade `valid_until`) and must be in the future, also for rejects. Codec: `packages/shared/src/report.ts`.
 - Reason codes (u16, `ReviewReason`): 0 WITHIN_POLICY, 1 RPC_NO_CONSENSUS, 2 TX_HASH_MISMATCH, 3 TRADE_NOT_FOUND, 4 TRADE_NOT_READY, 5 TRADE_EXPIRED, 6 TRADE_CANCELLED, 7 TRADE_ALREADY_SETTLED, 8 INTENT_HASH_MISMATCH, 9 COUNTERPARTY_LEG_NOT_RECEIVED, 10 ASSET_MISMATCH, 11 AMOUNT_MISMATCH, 12 DESTINATION_MISMATCH, 13 UNEXPECTED_INSTRUCTION, 14 UNKNOWN_PROGRAM, 15 AUTHORITY_CHANGE_BLOCKED, 16 DURABLE_NONCE_DETECTED, 17 COUNTERPARTY_SUSPENDED, 18 WALLET_NOT_VERIFIED, 19 SANCTIONED_WALLET, 20 WALLET_RISK_REJECTED, 21 LIMIT_EXCEEDED, 22 POLICY_HASH_MISMATCH
 - `msg_hash` = SHA-256 of the full Squads `VaultTransaction` account data, computed by the guard in `request_review`; the workflow only checks it
 - `settlement_intent_hash` = SHA-256 of the canonical `SettlementIntent` (fixed key order, no whitespace, amounts as strings); `trade_ref_hash` = SHA-256(`trade_id + ":" + version`). One implementation in `packages/shared`, used by the app and the workflow.
@@ -105,7 +106,7 @@ Keep this section accurate. Update it in the same commit that changes a command.
   2. The executor PDA signs only the Squads `vault_transaction_execute` CPI.
   3. `GuardConfig` is immutable after init. No admin can change the forwarder or `policy_hash`.
   4. Check the instructions sysvar address before the durable-nonce check (instruction 0 must not be `AdvanceNonceAccount`).
-  4a. `on_report`: forwarder state owner and authority PDA checked; review Pending; `msg_hash`, `settlement_intent_hash`, `trade_ref_hash` equal the Review; `policy_hash` equals config (`PolicyMismatch`).
+  4a. `on_report`: forwarder state owner and authority PDA checked; `msg_hash` and `intent_hash` match the Review; only a Pending Review accepts a report; `policy_hash` equals config (`PolicyMismatch`).
   5. Owner checks on every account; re-derive seeds; `has_one = multisig`.
   6. One-way status: Pending → Approved | Rejected → Executed. Set Executed before the CPI.
   7. Expiry uses `Clock::get()`. Payload decoding is exact-length and range-checked.
