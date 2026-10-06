@@ -193,6 +193,15 @@
               32
             ]
           }
+        },
+        {
+          "name": "workflow_owner",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
         }
       ]
     },
@@ -496,6 +505,11 @@
       "code": 6017,
       "name": "ExecutorInMessage",
       "msg": "Vault transaction must not reference the executor PDA"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidWorkflow",
+      "msg": "Report was not produced by the configured CRE workflow owner"
     }
   ],
   "types": [
@@ -578,6 +592,18 @@
               "array": [
                 "u8",
                 32
+              ]
+            }
+          },
+          {
+            "name": "workflow_owner",
+            "docs": [
+              "CRE workflow owner (20-byte address) whose reports this guard accepts."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
               ]
             }
           },

@@ -21,6 +21,31 @@ export function intentHash(settlementIntentHash: Uint8Array, tradeRefHash: Uint8
   return sha256(joined);
 }
 
+// Keystone metadata the forwarder passes to on_report. The guard checks workflowOwner.
+export const REPORT_METADATA_LEN = 64;
+
+export interface ReportMetadata {
+  workflowCid: Uint8Array; // 32
+  workflowName: Uint8Array; // 10
+  workflowOwner: Uint8Array; // 20
+  reportId: Uint8Array; // 2
+}
+
+export function encodeReportMetadata(m: ReportMetadata): Uint8Array {
+  const parts: [Uint8Array, number, string][] = [
+    [m.workflowCid, 32, "workflowCid"], [m.workflowName, 10, "workflowName"],
+    [m.workflowOwner, 20, "workflowOwner"], [m.reportId, 2, "reportId"],
+  ];
+  const out = new Uint8Array(REPORT_METADATA_LEN);
+  let off = 0;
+  for (const [bytes, len, name] of parts) {
+    if (bytes.length !== len) throw new Error(`${name} must be ${len} bytes`);
+    out.set(bytes, off);
+    off += len;
+  }
+  return out;
+}
+
 function check32(name: string, v: Uint8Array) {
   if (v.length !== 32) throw new Error(`${name} must be 32 bytes`);
 }

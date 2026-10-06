@@ -153,6 +153,17 @@ pub fn verify_forwarder(
     Ok(())
 }
 
+/// The forwarder authority PDA is shared by every workflow that targets this receiver,
+/// so the report must also come from the configured workflow owner.
+pub fn verify_workflow(metadata: &[u8], expected_owner: &[u8; 20]) -> Result<()> {
+    require!(metadata.len() == REPORT_METADATA_LEN, GuardError::InvalidWorkflow);
+    require!(
+        metadata[WORKFLOW_OWNER_OFFSET..WORKFLOW_OWNER_OFFSET + 20] == expected_owner[..],
+        GuardError::InvalidWorkflow
+    );
+    Ok(())
+}
+
 /// System program AdvanceNonceAccount (bincode u32 tag 4).
 pub fn is_advance_nonce(program_id: &Pubkey, data: &[u8]) -> bool {
     *program_id == anchor_lang::solana_program::system_program::ID && data.len() >= 4 && data[..4] == [4, 0, 0, 0]
@@ -416,7 +427,7 @@ mod tests {
     // Forwarder
 
     fn config(forwarder_program: Pubkey, forwarder_state: Pubkey) -> GuardConfig {
-        GuardConfig { multisig: key(1), forwarder_program, forwarder_state, policy_hash: [3; 32], bump: 255, executor_bump: 255 }
+        GuardConfig { multisig: key(1), forwarder_program, forwarder_state, policy_hash: [3; 32], workflow_owner: [7; 20], bump: 255, executor_bump: 255 }
     }
 
     fn authority_for(state: &Pubkey, forwarder_program: &Pubkey) -> Pubkey {
@@ -460,6 +471,35 @@ mod tests {
             code_of(verify_forwarder(&state, &prog, &authority_for(&state, &prog), false, &config(prog, state))),
             code(GuardError::InvalidForwarder)
         );
+    }
+
+    // Workflow binding (metadata: workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2)
+
+    fn metadata(owner: [u8; 20]) -> Vec<u8> {
+        let mut m = vec![0xAAu8; 32];
+        m.extend_from_slice(&[0xBBu8; 10]);
+        m.extend_from_slice(&owner);
+        m.extend_from_slice(&[0, 1]);
+        m
+    }
+
+    #[test]
+    fn workflow_accepts_configured_owner() {
+        verify_workflow(&metadata([7; 20]), &[7; 20]).unwrap();
+    }
+
+    #[test]
+    fn workflow_rejects_other_owner() {
+        assert_eq!(code_of(verify_workflow(&metadata([8; 20]), &[7; 20])), code(GuardError::InvalidWorkflow));
+    }
+
+    #[test]
+    fn workflow_metadata_must_be_64_bytes() {
+        let m = metadata([7; 20]);
+        assert_eq!(code_of(verify_workflow(&m[..63], &[7; 20])), code(GuardError::InvalidWorkflow));
+        let mut long = m.clone();
+        long.push(0);
+        assert_eq!(code_of(verify_workflow(&long, &[7; 20])), code(GuardError::InvalidWorkflow));
     }
 
     // Durable nonce

@@ -23,10 +23,11 @@ pub struct OnReport<'info> {
     pub review: Account<'info, Review>,
 }
 
-pub fn handle_on_report(ctx: Context<OnReport>, _metadata: Vec<u8>, report: Vec<u8>) -> Result<()> {
+pub fn handle_on_report(ctx: Context<OnReport>, metadata: Vec<u8>, report: Vec<u8>) -> Result<()> {
     let state = &ctx.accounts.forwarder_state;
     let authority = &ctx.accounts.forwarder_authority;
     logic::verify_forwarder(&state.key(), state.owner, &authority.key(), authority.is_signer, &ctx.accounts.config)?;
+    logic::verify_workflow(&metadata, &ctx.accounts.config.workflow_owner)?;
 
     let config_policy_hash = ctx.accounts.config.policy_hash;
     let review = &mut ctx.accounts.review;

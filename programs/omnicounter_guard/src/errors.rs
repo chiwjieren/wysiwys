@@ -39,4 +39,6 @@ pub enum GuardError {
     InvalidMultisigConfig,
     #[msg("Vault transaction must not reference the executor PDA")]
     ExecutorInMessage,
+    #[msg("Report was not produced by the configured CRE workflow owner")]
+    InvalidWorkflow,
 }

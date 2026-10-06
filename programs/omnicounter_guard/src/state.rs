@@ -8,6 +8,8 @@ pub struct GuardConfig {
     pub forwarder_program: Pubkey,
     pub forwarder_state: Pubkey,
     pub policy_hash: [u8; 32],
+    /// CRE workflow owner (20-byte address) whose reports this guard accepts.
+    pub workflow_owner: [u8; 20],
     pub bump: u8,
     pub executor_bump: u8,
 }

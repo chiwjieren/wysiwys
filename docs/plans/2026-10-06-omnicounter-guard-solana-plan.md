@@ -49,14 +49,14 @@
 
 ## Accounts
 
-**GuardConfig** (immutable after init): `multisig`, `forwarder_program`, `forwarder_state`, `policy_hash`, `bump`, `executor_bump`. `initialize_guard` requires the Squads `create_key` signer and checks the executor PDA is the sole Execute member of an autonomous multisig.
+**GuardConfig** (immutable after init): `multisig`, `forwarder_program`, `forwarder_state`, `policy_hash`, `workflow_owner` (20 bytes, the CRE workflow owner whose reports are accepted), `bump`, `executor_bump`. `initialize_guard` requires the Squads `create_key` signer and checks the executor PDA is the sole Execute member of an autonomous multisig.
 - No admin update instruction. Changing config means re-running bootstrap with a new multisig. This removes the admin backdoor.
 
 **Review**: `version`, `multisig`, `vault_transaction`, `proposal`, `tx_index`, `msg_hash`, `settlement_intent_hash`, `trade_ref_hash`, `status` (Pending, Approved, Rejected, Executed), `reason`, `policy_hash`, `expires_at`, `created_at`, `bump`. One status enum; no separate `used` flag.
 
 ## Errors
 
-`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`, `ReviewMismatch`, `HashMismatch`, `NotApproved`, `Expired`, `AlreadyExecuted`, `InvalidStatusTransition`, `DurableNonceDetected`, `InvalidPayload`, `InvalidSquadsProgram`, `InvalidInstructionsSysvar`, `PolicyMismatch`, `IntentMismatch`, `InvalidForwarder`, `InvalidMultisigConfig`.
+`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`, `ReviewMismatch`, `HashMismatch`, `NotApproved`, `Expired`, `AlreadyExecuted`, `InvalidStatusTransition`, `DurableNonceDetected`, `InvalidPayload`, `InvalidSquadsProgram`, `InvalidInstructionsSysvar`, `PolicyMismatch`, `IntentMismatch`, `InvalidForwarder`, `InvalidMultisigConfig`, `ExecutorInMessage`, `InvalidWorkflow`.
 
 ---
 
@@ -69,7 +69,7 @@
 5. 🟠 Owner checks: `VaultTransaction` and `Proposal` owned by Squads; `Review` and `GuardConfig` owned by the guard; seeds and bumps re-derived; `has_one = multisig`.
 6. 🟠 `Review.multisig` and `Review.tx_index` must match the `VaultTransaction` being executed; re-hash its data at execute.
 7. 🟠 One-way status: Pending → Approved | Rejected → Executed. No re-report after Executed. Set Executed before the CPI.
-8. 🟠 `on_report`: `forwarder_state` owned by `forwarder_program` and equal to config; `forwarder_authority` == PDA `["forwarder", state, guard_id]` under the forwarder program and signed (`InvalidForwarder`); Review PDA re-derived; `msg_hash` equal (`HashMismatch`); `intent_hash` equals SHA-256 of the Review's two trade hashes (`IntentMismatch`); `policy_hash` equals config (`PolicyMismatch`).
+8. 🟠 `on_report`: `forwarder_state` owned by `forwarder_program` and equal to config; `forwarder_authority` == PDA `["forwarder", state, guard_id]` under the forwarder program and signed (`InvalidForwarder`); metadata is 64 bytes and its `workflow_owner` (bytes 42..62) equals config (`InvalidWorkflow`); Review PDA re-derived; `msg_hash` equal (`HashMismatch`); `intent_hash` equals SHA-256 of the Review's two trade hashes (`IntentMismatch`); `policy_hash` equals config (`PolicyMismatch`).
 9. 🟡 Expiry from `Clock::get()`, never from caller input.
 10. 🟡 Payload: exactly 107 bytes, no trailing bytes, verdict in {1, 2}, reason <= 22, `expires_at` > now.
 11. 🟡 `init` only, never `init_if_needed`.

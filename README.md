@@ -15,7 +15,7 @@ The guard (`programs/omnicounter_guard`) holds the only Execute permission on th
 | 5 | Owner, discriminator and seed checks on every account; `has_one = multisig` (`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`) | `tests/request_review.ts`, `tests/guarded_execute.ts` |
 | 6 | Review bound to its vault transaction and proposal; vault transaction re-hashed at execute (`ReviewMismatch`, `HashMismatch`) | `tests/guarded_execute.ts`, `programs/omnicounter_guard/src/logic.rs` |
 | 7 | One-way status Pending → Approved or Rejected; Approved → Executed; Executed written before the CPI (`InvalidStatusTransition`, `AlreadyExecuted`, `NotApproved`) | `tests/on_report.ts`, `tests/guarded_execute.ts` |
-| 8 | `on_report` accepts only the configured Keystone forwarder state, owner and signed authority PDA, and matching `msg_hash`, `intent_hash`, `policy_hash` (`InvalidForwarder`, `HashMismatch`, `IntentMismatch`, `PolicyMismatch`) | `tests/on_report.ts`, `logic.rs` |
+| 8 | `on_report` accepts only the configured Keystone forwarder state, owner and signed authority PDA, reports whose metadata names the configured CRE workflow owner, and matching `msg_hash`, `intent_hash`, `policy_hash` (`InvalidForwarder`, `InvalidWorkflow`, `HashMismatch`, `IntentMismatch`, `PolicyMismatch`) | `tests/on_report.ts`, `logic.rs` |
 | 9 | Expiry uses `Clock::get()` (`Expired`) | `tests/guarded_execute.ts` |
 | 10 | Report payload is exactly 107 bytes, verdict 1 or 2, reason <= 22, `expires_at` in the future (`InvalidPayload`) | `logic.rs`, `tests/on_report.ts` |
 | 11 | `init` only, never `init_if_needed` | `tests/structure.ts` |

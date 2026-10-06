@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   REPORT_PAYLOAD_LEN, VERDICT, encodeReportPayload, decodeReportPayload, intentHash,
-  txIndexSeed, GuardErrorCode, ReviewReason, MAX_REASON,
+  txIndexSeed, GuardErrorCode, ReviewReason, MAX_REASON, REPORT_METADATA_LEN, encodeReportMetadata,
 } from "./index";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
@@ -42,6 +42,16 @@ test("intentHash is sha256(settlement_intent_hash || trade_ref_hash), shared vec
   assert.equal(hex(intentHash(a, b)), "fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108");
 });
 
+test("metadata is 64 bytes: workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2", () => {
+  const m = encodeReportMetadata({
+    workflowCid: new Uint8Array(32).fill(1), workflowName: new Uint8Array(10).fill(2),
+    workflowOwner: new Uint8Array(20).fill(3), reportId: new Uint8Array([4, 5]),
+  });
+  assert.equal(m.length, REPORT_METADATA_LEN);
+  assert.equal(m[31], 1); assert.equal(m[32], 2); assert.equal(m[41], 2);
+  assert.equal(m[42], 3); assert.equal(m[61], 3); assert.deepEqual([...m.subarray(62)], [4, 5]);
+});
+
 test("txIndexSeed is u64 little-endian", () => {
   assert.deepEqual([...txIndexSeed(258n)], [2, 1, 0, 0, 0, 0, 0, 0]);
 });
@@ -51,6 +61,7 @@ test("error codes follow the Rust enum order", () => {
   assert.equal(GuardErrorCode.InvalidForwarder, 6015);
   assert.equal(GuardErrorCode.InvalidMultisigConfig, 6016);
   assert.equal(GuardErrorCode.ExecutorInMessage, 6017);
+  assert.equal(GuardErrorCode.InvalidWorkflow, 6018);
 });
 
 test("reason codes match AGENTS.md", () => {

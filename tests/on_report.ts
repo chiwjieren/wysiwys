@@ -6,7 +6,8 @@ import { testProvider } from "./helpers/provider";
 import { payoutIxs, proposePayout, usdc } from "./helpers/squads";
 import { chainNow, expectError, guardEvents, guardProgram, randomHash, requestReview, setupGuardedDesk, statusOf } from "./helpers/guard";
 import {
-  ForwardedDesk, approvePayload, createForwarderState, deliverReport, forwarderAuthority, forwarderProgram, setupForwardedDesk,
+  ForwardedDesk, approvePayload, createForwarderState, deliverReport, forwarderAuthority, forwarderProgram, reportMetadata,
+  setupForwardedDesk,
 } from "./helpers/forwarder";
 
 describe("on_report", () => {
@@ -79,6 +80,22 @@ describe("on_report", () => {
         .accountsPartial({ forwarderState: desk.forwarderState, forwarderAuthority: forwarderAuthority(desk.forwarderState), config: desk.config, review })
         .rpc(),
       "InvalidForwarder",
+    );
+  });
+
+  it("rejects a report from another workflow owner", async () => {
+    const review = await pendingReview();
+    await expectError(
+      deliverReport(desk, review, await approvePayload(review), { metadata: reportMetadata(new Uint8Array(20).fill(0x22)) }),
+      "InvalidWorkflow",
+    );
+  });
+
+  it("rejects metadata that is not 64 bytes", async () => {
+    const review = await pendingReview();
+    await expectError(
+      deliverReport(desk, review, await approvePayload(review), { metadata: reportMetadata().slice(0, 63) }),
+      "InvalidWorkflow",
     );
   });
 

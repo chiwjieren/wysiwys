@@ -20,8 +20,15 @@ pub mod omnicounter_guard {
         forwarder_program: Pubkey,
         forwarder_state: Pubkey,
         policy_hash: [u8; 32],
+        workflow_owner: [u8; 20],
     ) -> Result<()> {
-        instructions::initialize_guard::handle_initialize_guard(ctx, forwarder_program, forwarder_state, policy_hash)
+        instructions::initialize_guard::handle_initialize_guard(
+            ctx,
+            forwarder_program,
+            forwarder_state,
+            policy_hash,
+            workflow_owner,
+        )
     }
 
     pub fn request_review(

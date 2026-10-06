@@ -2,7 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { Keypair } from "@solana/web3.js";
 import { expect } from "chai";
 import { createDesk } from "./helpers/squads";
-import { POLICY_HASH, configPda, executorPda, expectError, guardProgram, payer, setupGuardedDesk } from "./helpers/guard";
+import { POLICY_HASH, WORKFLOW_OWNER, configPda, executorPda, expectError, guardProgram, payer, setupGuardedDesk } from "./helpers/guard";
 import { testProvider } from "./helpers/provider";
 
 describe("initialize_guard", () => {
@@ -11,7 +11,7 @@ describe("initialize_guard", () => {
 
   const init = (multisig: anchor.web3.PublicKey, createKey: Keypair) =>
     program.methods
-      .initializeGuard(Keypair.generate().publicKey, Keypair.generate().publicKey, Array.from(POLICY_HASH))
+      .initializeGuard(Keypair.generate().publicKey, Keypair.generate().publicKey, Array.from(POLICY_HASH), Array.from(WORKFLOW_OWNER))
       .accountsPartial({ multisig, createKey: createKey.publicKey, config: configPda(multisig), executor: executorPda(multisig), payer: payer().publicKey })
       .signers([createKey])
       .rpc();
@@ -25,6 +25,7 @@ describe("initialize_guard", () => {
     expect(cfg.forwarderProgram.toBase58()).to.equal(forwarderProgram.toBase58());
     expect(cfg.forwarderState.toBase58()).to.equal(forwarderState.toBase58());
     expect(Buffer.from(cfg.policyHash).equals(Buffer.from(POLICY_HASH))).to.equal(true);
+    expect(Buffer.from(cfg.workflowOwner).equals(Buffer.from(WORKFLOW_OWNER))).to.equal(true);
     expect(executorPda(desk.multisigPda).toBase58()).to.equal(desk.executorPda.toBase58());
   });
 

@@ -21,3 +21,7 @@ pub const VERDICT_REJECT: u8 = 2;
 pub const MAX_REASON: u16 = 22;
 
 pub const REVIEW_VERSION: u8 = 1;
+
+// Keystone metadata passed to on_report: workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2.
+pub const REPORT_METADATA_LEN: usize = 64;
+pub const WORKFLOW_OWNER_OFFSET: usize = 42;

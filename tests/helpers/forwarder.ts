@@ -1,9 +1,9 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { ReportPayload, SEEDS, VERDICT, encodeReportPayload, intentHash } from "@omnicounter/shared";
+import { ReportPayload, SEEDS, VERDICT, encodeReportMetadata, encodeReportPayload, intentHash } from "@omnicounter/shared";
 import type { TestForwarder } from "../../target/types/test_forwarder";
-import { GuardedDesk, POLICY_HASH, chainNow, guardProgram, payer, setupGuardedDesk } from "./guard";
+import { GuardedDesk, POLICY_HASH, WORKFLOW_OWNER, chainNow, guardProgram, payer, setupGuardedDesk } from "./guard";
 
 export const forwarderProgram = () => anchor.workspace.testForwarder as Program<TestForwarder>;
 
@@ -46,16 +46,25 @@ export async function approvePayload(review: PublicKey, overrides: Partial<Repor
   });
 }
 
+/** Keystone metadata as the forwarder passes it; the guard checks the workflow owner. */
+export const reportMetadata = (workflowOwner: Uint8Array = WORKFLOW_OWNER) =>
+  encodeReportMetadata({
+    workflowCid: new Uint8Array(32).fill(0xaa),
+    workflowName: new Uint8Array(10).fill(0xbb),
+    workflowOwner,
+    reportId: new Uint8Array([0, 1]),
+  });
+
 export async function deliverReport(
   desk: ForwardedDesk,
   review: PublicKey,
   payload: Uint8Array,
-  opts: { state?: PublicKey; seedProgram?: PublicKey } = {},
+  opts: { state?: PublicKey; seedProgram?: PublicKey; metadata?: Uint8Array } = {},
 ): Promise<string> {
   const state = opts.state ?? desk.forwarderState;
   const seedProgram = opts.seedProgram ?? guardProgram().programId;
   return forwarderProgram()
-    .methods.forward(seedProgram, Buffer.alloc(64), Buffer.from(payload))
+    .methods.forward(seedProgram, Buffer.from(opts.metadata ?? reportMetadata()), Buffer.from(payload))
     .accountsPartial({ state, authority: forwarderAuthority(state, seedProgram), receiverProgram: guardProgram().programId })
     .remainingAccounts([
       { pubkey: desk.config, isSigner: false, isWritable: false },

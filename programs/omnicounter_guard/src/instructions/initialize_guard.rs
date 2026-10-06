@@ -33,6 +33,7 @@ pub fn handle_initialize_guard(
     forwarder_program: Pubkey,
     forwarder_state: Pubkey,
     policy_hash: [u8; 32],
+    workflow_owner: [u8; 20],
 ) -> Result<()> {
     let multisig = ctx.accounts.multisig.key();
     let (expected, _) = Pubkey::find_program_address(
@@ -49,6 +50,7 @@ pub fn handle_initialize_guard(
     config.forwarder_program = forwarder_program;
     config.forwarder_state = forwarder_state;
     config.policy_hash = policy_hash;
+    config.workflow_owner = workflow_owner;
     config.bump = ctx.bumps.config;
     config.executor_bump = ctx.bumps.executor;
     Ok(())

@@ -11,6 +11,8 @@ export const payer = () => (provider().wallet as anchor.Wallet).payer as Keypair
 export const guardProgram = () => anchor.workspace.omnicounterGuard as Program<OmnicounterGuard>;
 
 export const POLICY_HASH = new Uint8Array(32).fill(7);
+/** Expected CRE workflow owner (20-byte EVM address) stored in GuardConfig. */
+export const WORKFLOW_OWNER = new Uint8Array(20).fill(0x11);
 export const randomHash = () => crypto.getRandomValues(new Uint8Array(32));
 
 export const configPda = (multisig: PublicKey) =>
@@ -53,7 +55,7 @@ export const statusOf = (review: { status: object }) => Object.keys(review.statu
 export type GuardedDesk = DeskFixture & { config: PublicKey };
 
 export async function setupGuardedDesk(
-  opts: { forwarderProgram?: PublicKey; forwarderState?: PublicKey; desk?: DeskOptions } = {},
+  opts: { forwarderProgram?: PublicKey; forwarderState?: PublicKey; workflowOwner?: Uint8Array; desk?: DeskOptions } = {},
 ): Promise<GuardedDesk> {
   const desk = await createDesk(provider().connection, payer(), guardProgram().programId, opts.desk);
   const config = configPda(desk.multisigPda);
@@ -62,6 +64,7 @@ export async function setupGuardedDesk(
       opts.forwarderProgram ?? Keypair.generate().publicKey,
       opts.forwarderState ?? Keypair.generate().publicKey,
       Array.from(POLICY_HASH),
+      Array.from(opts.workflowOwner ?? WORKFLOW_OWNER),
     )
     .accountsPartial({
       multisig: desk.multisigPda,
