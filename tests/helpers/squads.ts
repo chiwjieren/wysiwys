@@ -62,14 +62,15 @@ export async function createDesk(
   const members = [Keypair.generate(), Keypair.generate(), Keypair.generate()];
   await Promise.all(members.map((m) => airdrop(connection, m.publicKey, 2)));
 
-  const humanPerms = opts.humanExecute
+  // Squads requires at least one executor, so "absent" hands Execute to a human instead.
+  const executorMode = opts.executor ?? "execute-only";
+  const humanPerms = opts.humanExecute || executorMode === "absent"
     ? Permissions.fromPermissions([Permission.Initiate, Permission.Vote, Permission.Execute])
     : Permissions.fromPermissions([Permission.Initiate, Permission.Vote]);
   const squadMembers = members.map((m, i) => ({
     key: m.publicKey,
     permissions: i === 0 ? humanPerms : Permissions.fromPermissions([Permission.Initiate, Permission.Vote]),
   }));
-  const executorMode = opts.executor ?? "execute-only";
   if (executorMode !== "absent") {
     squadMembers.push({
       key: executorPda,
