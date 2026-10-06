@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeVaultTransaction } from '@omnicounter/decoder';
-import type { DecodedAction, DecodeResult } from '@omnicounter/decoder';
+import { decodeVaultTransaction } from '@wysiwys/decoder';
+import type { DecodedAction, DecodeResult } from '@wysiwys/decoder';
+import { txHash } from '../../shared/src/report.ts';
+import { PublicKey } from '@solana/web3.js';
 import realFixtures from '../fixtures/real-devnet.json' with { type: 'json' };
 import syntheticFixture from '../fixtures/transfer-checked.json' with { type: 'json' };
 
@@ -45,6 +47,26 @@ test('an upstream hash mismatch never invokes the decoder or policy', () => {
   assert.equal(result, 'hash_mismatch');
   assert.equal(decodeCalls, 0);
   assert.equal(policyCalls, 0);
+});
+
+test('guard tx_hash binds the VaultTransaction address and full account bytes before decoding', () => {
+  const fixture = realFixtures[0]!;
+  const bytes = bytesOf(fixture.accountDataHex);
+  const address = new PublicKey(fixture.accountAddress).toBytes();
+  const expected = Buffer.from(txHash(address, bytes)).toString('hex');
+  const hashMatches = (candidate: Uint8Array, expectedHex: string) =>
+    Buffer.from(txHash(address, candidate)).toString('hex') === expectedHex;
+  let decodeCalls = 0;
+  const decode = (candidate: Uint8Array) => { decodeCalls++; return decodeVaultTransaction(candidate); };
+  const good = passThroughBoundary(bytes, expected, hashMatches, decode, () => {});
+  assert.equal(good !== 'hash_mismatch' && good.status, 'success');
+  const changed = bytes.slice();
+  changed[changed.length - 1] ^= 1;
+  assert.equal(passThroughBoundary(changed, expected, hashMatches, decode, () => {}), 'hash_mismatch');
+  assert.equal(decodeCalls, 1);
+  const otherAddress = address.slice();
+  otherAddress[0] ^= 1;
+  assert.notEqual(Buffer.from(txHash(otherAddress, bytes)).toString('hex'), expected);
 });
 
 test('unsupported and malformed results never expose a supported subset to policy', () => {

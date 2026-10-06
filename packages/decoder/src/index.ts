@@ -27,6 +27,32 @@ export type UnsupportedInstruction = {
   dataHex: string;
 };
 
+/** Inspection is descriptive only. It is never an input to payout policy. */
+export type InspectedInstruction = {
+  instructionIndex: number;
+  programId: string;
+  accountKeys: string[];
+  dataHex: string;
+  interpretation:
+    | { source: 'builtin'; action: DecodedAction }
+    | { source: 'anchor-idl'; name: string; accounts: Record<string, string>; args: Record<string, string | number | boolean> }
+    | null;
+};
+
+export type VaultInspectionResult =
+  | { schemaVersion: 1; status: 'inspected'; instructions: InspectedInstruction[] }
+  | Extract<DecodeResult, { status: 'malformed' | 'unsupported' }>;
+
+export type AnchorIdl = {
+  address: string;
+  instructions: readonly {
+    name: string;
+    discriminator: readonly number[];
+    accounts: readonly { name: string }[];
+    args: readonly { name: string; type: string }[];
+  }[];
+};
+
 type CompiledInstruction = { programIdIndex: number; accountIndexes: number[]; data: Uint8Array };
 type Message = { accountKeys: Uint8Array[]; instructions: CompiledInstruction[]; lookups: number };
 
@@ -125,6 +151,114 @@ function readAmount(bytes: Uint8Array, offset: number): string {
   return value.toString(10);
 }
 
+function parseVaultAccount(data: Uint8Array):
+  | { status: 'parsed'; message: Message }
+  | Extract<DecodeResult, { status: 'malformed' | 'unsupported' }> {
+  if (!(data instanceof Uint8Array) || data.length > MAX_ACCOUNT_BYTES) return { schemaVersion: 1, status: 'malformed', error: 'account_size_out_of_range' };
+  try {
+    const reader = new Reader(data);
+    const discriminator = [...reader.take(8)];
+    if (discriminator.some((byte, i) => byte !== DISCRIMINATOR[i])) return { schemaVersion: 1, status: 'malformed', error: 'wrong_discriminator' };
+    reader.key(); // multisig
+    reader.key(); // creator
+    reader.take(8); // index u64
+    reader.take(3); // bump, vaultIndex, vaultBump
+    reader.bytesVec(); // ephemeralSignerBumps
+    const message = readMessage(reader);
+    if (reader.offset !== data.length) return { schemaVersion: 1, status: 'malformed', error: 'trailing_data' };
+    if (message.lookups > 0) return { schemaVersion: 1, status: 'unsupported', error: 'address_table_lookups', unsupportedInstructions: [] };
+    if (message.instructions.length === 0) return { schemaVersion: 1, status: 'malformed', error: 'empty_instructions' };
+    for (const ix of message.instructions) {
+      if (ix.programIdIndex >= message.accountKeys.length) return { schemaVersion: 1, status: 'malformed', error: 'program_index_out_of_range' };
+      if (ix.accountIndexes.some((index) => index >= message.accountKeys.length)) return { schemaVersion: 1, status: 'malformed', error: 'account_index_out_of_range' };
+    }
+    return { status: 'parsed', message };
+  } catch (error) {
+    return { schemaVersion: 1, status: 'malformed', error: error instanceof Error ? error.message : 'malformed_account' };
+  }
+}
+
+function readAnchorArg(reader: Reader, type: string): string | number | boolean {
+  if (type === 'u8') return reader.u8();
+  if (type === 'u16') {
+    const b = reader.take(2);
+    return b[0]! | (b[1]! << 8);
+  }
+  if (type === 'u32') return reader.u32();
+  if (type === 'u64') return reader.u64Decimal();
+  if (type === 'i64') return BigInt.asIntN(64, BigInt(reader.u64Decimal())).toString();
+  if (type === 'pubkey') return encodeBase58(reader.key());
+  if (type === 'bool') {
+    const value = reader.u8();
+    if (value > 1) throw new Error('invalid_boolean');
+    return value === 1;
+  }
+  throw new Error('unsupported_idl_type');
+}
+
+function safeIdlFieldName(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+    name !== '__proto__' && name !== 'prototype' && name !== 'constructor';
+}
+
+function interpretAnchor(ix: CompiledInstruction, accountKeys: string[], programId: string, registry: readonly AnchorIdl[]): InspectedInstruction['interpretation'] {
+  if (programId === SYSTEM_PROGRAM || programId === SPL_TOKEN_PROGRAM || programId === ASSOCIATED_TOKEN_PROGRAM) return null;
+  const matching = registry.filter((idl) => idl.address === programId);
+  if (matching.length !== 1) return null;
+  const idl = matching[0]!;
+  const data = ix.data;
+  const matchingInstructions = idl.instructions.filter((instruction) => {
+    const discriminator = instruction.discriminator;
+    return discriminator.length >= 1 && discriminator.length <= 32 &&
+      discriminator.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255) &&
+      data.length >= discriminator.length &&
+      discriminator.every((byte, index) => data[index] === byte);
+  });
+  if (matchingInstructions.length !== 1) return null;
+  const instruction = matchingInstructions[0]!;
+  if (accountKeys.length !== instruction.accounts.length ||
+    !instruction.accounts.every((account) => safeIdlFieldName(account.name)) ||
+    !instruction.args.every((arg) => safeIdlFieldName(arg.name)) ||
+    new Set(instruction.accounts.map((account) => account.name)).size !== instruction.accounts.length ||
+    new Set(instruction.args.map((arg) => arg.name)).size !== instruction.args.length) return null;
+  try {
+    const reader = new Reader(data.subarray(instruction.discriminator.length));
+    const args: Record<string, string | number | boolean> = {};
+    for (const arg of instruction.args) args[arg.name] = readAnchorArg(reader, arg.type);
+    if (reader.offset !== reader.bytes.length) return null;
+    const accounts: Record<string, string> = {};
+    for (const [index, account] of instruction.accounts.entries()) accounts[account.name] = accountKeys[index]!;
+    return { source: 'anchor-idl', name: instruction.name, accounts, args };
+  } catch {
+    return null;
+  }
+}
+
+/** Inspect every stored instruction. Named IDL fields are descriptive, not authorization. */
+export function inspectVaultTransaction(data: Uint8Array, registry: readonly AnchorIdl[] = []): VaultInspectionResult {
+  const parsed = parseVaultAccount(data);
+  if (parsed.status !== 'parsed') return parsed;
+  const { accountKeys, instructions } = parsed.message;
+  return {
+    schemaVersion: 1,
+    status: 'inspected',
+    instructions: instructions.map((ix, instructionIndex) => {
+      const programId = encodeBase58(accountKeys[ix.programIdIndex]!);
+      const keys = ix.accountIndexes.map((index) => encodeBase58(accountKeys[index]!));
+      let interpretation: InspectedInstruction['interpretation'] = null;
+      try {
+        const action = decodeOne(ix, instructionIndex, accountKeys);
+        if (action !== 'unsupported' && action !== 'unsupported_token_program') interpretation = { source: 'builtin', action };
+      } catch { /* Keep structurally valid but unrecognized instruction data raw. */ }
+      if (interpretation === null) {
+        try { interpretation = interpretAnchor(ix, keys, programId, registry); }
+        catch { /* Invalid registry entries must not hide raw instruction fields. */ }
+      }
+      return { instructionIndex, programId, accountKeys: keys, dataHex: instructionHex(ix.data), interpretation };
+    }),
+  };
+}
+
 function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): DecodedAction | 'unsupported' | 'unsupported_token_program' {
   const programId = encodeBase58(keys[ix.programIdIndex]!);
   const a = ix.accountIndexes.map((accountIndex) => encodeBase58(keys[accountIndex]!));
@@ -213,24 +347,10 @@ function decodeOne(ix: CompiledInstruction, index: number, keys: Uint8Array[]): 
 }
 
 export function decodeVaultTransaction(data: Uint8Array): DecodeResult {
-  if (!(data instanceof Uint8Array) || data.length > MAX_ACCOUNT_BYTES) return { schemaVersion: 1, status: 'malformed', error: 'account_size_out_of_range' };
+  const parsed = parseVaultAccount(data);
+  if (parsed.status !== 'parsed') return parsed;
+  const message = parsed.message;
   try {
-    const reader = new Reader(data);
-    const discriminator = [...reader.take(8)];
-    if (discriminator.some((byte, i) => byte !== DISCRIMINATOR[i])) return { schemaVersion: 1, status: 'malformed', error: 'wrong_discriminator' };
-    reader.key(); // multisig
-    reader.key(); // creator
-    reader.take(8); // index u64
-    reader.take(3); // bump, vaultIndex, vaultBump
-    reader.bytesVec(); // ephemeralSignerBumps
-    const message = readMessage(reader);
-    if (reader.offset !== data.length) return { schemaVersion: 1, status: 'malformed', error: 'trailing_data' };
-    if (message.lookups > 0) return { schemaVersion: 1, status: 'unsupported', error: 'address_table_lookups', unsupportedInstructions: [] };
-    if (message.instructions.length === 0) return { schemaVersion: 1, status: 'malformed', error: 'empty_instructions' };
-    for (const ix of message.instructions) {
-      if (ix.programIdIndex >= message.accountKeys.length) return { schemaVersion: 1, status: 'malformed', error: 'program_index_out_of_range' };
-      if (ix.accountIndexes.some((index) => index >= message.accountKeys.length)) return { schemaVersion: 1, status: 'malformed', error: 'account_index_out_of_range' };
-    }
     const actions: DecodedAction[] = [];
     let firstMalformed: { error: string; instructionIndex: number } | undefined;
     const unsupportedInstructions: UnsupportedInstruction[] = [];
