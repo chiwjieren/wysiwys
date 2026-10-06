@@ -23,6 +23,7 @@ import { CreateGroupButton, GroupManage, GroupInvite } from "./group-controls";
 import { PaymentButton, ReceiveButton } from "./payment-dialog";
 import { ThresholdSettings } from "./account-actions";
 import { ProposalTable } from "./proposal-table";
+import { RecentReviews } from "./recent-reviews";
 import {
   Explorer,
   EmptyState,
@@ -218,6 +219,7 @@ function Dashboard() {
           </EmptyState>
         )}
       </Panel>
+      <RecentReviews />
     </div>
   );
 }

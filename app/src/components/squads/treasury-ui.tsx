@@ -4,6 +4,12 @@ import { useWalletConnection } from "@/lib/auth/provider";
 import { useSquad } from "@/lib/squads/provider";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/design";
+import {
+  reviewState,
+  reviewStateLabel,
+  reviewStateTone,
+  type Review,
+} from "@/lib/squads/review";
 export const shortAddress = (address: string) =>
   `${address.slice(0, 4)}…${address.slice(-4)}`;
 export function Explorer({
@@ -127,6 +133,17 @@ export function ProposalStatus({ status }: { status: string }) {
       }
     >
       {label[status] || status}
+    </StatusBadge>
+  );
+}
+// On-chain guard Review status. `undefined` means the read is unavailable.
+export function ReviewBadge({ review }: { review: Review | null | undefined }) {
+  if (review === undefined)
+    return <StatusBadge tone="neutral">Review unavailable</StatusBadge>;
+  const state = reviewState(review, Date.now() / 1000);
+  return (
+    <StatusBadge tone={reviewStateTone(state)}>
+      {reviewStateLabel(state)}
     </StatusBadge>
   );
 }

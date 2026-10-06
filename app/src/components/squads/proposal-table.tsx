@@ -4,7 +4,8 @@ import { Panel, SectionTitle } from "@/components/design";
 import { Button } from "@/components/ui/button";
 import { useSquad } from "@/lib/squads/provider";
 import { previewMessage } from "@/lib/squads/payments";
-import { EmptyState, ProposalStatus } from "./treasury-ui";
+import { EmptyState, ProposalStatus, ReviewBadge } from "./treasury-ui";
+import { isGuarded } from "@/lib/squads/review";
 import type { ProposalRecord } from "@/lib/squads/sdk";
 export function ProposalTable({
   records,
@@ -93,13 +94,16 @@ export function ProposalTable({
                     </p>
                   </td>
                   <td>
-                    <span className="caption">
-                      {config?.executionMode === "standard"
-                        ? "Review details"
-                        : record.kind === "config"
-                          ? "Not applicable"
-                          : "Pending"}
-                    </span>
+                    {isGuarded(config) &&
+                    (record.kind === "vault" || record.kind === "archived") ? (
+                      <ReviewBadge review={snapshot?.reviews?.[id]} />
+                    ) : (
+                      <span className="caption">
+                        {config?.executionMode === "standard"
+                          ? "Review details"
+                          : "Not applicable"}
+                      </span>
+                    )}
                   </td>
                   <td>
                     {record.proposal.approved.length} /{" "}
