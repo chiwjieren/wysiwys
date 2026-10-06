@@ -9,7 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import { buildGroupCreation, buildMemberInvitation } from "./groups";
+import {
+  buildGroupCreation,
+  buildMemberInvitation,
+  validateInitializeGuard,
+} from "./groups";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { walletRpcFetch } from "@/lib/auth/rpc-fetch";
 import {
@@ -74,6 +78,7 @@ type ContextValue = {
     name: string,
     members: string[],
     threshold: number,
+    kind?: "guarded" | "standard",
   ) => Promise<string | undefined>;
   openGroup: (address: string) => void;
   invite: (address: string) => Promise<string | undefined>;
@@ -800,12 +805,13 @@ export function SquadProvider({ children }: { children: ReactNode }) {
     name: string,
     members: string[],
     threshold: number,
+    kind: "guarded" | "standard" = "guarded",
   ) {
     const createKey = Keypair.generate();
     let address: string | undefined;
     let protectedConfig: SquadConfig | undefined;
     const success = await run(
-      "create group",
+      kind === "guarded" ? "create treasury" : "create group",
       async (rpc, key) => {
         const [programConfigPda] = sqds.getProgramConfigPda({});
         const info = await rpc.getAccountInfo(programConfigPda, "finalized");
@@ -824,6 +830,58 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         const multisig = sqds
           .getMultisigPda({ createKey: createKey.publicKey })[0]
           .toBase58();
+        if (kind === "guarded") {
+          // The runner builds initialize_guard; the server route and this
+          // client both validate it before the wallet signs.
+          const body = JSON.stringify({
+            multisig,
+            creator: key.toBase58(),
+            createKey: createKey.publicKey.toBase58(),
+          });
+          const response = await fetch("/api/squads/groups", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(await auth.authorizeRequest("/api/squads/groups", body)),
+            },
+            body,
+          });
+          const prepared = await response.json();
+          if (!response.ok)
+            throw new Error(
+              prepared.error || "Group protection could not be prepared.",
+            );
+          const guarded: SquadConfig = prepared.config;
+          if (
+            guarded?.multisig !== multisig ||
+            !guarded.guardProgram ||
+            !guarded.executor
+          )
+            throw new Error("Group protection could not be prepared.");
+          const executor = new PublicKey(guarded.executor);
+          const { guardInstruction } = validateInitializeGuard(
+            fromWire(prepared.guardInstruction),
+            {
+              guardProgram: new PublicKey(guarded.guardProgram),
+              multisig: new PublicKey(multisig),
+              createKey: createKey.publicKey,
+              creator: key,
+              executor,
+            },
+          );
+          const group = buildGroupCreation({
+            creator: key,
+            createKey: createKey.publicKey,
+            treasury: programConfig.treasury,
+            members,
+            threshold,
+            name,
+            executor,
+          });
+          address = group.multisig.toBase58();
+          // multisigCreateV2 then initialize_guard, atomically.
+          return [group.instruction, guardInstruction];
+        }
         protectedConfig = {
           multisig,
           vaultIndex: 0,

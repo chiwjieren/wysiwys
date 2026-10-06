@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PublicKey, clusterApiUrl } from "@solana/web3.js";
 import type { SquadConfig } from "./sdk";
+import type { GuardInitArgs } from "./groups";
 
 export function parseDeployment(
   input: unknown,
@@ -46,13 +47,19 @@ export function parseDeployment(
     vaultIndex,
     settlementEnabled,
     executionMode: "guarded",
-    ...(record.mint === undefined ? {} : { token: parseToken(record) }),
+    ...(record.mint === undefined &&
+    (record.token as Record<string, unknown> | undefined)?.mint === undefined
+      ? {}
+      : { token: parseToken(record) }),
   };
 }
 function parseToken(record: Record<string, unknown>) {
   const token = record.token as Record<string, unknown> | undefined;
   try {
-    const mint = new PublicKey(record.mint as string).toBase58();
+    // devnet.json keeps `mint` top level; the runner nests it in `token`.
+    const mint = new PublicKey(
+      (record.mint ?? token?.mint) as string,
+    ).toBase58();
     const { symbol, decimals } = token ?? {};
     if (
       typeof symbol !== "string" ||
@@ -68,7 +75,39 @@ function parseToken(record: Record<string, unknown>) {
     throw new Error("Invalid deployment token metadata.");
   }
 }
-export async function loadConfig(): Promise<SquadConfig | null> {
+// The deployment's GuardConfig values, applied to every guarded treasury.
+export function parseGuardArgs(input: unknown): GuardInitArgs | undefined {
+  const guard = (input as Record<string, unknown> | null)?.guard;
+  if (guard === undefined) return undefined;
+  try {
+    const g = guard as Record<string, unknown>;
+    const integer = (value: unknown) => {
+      if (typeof value !== "string" || !/^\d{1,18}$/.test(value))
+        throw new Error();
+      return value;
+    };
+    const hex = (value: unknown, bytes: number) => {
+      if (
+        typeof value !== "string" ||
+        value.length !== bytes * 2 ||
+        !/^[0-9a-f]+$/.test(value)
+      )
+        throw new Error();
+      return value;
+    };
+    return {
+      forwarderProgram: new PublicKey(g.forwarderProgram as string).toBase58(),
+      forwarderState: new PublicKey(g.forwarderState as string).toBase58(),
+      policyHash: hex(g.policyHash, 32),
+      workflowOwner: hex(g.workflowOwner, 20),
+      maxReviewLifetime: integer(g.maxReviewLifetime),
+      reviewDeadlineSecs: integer(g.reviewDeadlineSecs),
+    };
+  } catch {
+    throw new Error("Invalid deployment guard configuration.");
+  }
+}
+async function readDeployment(): Promise<unknown | null> {
   const configuredPath = process.env.WYSIWYS_DEPLOYMENT_PATH;
   let contents: string;
   try {
@@ -82,10 +121,25 @@ export async function loadConfig(): Promise<SquadConfig | null> {
       return null;
     throw new Error("Deployment configuration could not be loaded.");
   }
-  return parseDeployment(
-    JSON.parse(contents),
-    !!process.env.WYSIWYS_SETTLEMENT_URL,
-  );
+  return JSON.parse(contents);
+}
+export async function loadConfig(): Promise<SquadConfig | null> {
+  const raw = await readDeployment();
+  return raw === null
+    ? null
+    : parseDeployment(raw, !!process.env.WYSIWYS_SETTLEMENT_URL);
+}
+export async function loadDeployment(): Promise<{
+  config: SquadConfig;
+  guardArgs?: GuardInitArgs;
+} | null> {
+  const raw = await readDeployment();
+  return raw === null
+    ? null
+    : {
+        config: parseDeployment(raw, !!process.env.WYSIWYS_SETTLEMENT_URL),
+        guardArgs: parseGuardArgs(raw),
+      };
 }
 export function isPrepareRequest(
   input: unknown,

@@ -13,15 +13,18 @@ import {
 import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
-import { standardGroupsEnabled } from "@/lib/squads/groups";
+import {
+  GUARDED_GROUP_MAX_INVITES,
+  standardGroupsEnabled,
+} from "@/lib/squads/groups";
 
 // Next.js inlines NEXT_PUBLIC_* only for literal property access.
-const creationEnabled = standardGroupsEnabled(
+const standardEnabled = standardGroupsEnabled(
   process.env.NEXT_PUBLIC_ENABLE_STANDARD_GROUPS,
 );
 
 export function CreateGroupButton({
-  label = "Create group",
+  label = "Create treasury",
   variant = "default",
 }: {
   label?: string;
@@ -33,15 +36,13 @@ export function CreateGroupButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [members, setMembers] = useState("");
-  const [threshold, setThreshold] = useState("1");
+  // Empty means "every member must approve" (the default).
+  const [threshold, setThreshold] = useState("");
+  const [standard, setStandard] = useState(false);
   const invitees = members.split(/[\s,]+/).filter(Boolean);
   const count = invitees.length + 1;
-  if (!creationEnabled)
-    return (
-      <p className="caption">
-        Guarded treasuries are created by the bootstrap script.
-      </p>
-    );
+  const required = threshold || String(count);
+  const maxInvites = standard ? 19 : GUARDED_GROUP_MAX_INVITES;
   return (
     <Dialog
       open={open}
@@ -55,10 +56,13 @@ export function CreateGroupButton({
         </Button>
       </DialogTrigger>
       <DialogContent className="bg-card">
-        <DialogTitle>Create a group</DialogTitle>
+        <DialogTitle>
+          {standard ? "Create a standard group" : "Create a guarded treasury"}
+        </DialogTitle>
         <DialogDescription>
-          Invite members by their Solana wallet addresses. Your wallet joins
-          automatically. Choose how many members must approve.
+          {standard
+            ? "Standard group (no guard): payouts execute without a Guard review."
+            : "Payouts execute only after member approval and an approved Guard review."}
         </DialogDescription>
         <form
           className="space-y-4"
@@ -67,7 +71,8 @@ export function CreateGroupButton({
             const address = await createGroup(
               name.trim(),
               invitees,
-              Number(threshold),
+              Number(required),
+              standard ? "standard" : "guarded",
             );
             if (address) {
               setOpen(false);
@@ -76,7 +81,7 @@ export function CreateGroupButton({
           }}
         >
           <label className="block space-y-2">
-            <span>Group name</span>
+            <span>Treasury name</span>
             <Input
               value={name}
               maxLength={80}
@@ -85,14 +90,18 @@ export function CreateGroupButton({
             />
           </label>
           <label className="block space-y-2">
-            <span>Member wallet addresses</span>
+            <span>Other member wallets</span>
             <textarea
               className="min-h-24 w-full rounded-lg border bg-secondary p-3 text-xs"
               value={members}
               onChange={(e) => setMembers(e.target.value)}
-              placeholder="One wallet address per line"
+              placeholder="One Solana wallet address per line"
             />
           </label>
+          <p className="caption">
+            Your wallet joins automatically. Up to {maxInvites} other wallets.
+            {!standard && " Members are fixed after creation."}
+          </p>
           <label className="block space-y-2">
             <span>Required approvals</span>
             <Input
@@ -100,18 +109,28 @@ export function CreateGroupButton({
               min={1}
               max={count}
               required
-              value={threshold}
+              value={required}
               onChange={(e) => setThreshold(e.target.value)}
             />
           </label>
           <p className="caption">
-            {count} members · Solana Devnet · Test funds only
+            {required} of {count} members · Solana Devnet · Test funds only
           </p>
           <p className="caption">
-            Your wallet pays creation fees and account rent. You can propose,
-            vote, and execute approved proposals. Other members can propose and
-            vote. Funds stay in the shared vault.
+            {standard
+              ? "Your wallet pays creation fees and account rent. You can propose, vote and execute approved proposals. Other members can propose and vote."
+              : "One transaction creates the Squads multisig and its guard configuration. Your wallet pays fees and account rent. Every member can propose and vote; only the guard executes payouts. Fund it with Deposit afterwards."}
           </p>
+          {standardEnabled && (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={standard}
+                onChange={(e) => setStandard(e.target.checked)}
+              />
+              <span>Standard group (no guard)</span>
+            </label>
+          )}
           {error && (
             <p role="alert" className="text-destructive">
               {error}
@@ -124,11 +143,16 @@ export function CreateGroupButton({
                 !!busy ||
                 !name.trim() ||
                 !auth.address ||
-                Number(threshold) < 1 ||
-                Number(threshold) > count
+                invitees.length > maxInvites ||
+                !/^\d+$/.test(required) ||
+                Number(required) < 1 ||
+                Number(required) > count
               }
             >
-              {busy || "Create group on devnet"}
+              {busy ||
+                (standard
+                  ? "Create group on devnet"
+                  : "Create treasury on devnet")}
             </Button>
           ) : (
             <Button
@@ -199,9 +223,8 @@ export function GroupManage({
       <DialogContent className="bg-card">
         <DialogTitle>Your treasuries</DialogTitle>
         <DialogDescription>
-          {creationEnabled
-            ? "Open a shared treasury using its group address, or create a new one."
-            : "Open a shared treasury using its group address."}
+          Open a shared treasury using its group address, or create a new
+          guarded treasury.
         </DialogDescription>
         <GroupSwitcher />
         <form

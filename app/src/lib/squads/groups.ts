@@ -1,6 +1,14 @@
+import { Buffer } from "buffer";
 import * as sqds from "@sqds/multisig";
 import type { SquadConfig } from "./sdk";
-import { PublicKey } from "@solana/web3.js";
+import {
+  PublicKey,
+  SystemProgram,
+  type TransactionInstruction,
+} from "@solana/web3.js";
+
+// multisigCreateV2 and initialize_guard share one transaction (1232 bytes).
+export const GUARDED_GROUP_MAX_INVITES = 12;
 
 const permissions = () =>
   sqds.types.Permissions.fromPermissions([
@@ -26,8 +34,11 @@ export function buildGroupCreation({
 }) {
   if (!name.trim() || name.trim().length > 80)
     throw new Error("Enter a group name of up to 80 characters.");
-  if (members.length > 19)
-    throw new Error("Invite up to 19 members when creating a group.");
+  const maxInvites = executor ? GUARDED_GROUP_MAX_INVITES : 19;
+  if (members.length > maxInvites)
+    throw new Error(
+      `Invite up to ${maxInvites} members when creating a group.`,
+    );
   const keys = [creator, ...members.map((address) => new PublicKey(address))];
   if (keys.some((key) => !PublicKey.isOnCurve(key.toBytes())))
     throw new Error("Members must be Solana wallet addresses.");
@@ -113,8 +124,8 @@ export function buildMemberInvitation({
   ];
 }
 
-// UI-created groups give the creator Squads Execute, which bypasses the guard.
-// Guarded treasuries come from the bootstrap script; UI creation is opt-in.
+// Standard (unguarded) groups give the creator Squads Execute, bypassing the guard.
+// UI creation makes guarded treasuries; standard creation is opt-in.
 export function standardGroupsEnabled(flag: string | undefined) {
   return flag === "true";
 }
@@ -151,4 +162,97 @@ export function standardGroupConfig(
     settlementEnabled: false,
     executionMode: "standard",
   };
+}
+
+// Anchor `initialize_guard` (packages/shared/idl/wysiwys_guard.json).
+export const INITIALIZE_GUARD_DISCRIMINATOR = [
+  63, 189, 246, 157, 77, 125, 157, 142,
+];
+const INITIALIZE_GUARD_LENGTH = 8 + 32 + 32 + 32 + 20 + 8 + 8;
+// GuardConfig values from the deployment (hex hashes, decimal i64 strings).
+export type GuardInitArgs = {
+  forwarderProgram: string;
+  forwarderState: string;
+  policyHash: string;
+  workflowOwner: string;
+  maxReviewLifetime: string;
+  reviewDeadlineSecs: string;
+};
+export function encodeInitializeGuardArgs(args: GuardInitArgs) {
+  const data = Buffer.alloc(INITIALIZE_GUARD_LENGTH);
+  Buffer.from(INITIALIZE_GUARD_DISCRIMINATOR).copy(data, 0);
+  new PublicKey(args.forwarderProgram).toBuffer().copy(data, 8);
+  new PublicKey(args.forwarderState).toBuffer().copy(data, 40);
+  Buffer.from(args.policyHash, "hex").copy(data, 72);
+  Buffer.from(args.workflowOwner, "hex").copy(data, 104);
+  data.writeBigInt64LE(BigInt(args.maxReviewLifetime), 124);
+  data.writeBigInt64LE(BigInt(args.reviewDeadlineSecs), 132);
+  return data;
+}
+// Checks the runner-built initialize_guard before the creator signs it with the
+// group creation: exact accounts, flags and PDAs, and (when the deployment pins
+// them) the exact forwarder, policy hash and review lifetimes.
+export function validateInitializeGuard(
+  ix: TransactionInstruction,
+  expected: {
+    guardProgram: PublicKey;
+    multisig: PublicKey;
+    createKey: PublicKey;
+    creator: PublicKey;
+    executor: PublicKey;
+    args?: GuardInitArgs;
+  },
+) {
+  const { guardProgram, multisig, createKey, creator, executor } = expected;
+  if (
+    !ix.programId.equals(guardProgram) ||
+    guardProgram.equals(sqds.PROGRAM_ID) ||
+    guardProgram.equals(SystemProgram.programId)
+  )
+    throw new Error("initialize_guard must target the guard program.");
+  if (!sqds.getMultisigPda({ createKey })[0].equals(multisig))
+    throw new Error("The group address does not match its create key.");
+  if (createKey.equals(creator))
+    throw new Error("The create key must differ from the creator.");
+  const [config] = PublicKey.findProgramAddressSync(
+    [Buffer.from("config"), multisig.toBuffer()],
+    guardProgram,
+  );
+  const [derivedExecutor] = PublicKey.findProgramAddressSync(
+    [Buffer.from("executor"), multisig.toBuffer()],
+    guardProgram,
+  );
+  if (!derivedExecutor.equals(executor))
+    throw new Error("The guard executor does not match its derived address.");
+  const accounts: [PublicKey, boolean, boolean][] = [
+    [multisig, false, false],
+    [createKey, true, false],
+    [config, false, true],
+    [executor, false, false],
+    [creator, true, true],
+    [SystemProgram.programId, false, false],
+  ];
+  if (
+    ix.keys.length !== accounts.length ||
+    ix.keys.some(
+      (k, i) =>
+        !k.pubkey.equals(accounts[i][0]) ||
+        k.isSigner !== accounts[i][1] ||
+        k.isWritable !== accounts[i][2],
+    )
+  )
+    throw new Error("initialize_guard has unexpected accounts.");
+  const data = Buffer.from(ix.data);
+  if (
+    data.length !== INITIALIZE_GUARD_LENGTH ||
+    INITIALIZE_GUARD_DISCRIMINATOR.some((byte, i) => data[i] !== byte) ||
+    data.readBigInt64LE(124) <= 0n ||
+    data.readBigInt64LE(132) <= 0n
+  )
+    throw new Error("Invalid initialize_guard data.");
+  if (expected.args && !data.equals(encodeInitializeGuardArgs(expected.args)))
+    throw new Error(
+      "initialize_guard does not match the deployment guard configuration.",
+    );
+  return { config, guardInstruction: ix };
 }
