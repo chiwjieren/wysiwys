@@ -1,0 +1,37 @@
+{
+  "cluster": "devnet",
+  "programId": "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya",
+  "squadsProgram": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+  "tokenMetadataProgram": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+  "multisig": "Boz5Dukxrwi5MGRam8bGimokhZwFRLHFdVeEsjaTLgPH",
+  "createKey": "HDMdyS1gjXBmHsePAXsQAsBxakjdUAd1bEfGTBEFovzh",
+  "vault": "F9dFniW32hR6R37cEVY5dPqQpfjQKpsNsxidvtcbSP43",
+  "vaultIndex": 0,
+  "executorPda": "8TpYUbf5RLGuqosw55hM1VDjgz8Z8z9VqXcynPBxQm1d",
+  "configPda": "3CkstZUS4JguoceC12wP9aMkGq41xmAY4dU9McYzQuUb",
+  "guard": null,
+  "mint": "J7oqTXmkvHY6E95gD9GBud4N9opBVjjeF1TuMfYiCa1r",
+  "mintMetadata": "BvL4JCy13V2ye8QXwMtAntSe39yPiaos59WkJa65knzz",
+  "token": {
+    "name": "Mock USD",
+    "symbol": "mUSD",
+    "uri": "",
+    "decimals": 6
+  },
+  "vaultTokenAccount": "FwWY8EUoL7FiCTcoAx5AmTBBnjcRLunPqvHusaDUa95a",
+  "signers": [
+    "GNFKzf7CjLE26cECL6zLzcvgT1wanbzaijYTua3zqfJV",
+    "A2db4TngzEFKxVJdiTApLvdHfKkXypdf8kF31d6N6DWa",
+    "pEsJjmmDizSzqkocL8eQbzvKFuCmYLdpGg4X4rrZjx9"
+  ],
+  "recipients": {
+    "whitelisted": {
+      "wallet": "bEJC2AGffiJF7NCJNofGRLn7S2bAwQZQbA15Xmw6wJU",
+      "tokenAccount": "2tCnQYrqbkJYWHPWC6FA6F4ReiapznXPAg9ejV1d7Cei"
+    },
+    "lookalike": {
+      "wallet": "bEJKgY6qbhav8sEXrJhvZtc8yAZiBU9AgJoe1aeXvpw",
+      "tokenAccount": "DYyrXK4piKnkYfx9WepWUxQBEaj5XkpaAjeK6AEYkH31"
+    }
+  }
+}
