@@ -1,4 +1,4 @@
-import { ReviewScreen } from "@/components/review/review-screen";
+import { LiveProposal } from "@/components/squads/live-squad";
 
 export default async function PayoutPage({
   params,
@@ -6,5 +6,5 @@ export default async function PayoutPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <ReviewScreen id={id} />;
+  return <LiveProposal id={id} />;
 }

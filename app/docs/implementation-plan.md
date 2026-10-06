@@ -1,5 +1,8 @@
 # Wysiwys frontend implementation plan
 
+Historical reference: Privy was replaced by direct Wallet Standard connection. See [current app workflow](../README.md).
+Historical plan. The current frontend requirements and verification are tracked in [Privy and live Squads implementation](privy-live-plan.md). Production mock screens and Wallet Standard session handling have been replaced by live states and Privy authentication.
+
 Goal: implement the approved [Figma frontend](https://www.figma.com/design/z3l7IfdoF1dX25wUUwAhxd) in Next.js, Tailwind CSS and shadcn/ui.
 
 Architecture: App Router pages share a persistent shell and a client mock settlement provider. Presentation models and sample records live in src/lib/mock; they are not shared protocol contracts. Replace this boundary with backend adapters later.
@@ -16,3 +19,5 @@ Review fixes: derive status from current review state and expiry; block duplicat
 Rulings: the approved Figma and explicit instruction to build authorize implementation. Plan, dependencies, artifacts and caches remain under app, overriding the repository's default plan location. npm runs with workspaces disabled to protect the root lockfile. The user's Helius/Alchemy/QuickNode and no-Demo-mode decisions supersede older repository wording.
 
 Verification: 9 unit tests and 5 Chromium browser tests passed. TypeScript, formatting, production build and git diff whitespace checks passed. Screenshots were compared with Figma for dashboard, transactions, members, settings and review layouts. Seven desktop pages reported a 240px sidebar, loaded local assets and no horizontal overflow. Mobile navigation and review layout were checked at 390px. Browser tests also passed against the built production server.
+
+The later Squads SDK integration request supersedes this plan's original restrictions on wallet signing and RPC requests. See [squads-integration-plan.md](squads-integration-plan.md) and the app README for the current live adapter, server configuration and remaining backend dependencies. All changes continue to be confined to app.

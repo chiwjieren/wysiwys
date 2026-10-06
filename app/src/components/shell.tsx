@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,17 +10,15 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { AssetIcon, Avatar, StatusBadge } from "@/components/design";
+import { AssetIcon, StatusBadge, Avatar } from "@/components/design";
 import { figmaAssets } from "@/lib/figma-assets";
-import { MockSettlementProvider } from "@/lib/mock/provider";
-import { mockDesk } from "@/lib/mock/data";
+import { SquadProvider, useSquad } from "@/lib/squads/provider";
+import { GroupManage } from "@/components/squads/group-controls";
+import { WalletButton } from "@/components/squads/wallet-button";
+
 import { cn } from "@/lib/utils";
+import { useWalletConnection } from "@/lib/auth/provider";
+import { shortAddress } from "@/components/squads/treasury-ui";
 
 const nav = [
   { label: "Dashboard", href: "/", icon: "imgIconDashboard" },
@@ -29,6 +27,13 @@ const nav = [
   { label: "Settings", href: "/settings", icon: "imgIconSettings" },
 ] as const;
 function ShellContent({ children }: { children: ReactNode }) {
+  const { config, snapshot, groupName } = useSquad();
+  const auth = useWalletConnection();
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      document.documentElement.dataset.theme =
+        localStorage.getItem("wysiwys.theme") || "dark";
+  }, []);
   const path = usePathname();
   const active =
     nav.find((n) =>
@@ -42,7 +47,9 @@ function ShellContent({ children }: { children: ReactNode }) {
         ? figmaAssets.members
         : active.label === "Settings"
           ? figmaAssets.settings
-          : figmaAssets.review;
+          : path === "/transactions"
+            ? figmaAssets.transactions
+            : figmaAssets.review;
   const navigation = (
     <nav aria-label="Main navigation" className="flex flex-col gap-2">
       {nav.map((item) => (
@@ -72,22 +79,41 @@ function ShellContent({ children }: { children: ReactNode }) {
         Wysiwys
       </Link>
       <div className="h-2" />
-      <div className="space-y-3 rounded-xl bg-secondary p-4">
-        <p className="font-medium leading-5">{mockDesk.name}</p>
-        <p className="caption">7nYp…8qLm &nbsp; ↗</p>
-        <StatusBadge className="w-full">3 of 3 approvals</StatusBadge>
-      </div>
+      <GroupManage label="Switch treasury">
+        <div className="min-h-[122px] space-y-3 rounded-xl bg-secondary p-4">
+          <p className="font-medium leading-5">
+            {config ? groupName : "Your treasury"}
+          </p>
+          <p className="caption break-all">
+            {config?.multisig
+              ? shortAddress(config.multisig) + " ↗"
+              : "Create or open a group"}
+          </p>
+          <StatusBadge className="w-full">
+            {snapshot
+              ? `${snapshot.squad.threshold} required approvals`
+              : "No treasury selected"}
+          </StatusBadge>
+        </div>
+      </GroupManage>
       {navigation}
       <div className="mt-auto space-y-2 pt-6">
         <div className="flex items-center gap-2 text-xs text-success">
           <AssetIcon src={scope.imgIconShield1} size={16} />
-          Settlement firewall
+          {config?.guardProgram ? "Guarded treasury" : "Squads multisig"}
         </div>
-        <p className="caption">No proof, no payout.</p>
+        <p className="caption">What you see is what you sign.</p>
         <div className="h-px bg-border" />
         <div className="flex items-center gap-2.5 text-xs">
-          <Avatar initials="ZJ" size={32} />
-          Zhi Jian · You
+          <Avatar
+            size={32}
+            initials={auth.address ? auth.address.slice(0, 2) : "W"}
+          />
+          <span>
+            {auth.address
+              ? `${shortAddress(auth.address)} · You`
+              : "Wallet not connected"}
+          </span>
         </div>
       </div>
     </div>
@@ -118,44 +144,27 @@ function ShellContent({ children }: { children: ReactNode }) {
             <Menu />
           </Button>
           <p className="caption min-w-0 truncate">
-            {mockDesk.name} &nbsp;/&nbsp; {active.label}
+            {groupName} &nbsp;/&nbsp; {active.label}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-4">
             <StatusBadge className="hidden min-w-0 w-[72px] sm:inline-flex">
               Devnet
             </StatusBadge>
-            <span className="caption hidden sm:inline">Sample data</span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="secondary"
-                  className="h-10 w-[188px] max-sm:w-auto"
-                >
-                  Zhi Jian · 9wK…3tF
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link href="/settings">Wallet preferences</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/members">Member permissions</Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+
+            <WalletButton />
           </div>
         </header>
         <main
           id="main-content"
-          className="mx-auto max-w-[1440px] px-5 pt-6 pb-8 sm:px-8 lg:px-10"
+          className="w-full max-w-[1680px] px-5 pt-6 pb-8 sm:px-8 lg:px-10"
         >
           {children}
         </main>
       </div>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
         <DialogContent className="max-w-[360px] bg-sidebar">
-          <DialogTitle>Wysiwys</DialogTitle>
-          <DialogDescription>No proof, no payout.</DialogDescription>
+          <DialogTitle>wysiwys</DialogTitle>
+          <DialogDescription>What you see is what you sign.</DialogDescription>
           {navigation}
         </DialogContent>
       </Dialog>
@@ -164,8 +173,8 @@ function ShellContent({ children }: { children: ReactNode }) {
 }
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <MockSettlementProvider>
+    <SquadProvider>
       <ShellContent>{children}</ShellContent>
-    </MockSettlementProvider>
+    </SquadProvider>
   );
 }

@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/shell";
+import { WalletProvider } from "@/lib/auth/provider";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Wysiwys",
@@ -14,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <AppShell>{children}</AppShell>
+        <WalletProvider>
+          <AppShell>{children}</AppShell>
+        </WalletProvider>
       </body>
     </html>
   );
