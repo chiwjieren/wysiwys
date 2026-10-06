@@ -2,5 +2,17 @@
   "name": "@wysiwys/decoder",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "squadsSource": {
+    "package": "@sqds/multisig",
+    "version": "2.1.4",
+    "repository": "https://github.com/Squads-Protocol/v4/tree/main/sdk/multisig"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types test/decode.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@sqds/multisig": "2.1.4"
+  }
 }
