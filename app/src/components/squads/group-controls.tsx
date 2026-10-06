@@ -14,6 +14,7 @@ import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import {
+  fixedMembershipReason,
   GUARDED_GROUP_MAX_INVITES,
   standardGroupsEnabled,
 } from "@/lib/squads/groups";
@@ -309,7 +310,17 @@ function InvitationForm() {
 }
 
 export function GroupInvite() {
-  const { snapshot } = useSquad();
+  const { snapshot, config } = useSquad();
+  const fixed = fixedMembershipReason(config);
+  if (fixed)
+    return (
+      <div className="flex max-w-sm flex-col items-end gap-1 text-right">
+        <Button variant="secondary" disabled>
+          Invite member
+        </Button>
+        <p className="caption">{fixed}</p>
+      </div>
+    );
   return (
     <Dialog>
       <DialogTrigger asChild>

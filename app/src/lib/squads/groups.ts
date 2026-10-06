@@ -130,6 +130,17 @@ export function standardGroupsEnabled(flag: string | undefined) {
   return flag === "true";
 }
 
+// Squads config transactions (members, threshold) need a member with Execute.
+// In a guarded treasury that is only the guard executor, and the guard only
+// executes vault payments, so membership is fixed at creation.
+export function fixedMembershipReason(
+  config: SquadConfig | undefined,
+) {
+  return config?.executor && config.executionMode !== "standard"
+    ? "Members are fixed after creation: only the guard can execute, and it executes payments only."
+    : null;
+}
+
 // Display label for a member's on-chain Squads permission mask.
 export function memberRole(address: string, mask: number, executor?: string) {
   if (executor && address === executor && mask === 4)

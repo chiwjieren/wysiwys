@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import {
   buildGroupCreation,
   buildMemberInvitation,
+  fixedMembershipReason,
   validateInitializeGuard,
 } from "./groups";
 import { useWalletConnection } from "@/lib/auth/provider";
@@ -707,6 +708,10 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   async function setThreshold(threshold: number) {
     let id: string | undefined;
     const success = await run("threshold", async (rpc, key) => {
+      if (fixedMembershipReason(config))
+        throw new Error(
+          "The threshold of a guarded treasury is fixed after creation.",
+        );
       const squad = await readMultisig(rpc, config!);
       const instructions = buildThresholdChange({
         squad,
@@ -911,6 +916,8 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   async function invite(address: string) {
     let id: string | undefined;
     const success = await run("invite member", async (rpc, key) => {
+      const fixed = fixedMembershipReason(config);
+      if (fixed) throw new Error(fixed);
       const squad = await readMultisig(rpc, config!);
       const member = squad.members.find((m) => m.key.equals(key));
       if (
