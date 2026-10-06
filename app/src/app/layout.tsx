@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/shell";
+import { WalletProvider } from "@/lib/auth/provider";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "OmniCounter",
-  description: "No proof, no payout. OTC settlement firewall.",
+  title: "wysiwys",
+  description: "What you see is what you sign. Shared Solana treasuries.",
 };
 export default function RootLayout({
   children,
@@ -14,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <AppShell>{children}</AppShell>
+        <WalletProvider>
+          <AppShell>{children}</AppShell>
+        </WalletProvider>
       </body>
     </html>
   );

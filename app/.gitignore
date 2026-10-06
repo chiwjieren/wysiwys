@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-browser/
 .cache/
 artifacts/
 test-results/
@@ -7,3 +8,6 @@ playwright-report/
 *.tsbuildinfo
 next-env.d.ts
 .env*
+
+.next-build/
+.next-preview/

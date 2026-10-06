@@ -8,95 +8,77 @@ import {
   DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useWalletConnection } from "@/lib/auth/provider";
 import { useSquad } from "@/lib/squads/provider";
 export function WalletButton() {
-  const {
-    wallets,
-    wallet,
-    account,
-    connect,
-    disconnect,
-    selectAccount,
-    busy,
-    error,
-  } = useSquad();
+  const auth = useWalletConnection();
+  const { busy } = useSquad();
   const [open, setOpen] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  if (!auth.connected)
+    return (
+      <Button
+        variant="secondary"
+        disabled={!auth.configured || !auth.ready || !!busy}
+        onClick={auth.connect}
+      >
+        {!auth.configured
+          ? "Wallet unavailable"
+          : !auth.ready
+            ? "Loading wallets…"
+            : "Connect wallet"}
+      </Button>
+    );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="secondary" disabled={!!busy}>
-          {account
-            ? `${wallet?.name} · ${account.address.slice(0, 4)}…${account.address.slice(-4)}`
-            : "Connect wallet"}
+          {auth.address
+            ? `${auth.address.slice(0, 4)}…${auth.address.slice(-4)}`
+            : "Connected wallet"}
         </Button>
       </DialogTrigger>
       <DialogContent className="bg-card">
-        <DialogTitle>
-          {account ? "Connected wallet" : "Connect wallet"}
-        </DialogTitle>
+        <DialogTitle>{auth.walletName || "Connected wallet"}</DialogTitle>
         <DialogDescription>
-          Solana Devnet. Test keys only. Your wallet signs transactions.
+          Solana Devnet. Test keys only. Select the account to use for treasury
+          actions.
         </DialogDescription>
-        {error && (
-          <p role="alert" className="text-destructive">
-            {error}
-          </p>
-        )}
-        {account ? (
-          <>
-            <p className="break-all text-xs">{account.address}</p>
-            <label className="caption">
-              Wallet account
-              <select
-                aria-label="Wallet account"
-                className="mt-2 w-full rounded border bg-secondary p-2"
-                value={account.address}
-                onChange={(e) => selectAccount(e.target.value)}
-              >
-                {wallet?.accounts
-                  .filter(
-                    (a) =>
-                      a.chains.includes("solana:devnet") &&
-                      a.features.includes("solana:signTransaction"),
-                  )
-                  .map((a) => (
-                    <option key={a.address} value={a.address}>
-                      {a.address}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <Button
-              onClick={async () => {
-                await disconnect();
-                setOpen(false);
-              }}
+        {auth.error && <p role="alert">{auth.error}</p>}
+        {auth.accounts.length ? (
+          <label>
+            Wallet account
+            <select
+              className="mt-2 w-full rounded border bg-secondary p-2"
+              value={auth.address}
+              onChange={(e) => auth.select(e.target.value)}
             >
-              Disconnect wallet
-            </Button>
-          </>
-        ) : wallets.length ? (
-          wallets.map((w) => (
-            <Button
-              key={w.name}
-              disabled={connecting}
-              onClick={async () => {
-                setConnecting(true);
-                const connected = await connect(w);
-                setConnecting(false);
-                if (connected) setOpen(false);
-              }}
-            >
-              {w.name}
-            </Button>
-          ))
+              {auth.accounts.map((address) => (
+                <option key={address}>{address}</option>
+              ))}
+            </select>
+          </label>
         ) : (
           <p>
-            No compatible wallet detected. Open this app in a browser with a
-            Solana Wallet Standard extension.
+            Reconnect your Solana wallet by disconnecting and connecting again.
           </p>
         )}
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setOpen(false);
+            auth.connect();
+          }}
+        >
+          Change wallet
+        </Button>
+        <Button
+          onClick={async () => {
+            await auth.disconnect();
+            setOpen(false);
+          }}
+        >
+          Disconnect
+        </Button>
       </DialogContent>
     </Dialog>
   );

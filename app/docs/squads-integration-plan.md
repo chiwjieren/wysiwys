@@ -1,5 +1,10 @@
 # Squads frontend SDK integration
 
+Historical reference: Privy was replaced by direct Wallet Standard connection. See [current app workflow](../README.md).
+Current behavior is documented in [Figma and SDK restoration](figma-sdk-restoration.md), including the user-approved Squads-first decision. Earlier Guard-only restrictions below are historical for new standard groups.
+
+Historical plan. The current frontend requirements and verification are tracked in [Privy and live Squads implementation](privy-live-plan.md). Production mock screens and Wallet Standard session handling have been replaced by live states and Privy authentication.
+
 Goal: make the existing frontend interact with Squads v4 on devnet, independently of the official Squads UI. All edits stay in app on frontend. No commit or push.
 
 Architecture: an app-local SDK adapter reads Multisig, Proposal and VaultTransaction accounts through a restricted server RPC proxy. Wallet Standard signs in the browser; keys remain in the wallet. A live provider supplies chain state to the dashboard, transaction and member screens. The existing sample screens remain explicitly labelled when deployment configuration is absent. Live read errors never fall back to sample records.

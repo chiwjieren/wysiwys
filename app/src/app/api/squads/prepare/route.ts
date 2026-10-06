@@ -5,14 +5,16 @@ import {
   rateLimit,
 } from "@/lib/squads/server-config";
 import { fromWire, validateGuardInstruction } from "@/lib/squads/sdk";
+import { authenticate, AuthenticationError } from "@/lib/auth/server";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     rateLimit();
+    const wallet = await authenticate(request);
     const config = await loadConfig();
     const base = process.env.OMNICOUNTER_SETTLEMENT_URL;
-    if (!config || !base)
+    if (!config || !config.guardProgram || !config.executor || !base)
       return Response.json(
         { error: "Guard settlement adapter is not configured." },
         { status: 503 },
@@ -35,6 +37,10 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     const member = new PublicKey(input.member);
+    if (member.toBase58() !== wallet)
+      throw new AuthenticationError(
+        "Connect the request’s wallet to continue.",
+      );
     const response = await fetch(
       new URL(
         `frontend/${input.action}`,
@@ -90,7 +96,9 @@ export async function POST(request: Request) {
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthenticationError)
+      return Response.json({ error: error.message }, { status: 401 });
     return Response.json(
       { error: "Settlement preparation failed. No transaction was submitted." },
       { status: 502 },

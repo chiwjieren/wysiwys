@@ -20,13 +20,81 @@ import { validateRpcRequest } from "../src/lib/squads/rpc-policy";
 
 test("configuration proposals are readable and can receive votes without being treated as vault payouts", async () => {
   const { readProposal } = await import("../src/lib/squads/sdk");
-  const transaction = sqds.accounts.ConfigTransaction.fromArgs({ multisig, creator: member, index: new BN(index.toString()), bump: 1, actions: [{ __kind: "ChangeThreshold", newThreshold: 1 }] });
+  const transaction = sqds.accounts.ConfigTransaction.fromArgs({
+    multisig,
+    creator: member,
+    index: new BN(index.toString()),
+    bump: 1,
+    actions: [{ __kind: "ChangeThreshold", newThreshold: 1 }],
+  });
   const p = proposal();
-  const info = (data: Buffer) => ({ data, owner: sqds.PROGRAM_ID, executable: false, lamports: 1, rentEpoch: 0 });
-  const rpc = { getMultipleAccountsInfo: async () => [info(p.serialize()[0]), info(transaction.serialize()[0])] };
-  const record = await readProposal(rpc as never, { multisig: multisig.toBase58(), guardProgram: guard.toBase58(), executor: executor.toBase58(), vaultIndex: 0, settlementEnabled: false }, index);
+  const info = (data: Buffer) => ({
+    data,
+    owner: sqds.PROGRAM_ID,
+    executable: false,
+    lamports: 1,
+    rentEpoch: 0,
+  });
+  const rpc = {
+    getMultipleAccountsInfo: async () => [
+      info(p.serialize()[0]),
+      info(transaction.serialize()[0]),
+    ],
+  };
+  const record = await readProposal(
+    rpc as never,
+    {
+      multisig: multisig.toBase58(),
+      guardProgram: guard.toBase58(),
+      executor: executor.toBase58(),
+      vaultIndex: 0,
+      settlementEnabled: false,
+    },
+    index,
+  );
   assert.equal(record?.kind, "config");
   assert.equal(actionsForMember(squad, record!.proposal, member).approve, true);
+});
+test("a transaction created before its proposal does not make the proposal list unreadable", async () => {
+  const { readProposal } = await import("../src/lib/squads/sdk");
+  const transaction = sqds.accounts.ConfigTransaction.fromArgs({
+    multisig,
+    creator: member,
+    index: new BN(index.toString()),
+    bump: 1,
+    actions: [{ __kind: "ChangeThreshold", newThreshold: 1 }],
+  });
+  const info = {
+    data: transaction.serialize()[0],
+    owner: sqds.PROGRAM_ID,
+    executable: false,
+    lamports: 1,
+    rentEpoch: 0,
+  };
+  const config = {
+    multisig: multisig.toBase58(),
+    guardProgram: guard.toBase58(),
+    executor: executor.toBase58(),
+    vaultIndex: 0,
+    settlementEnabled: false,
+  };
+  assert.equal(
+    await readProposal(
+      { getMultipleAccountsInfo: async () => [null, info] } as never,
+      config,
+      index,
+    ),
+    null,
+  );
+  await assert.rejects(
+    readProposal(
+      {
+        getMultipleAccountsInfo: async () => [null, { ...info, owner: member }],
+      } as never,
+      config,
+      index,
+    ),
+  );
 });
 
 const multisig = Keypair.generate().publicKey;
@@ -49,6 +117,47 @@ const squad = {
   members: [{ key: member, permissions: { mask: 3 } }],
   staleTransactionIndex: 0,
 };
+
+test("Wallet connector raw signatures are attached to the original SDK transaction", async () => {
+  const { signAndConfirm } = await import("../src/lib/squads/sdk");
+  const { VersionedTransaction } = await import("@solana/web3.js");
+  const signer = Keypair.generate();
+  let submitted = false;
+  const rpc = {
+    getLatestBlockhash: async () => ({
+      blockhash: Keypair.generate().publicKey.toBase58(),
+      lastValidBlockHeight: 500,
+    }),
+    sendRawTransaction: async (bytes: Uint8Array) => {
+      const tx = VersionedTransaction.deserialize(bytes);
+      assert.ok(tx.signatures[0].some((byte) => byte !== 0));
+      assert.ok(tx.message.staticAccountKeys[0].equals(signer.publicKey));
+      submitted = true;
+      return "signature";
+    },
+    getSignatureStatuses: async () => ({
+      value: [{ err: null, confirmationStatus: "finalized" }],
+    }),
+  };
+  await signAndConfirm(
+    rpc as never,
+    signer.publicKey,
+    [
+      SystemProgram.transfer({
+        fromPubkey: signer.publicKey,
+        toPubkey: member,
+        lamports: 1,
+      }),
+    ],
+    async (bytes) => {
+      const tx = VersionedTransaction.deserialize(bytes);
+      tx.sign([signer]);
+      return tx.signatures[0];
+    },
+    () => {},
+  );
+  assert.equal(submitted, true);
+});
 
 test("SDK permissions permit human votes and block executor-only wallets", () => {
   assert.equal(actionsForMember(squad, proposal(), member).approve, true);

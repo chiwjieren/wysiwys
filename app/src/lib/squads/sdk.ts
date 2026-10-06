@@ -11,10 +11,11 @@ import {
 
 export type SquadConfig = {
   multisig: string;
-  guardProgram: string;
-  executor: string;
+  guardProgram?: string;
+  executor?: string;
   vaultIndex: number;
   settlementEnabled: boolean;
+  executionMode?: "standard" | "guarded";
 };
 export type WireInstruction = {
   programId: string;
@@ -194,10 +195,14 @@ export async function readMultisig(
 }
 export type ProposalRecord = {
   proposal: sqds.accounts.Proposal;
-  transaction: sqds.accounts.VaultTransaction;
   address: PublicKey;
   transactionAddress: PublicKey;
-};
+} & (
+  | { kind: "vault"; transaction: sqds.accounts.VaultTransaction }
+  | { kind: "config"; transaction: sqds.accounts.ConfigTransaction }
+  | { kind: "batch"; transaction: sqds.accounts.Batch }
+  | { kind: "archived"; transaction: null }
+);
 export async function readProposal(
   connection: Connection,
   config: SquadConfig,
@@ -234,35 +239,116 @@ function decodeProposalPair(
     index,
   });
   if (!p && !tx) return null;
-  const proposalInfo = owned(p);
+  const proposal = p ? decodeBoundProposal(p, multisig, index) : undefined;
+  if (!tx && proposal?.status.__kind === "Executed")
+    return {
+      kind: "archived",
+      proposal,
+      address,
+      transactionAddress,
+      transaction: null,
+    };
   const transactionInfo = owned(tx);
-  // Config transactions are not settlement payouts and cannot be acted on here.
+  const isConfig = transactionInfo.data
+    .subarray(0, 8)
+    .equals(Buffer.from(sqds.accounts.configTransactionDiscriminator));
+  const isBatch = transactionInfo.data
+    .subarray(0, 8)
+    .equals(Buffer.from(sqds.accounts.batchDiscriminator));
   if (
-    transactionInfo.data
-      .subarray(0, 8)
-      .equals(Buffer.from(sqds.accounts.configTransactionDiscriminator))
-  )
-    return null;
-  if (
-    !proposalInfo.data
-      .subarray(0, 8)
-      .equals(Buffer.from(sqds.accounts.proposalDiscriminator)) ||
+    !isConfig &&
+    !isBatch &&
     !transactionInfo.data
       .subarray(0, 8)
       .equals(Buffer.from(sqds.accounts.vaultTransactionDiscriminator))
   )
     throw new Error("Invalid Squads account discriminator.");
-  const [proposal] = sqds.accounts.Proposal.fromAccountInfo(proposalInfo);
-  const [transaction] =
-    sqds.accounts.VaultTransaction.fromAccountInfo(transactionInfo);
+
+  const [transaction] = isConfig
+    ? sqds.accounts.ConfigTransaction.fromAccountInfo(transactionInfo)
+    : isBatch
+      ? sqds.accounts.Batch.fromAccountInfo(transactionInfo)
+      : sqds.accounts.VaultTransaction.fromAccountInfo(transactionInfo);
+  // Squads empties VaultTransaction with mem::take after a successful execution.
   if (
-    !proposal.multisig.equals(multisig) ||
+    !isConfig &&
+    !isBatch &&
+    proposal?.status.__kind === "Executed" &&
+    transaction.multisig.equals(PublicKey.default) &&
+    transaction.index.toString() === "0"
+  ) {
+    const cleared = transaction as sqds.accounts.VaultTransaction;
+    if (
+      !cleared.creator.equals(PublicKey.default) ||
+      cleared.bump ||
+      cleared.vaultIndex ||
+      cleared.vaultBump ||
+      cleared.ephemeralSignerBumps.length ||
+      cleared.message.numSigners ||
+      cleared.message.numWritableSigners ||
+      cleared.message.numWritableNonSigners ||
+      cleared.message.accountKeys.length ||
+      cleared.message.instructions.length ||
+      cleared.message.addressTableLookups.length
+    )
+      throw new Error("Invalid cleared transaction account.");
+    return {
+      kind: "archived",
+      proposal,
+      address,
+      transactionAddress,
+      transaction: null,
+    };
+  }
+  if (
     !transaction.multisig.equals(multisig) ||
-    BigInt(proposal.transactionIndex.toString()) !== index ||
     BigInt(transaction.index.toString()) !== index
   )
+    throw new Error("Transaction account binding mismatch.");
+  if (!proposal) return null; // SDK transactions can exist before proposalCreate.
+  if (isBatch)
+    return {
+      kind: "batch",
+      proposal,
+      transaction: transaction as sqds.accounts.Batch,
+      address,
+      transactionAddress,
+    };
+  return isConfig
+    ? {
+        kind: "config",
+        proposal,
+        transaction: transaction as sqds.accounts.ConfigTransaction,
+        address,
+        transactionAddress,
+      }
+    : {
+        kind: "vault",
+        proposal,
+        transaction: transaction as sqds.accounts.VaultTransaction,
+        address,
+        transactionAddress,
+      };
+}
+function decodeBoundProposal(
+  info: AccountInfo<Buffer>,
+  multisig: PublicKey,
+  index: bigint,
+) {
+  const proposalInfo = owned(info);
+  if (
+    !proposalInfo.data
+      .subarray(0, 8)
+      .equals(Buffer.from(sqds.accounts.proposalDiscriminator))
+  )
+    throw new Error("Invalid Squads proposal discriminator.");
+  const [proposal] = sqds.accounts.Proposal.fromAccountInfo(proposalInfo);
+  if (
+    !proposal.multisig.equals(multisig) ||
+    BigInt(proposal.transactionIndex.toString()) !== index
+  )
     throw new Error("Proposal account binding mismatch.");
-  return { proposal, transaction, address, transactionAddress };
+  return proposal;
 }
 export async function signAndConfirm(
   connection: Connection,
@@ -270,6 +356,7 @@ export async function signAndConfirm(
   instructions: TransactionInstruction[],
   sign: (bytes: Uint8Array) => Promise<Uint8Array>,
   onSubmitted: (signature: string) => void,
+  additionalSigners: import("@solana/web3.js").Signer[] = [],
 ) {
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash("finalized");
@@ -280,15 +367,24 @@ export async function signAndConfirm(
       instructions,
     }).compileToV0Message(),
   );
-  const signed = VersionedTransaction.deserialize(
-    await sign(transaction.serialize()),
-  );
+  if (additionalSigners.length) transaction.sign(additionalSigners);
+  const response = await sign(transaction.serialize());
+  // Some WalletConnect connectors return only the 64-byte Ed25519 signature.
+  let signed: VersionedTransaction;
+  if (response.length === 64) {
+    transaction.addSignature(wallet, response);
+    signed = transaction;
+  } else {
+    signed = VersionedTransaction.deserialize(response);
+  }
   if (
     !Buffer.from(signed.message.serialize()).equals(
       Buffer.from(transaction.message.serialize()),
     )
   )
     throw new Error("Wallet changed the transaction message.");
+  // A connector may reconstruct the same message with only its own signature.
+  if (additionalSigners.length) signed.sign(additionalSigners);
   const signature = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: false,
     preflightCommitment: "finalized",

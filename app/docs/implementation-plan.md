@@ -1,5 +1,8 @@
 # OmniCounter frontend implementation plan
 
+Historical reference: Privy was replaced by direct Wallet Standard connection. See [current app workflow](../README.md).
+Historical plan. The current frontend requirements and verification are tracked in [Privy and live Squads implementation](privy-live-plan.md). Production mock screens and Wallet Standard session handling have been replaced by live states and Privy authentication.
+
 Goal: implement the approved [Figma frontend](https://www.figma.com/design/z3l7IfdoF1dX25wUUwAhxd) in Next.js, Tailwind CSS and shadcn/ui.
 
 Architecture: App Router pages share a persistent shell and a client mock settlement provider. Presentation models and sample records live in src/lib/mock; they are not shared protocol contracts. Replace this boundary with backend adapters later.

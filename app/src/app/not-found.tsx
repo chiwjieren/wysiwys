@@ -5,7 +5,7 @@ export default function NotFound() {
     <div className="page-stack">
       <h1>Page not found</h1>
       <p className="text-muted-foreground">
-        Return to your settlement dashboard.
+        Return to your treasury dashboard.
       </p>
       <Button asChild className="w-fit">
         <Link href="/">Dashboard</Link>

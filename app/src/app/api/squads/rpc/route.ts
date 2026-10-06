@@ -4,6 +4,7 @@ import {
   rpcUrl,
 } from "@/lib/squads/server-config";
 import { validateRpcRequest } from "@/lib/squads/rpc-policy";
+import { verifySignedSubmission, AuthenticationError } from "@/lib/auth/server";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
     if (body.length > 65536)
       return Response.json({ error: "Request is too large." }, { status: 413 });
     const rpc = validateRpcRequest(JSON.parse(body));
+    if (rpc.method === "sendTransaction") verifySignedSubmission(rpc.params[0]);
     const upstream = await fetch(rpcUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -30,7 +32,9 @@ export async function POST(request: Request) {
     return Response.json(response, {
       headers: { "Cache-Control": "no-store" },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthenticationError)
+      return Response.json({ error: error.message }, { status: 401 });
     return Response.json(
       { error: "RPC request could not be completed." },
       { status: 502 },

@@ -22,6 +22,10 @@ export function parseDeployment(
       "Invalid deployment addresses. Expected multisig, guardProgram and executor.",
     );
   }
+  if (PublicKey.isOnCurve(new PublicKey(addresses.executor).toBytes()))
+    throw new Error(
+      "Guard executor must be a program-derived address, not a wallet.",
+    );
   const vaultIndex = record.vaultIndex ?? 0;
   if (
     typeof vaultIndex !== "number" ||
@@ -55,7 +59,11 @@ export function rpcUrl() {
   return process.env.SOLANA_RPC_URL || clusterApiUrl("devnet");
 }
 export function assertSameOrigin(request: Request) {
-  if (request.headers.get("origin") !== new URL(request.url).origin)
+  const expected = new URL(request.url);
+  // Next dev binds to 0.0.0.0; browsers use the original Host header.
+  const host = request.headers.get("host");
+  if (host) expected.host = host;
+  if (request.headers.get("origin") !== expected.origin)
     throw new Error("Invalid request origin.");
 }
 // Instance-wide ceiling also bounds requests from callers that forge forwarded IPs.

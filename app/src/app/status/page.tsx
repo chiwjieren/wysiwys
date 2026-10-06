@@ -1,64 +1,42 @@
 "use client";
-import { useSquad } from "@/lib/squads/provider";
+import { PageHeader, Panel } from "@/components/design";
 import { SquadFeedback } from "@/components/squads/live-squad";
-import Link from "next/link";
-import { PageHeader, Panel, StatusBadge } from "@/components/design";
-import { Button } from "@/components/ui/button";
-import { mockProviders } from "@/lib/mock/data";
-
-export default function StatusPage() {
-  const { mode, config, snapshot } = useSquad();
-  if (mode !== "sample")
-    return (
-      <div className="page-stack">
-        <PageHeader
-          title="Verification infrastructure"
-          description="Live frontend connection state"
-        />
-        <SquadFeedback />
-        <Panel className="gap-4">
-          <p>
-            Finalized Squads reads: {snapshot ? "Available" : "Unavailable"}
-          </p>
-          <p>
-            Guard settlement adapter:{" "}
-            {config?.settlementEnabled ? "Configured" : "Unavailable"}
-          </p>
-          <p className="caption">
-            Listener, CRE workflow and client-leg health are unavailable until
-            their backend health adapter is connected.
-          </p>
-        </Panel>
-      </div>
-    );
-
+import { useSquad } from "@/lib/squads/provider";
+import { useWalletConnection } from "@/lib/auth/provider";
+export default function Status() {
+  const { config, snapshot, mode } = useSquad();
+  const auth = useWalletConnection();
   return (
     <div className="page-stack">
-      <PageHeader
-        title="Verification infrastructure"
-        description="Technical status · Sample data"
-      />
-      <Panel className="max-w-[548px] gap-4">
-        {mockProviders.map((p) => (
-          <div key={p} className="flex items-center justify-between">
-            <p className="font-medium">{p}</p>
-            <StatusBadge className="w-[152px]">Configured</StatusBadge>
-          </div>
-        ))}
-        <div className="h-px bg-border" />
-        <p className="caption">Active networks are configured per provider.</p>
-        <p className="caption">
-          Client-payment network selection is pending backend setup.
+      <PageHeader title="Status" description="Current frontend connections" />
+      <SquadFeedback />
+      <Panel className="gap-4">
+        <p>
+          Wallet login:{" "}
+          {auth.configured
+            ? auth.ready
+              ? "Ready"
+              : "Initializing"
+            : "Not configured"}
         </p>
-        <p>RPC cross-check: sources must agree</p>
-        <p>Listener and CRE runner: health shown here</p>
-        <Button asChild variant="secondary" className="w-fit">
-          <Link href="/transactions/unavailable">View unavailable state</Link>
-        </Button>
+        <p>
+          Squads chain state:{" "}
+          {snapshot
+            ? "Finalized devnet state loaded"
+            : mode === "unconfigured"
+              ? "No treasury selected"
+              : "Unavailable"}
+        </p>
+        <p>
+          Settlement integration:{" "}
+          {config?.settlementEnabled ? "Configured" : "Unavailable"}
+        </p>
+        <p className="caption">
+          {config?.executionMode === "standard"
+            ? "Standard Squads execution is enabled for this group. Guard policy checks are not active."
+            : "Connection configuration does not verify Guard health or a policy verdict."}
+        </p>
       </Panel>
-      <Button asChild variant="secondary" className="w-fit">
-        <Link href="/transactions/states">View settlement states</Link>
-      </Button>
     </div>
   );
 }

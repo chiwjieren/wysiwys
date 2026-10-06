@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import {
   parseDeployment,
   assertSameOrigin,
@@ -8,7 +8,10 @@ import {
 const addresses = {
   multisig: Keypair.generate().publicKey.toBase58(),
   guardProgram: Keypair.generate().publicKey.toBase58(),
-  executor: Keypair.generate().publicKey.toBase58(),
+  executor: PublicKey.findProgramAddressSync(
+    [Buffer.from("test")],
+    Keypair.generate().publicKey,
+  )[0].toBase58(),
 };
 test("deployment config exposes validated public addresses only", () => {
   assert.deepEqual(
@@ -25,6 +28,32 @@ test("deployment config exposes validated public addresses only", () => {
   assert.throws(
     () => parseDeployment({ ...addresses, vaultIndex: 256 }, false),
     /vault/i,
+  );
+});
+test("guard configuration rejects an on-curve wallet as the sole executor", () => {
+  assert.throws(
+    () =>
+      parseDeployment(
+        { ...addresses, executor: Keypair.generate().publicKey.toBase58() },
+        false,
+      ),
+    /executor/i,
+  );
+});
+test("same-origin checks support Next.js bound-host URLs while rejecting foreign browser origins", () => {
+  assert.doesNotThrow(() =>
+    assertSameOrigin(
+      new Request("http://0.0.0.0:3105/api/squads/rpc", {
+        headers: { host: "127.0.0.1:3105", origin: "http://127.0.0.1:3105" },
+      }),
+    ),
+  );
+  assert.throws(() =>
+    assertSameOrigin(
+      new Request("http://0.0.0.0:3105/api/squads/rpc", {
+        headers: { host: "127.0.0.1:3105", origin: "http://evil.example" },
+      }),
+    ),
   );
 });
 test("transaction preparation rejects foreign origins", () => {

@@ -1,5 +1,8 @@
 # Privy and live Squads implementation
 
+Historical reference: Privy was replaced by direct Wallet Standard connection. See [current app workflow](../README.md).
+Current behavior is documented in [Figma and SDK restoration](figma-sdk-restoration.md), including the user-approved Squads-first decision. Earlier Guard-only restrictions below are historical for new standard groups.
+
 Scope: frontend branch, changes only inside app. No commits or pushes.
 
 The user confirmed that the funded member deposits into the Squads vault. Human members retain Initiate and Vote permissions. The executor PDA alone has Execute permission; every payout goes through the existing guard. Deployment addresses come from deployments/devnet.json at runtime.
@@ -13,3 +16,7 @@ The user confirmed that the funded member deposits into the Squads vault. Human 
 Ruling: keep this plan and progress record inside app to respect the user's directory restriction. No root plans or shared contracts are edited.
 
 Progress: planning and dependency installation started. Existing live SDK integration retained.
+
+User flow update: replace the deployment placeholder with Create group and Open group. Groups are created on devnet with SDK multisigCreateV2, a selected threshold, and wallet-address invitations. No human receives Execute permission. The user reconfirmed that payouts for new groups remain locked until guard integration. Persist only public group addresses and names locally; membership, permissions and balances remain chain-owned. Share group links so invited wallets can open the same group. Subsequent membership changes are SDK governance proposals and must not receive a human execution bypass.
+
+Review fixes: transaction-only entries are validated and skipped until proposalCreate; configured guard executors must be off-curve; session identity is rechecked after token refresh and before signing. Regression tests failed before each fix and now pass.
