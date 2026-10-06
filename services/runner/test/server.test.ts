@@ -80,6 +80,12 @@ test("config falls back to the shared IDL address and public devnet RPC", () => 
   assert.equal(cfg.rpcUrl, "https://api.devnet.solana.com");
   assert.equal(cfg.port, 8787);
   assert.equal(cfg.triggerUrl, null);
+  assert.equal(cfg.wsUrl, null);
+});
+
+test("config uses HELIUS_DEVNET_WS_URL for the WebSocket when set", () => {
+  const cfg = loadConfig({ HELIUS_DEVNET_WS_URL: "wss://ws.example/?api-key=x" }, () => null);
+  assert.equal(cfg.wsUrl, "wss://ws.example/?api-key=x");
 });
 
 test("config reads RPC, port, DB path and trigger settings from env", () => {

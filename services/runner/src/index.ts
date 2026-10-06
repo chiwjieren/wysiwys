@@ -24,7 +24,7 @@ mkdirSync(dirname(cfg.dbPath), { recursive: true });
 const store = openStore(cfg.dbPath);
 const trigger = cfg.triggerUrl ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined) : new LogTrigger();
 const listener = new Listener({
-  connection: new Connection(cfg.rpcUrl, "finalized"),
+  connection: new Connection(cfg.rpcUrl, { commitment: "finalized", wsEndpoint: cfg.wsUrl ?? undefined }),
   programId,
   store,
   parse: createEventParser({ ...(idl as Idl), address: cfg.programId }, programId),
@@ -33,7 +33,8 @@ const listener = new Listener({
 });
 const server = createStatusServer({ programId: cfg.programId, store, health: () => listener.health() });
 
-console.log(`[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, db ${cfg.dbPath}`);
+const ws = cfg.wsUrl ? new URL(cfg.wsUrl).host : `${new URL(cfg.rpcUrl).host} (derived)`;
+console.log(`[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`);
 console.log(`[runner] trigger: ${cfg.triggerUrl ?? "none (log only)"}`);
 await listener.start();
 server.listen(cfg.port, () => console.log(`[runner] status on http://localhost:${cfg.port}/status`));

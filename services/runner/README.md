@@ -17,6 +17,7 @@ Env (root `.env` locally, SSM on EC2):
 | Var | Default |
 |---|---|
 | `HELIUS_DEVNET_RPC_URL` | `https://api.devnet.solana.com` |
+| `HELIUS_DEVNET_WS_URL` | derived from the RPC URL (`https` to `wss`, same host) |
 | `PORT` | `8787` |
 | `RUNNER_DB_PATH` | `services/runner/data/runner.db` |
 | `CRE_TRIGGER_URL` | unset: triggers are logged, not sent |

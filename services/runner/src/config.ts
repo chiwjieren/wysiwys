@@ -9,6 +9,8 @@ const DEPLOYMENTS = resolve(here, "../../../deployments/devnet.json");
 export type RunnerConfig = {
   programId: string;
   rpcUrl: string;
+  /** WebSocket for logsSubscribe; null lets web3.js derive it from rpcUrl (https -> wss, same host). */
+  wsUrl: string | null;
   port: number;
   dbPath: string;
   triggerUrl: string | null;
@@ -34,6 +36,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
   return {
     programId,
     rpcUrl: env.HELIUS_DEVNET_RPC_URL || "https://api.devnet.solana.com",
+    wsUrl: env.HELIUS_DEVNET_WS_URL || null,
     port: Number(env.PORT ?? 8787),
     dbPath: env.RUNNER_DB_PATH ?? resolve(here, "../data/runner.db"),
     triggerUrl: env.CRE_TRIGGER_URL || null,
