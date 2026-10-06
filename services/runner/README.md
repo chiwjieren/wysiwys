@@ -1,5 +1,5 @@
-# @wysiwys/runner
+# @omnicounter/runner
 
-EC2 service: NOWNodes listener, CRE runner (POST /review, GET /status) and SQLite event store.
+EC2 service: NOWNodes listener, CRE runner (POST /review, GET /status) and SQLite event store. Marks trades settled on `Executed`.
 
-Owner: Teammate A. See the root AGENTS.md for guidelines.
+See the root AGENTS.md for guidelines.

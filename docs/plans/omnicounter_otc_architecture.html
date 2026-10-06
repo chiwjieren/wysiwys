@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OmniCounter OTC Architecture</title>
+<style>
+  :root{
+    --bg:#eef4fb;
+    --ink:#10213b;
+    --muted:#5c6f89;
+    --navy:#10243f;
+    --line:#c9d6e7;
+    --white:#fff;
+    --blue:#2463eb;
+    --purple:#7758e8;
+    --pink:#ee4d86;
+    --orange:#f07a27;
+    --green:#1ca76b;
+    --cyan:#2f8edb;
+    --red:#e24a4a;
+    --shadow:0 12px 30px rgba(18,40,72,.10);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.42}
+  .page{max-width:1900px;margin:0 auto;padding:18px}
+  .hero{background:linear-gradient(120deg,#0f223d,#132d50);color:#fff;border-radius:20px;padding:26px 28px;box-shadow:var(--shadow);display:grid;grid-template-columns:1.6fr 1fr;gap:20px;align-items:center}
+  .hero h1{margin:0;font-size:clamp(28px,4vw,54px);letter-spacing:-1.8px;line-height:1.02}
+  .hero p{margin:10px 0 0;color:#a9d6ff;font-weight:700;font-size:clamp(14px,1.4vw,21px)}
+  .hero .badges{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .badge{border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px;background:rgba(255,255,255,.045);font-size:12px}
+  .badge b{display:block;color:#fff;font-size:13px;margin-bottom:4px}
+  .badge span{color:#cdd9ea}
+  .legend{margin:14px 0 18px;display:flex;gap:10px;flex-wrap:wrap}
+  .pill{background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:700;color:var(--muted)}
+  .pipeline{display:grid;grid-template-columns:repeat(7,minmax(230px,1fr));gap:10px;align-items:stretch;overflow-x:auto;padding-bottom:8px}
+  .stage{min-width:230px;border-radius:18px;background:var(--white);border:1px solid var(--line);box-shadow:0 8px 22px rgba(18,40,72,.06);position:relative;overflow:hidden}
+  .stage::after{content:"→";position:absolute;right:-18px;top:47%;transform:translateY(-50%);font-weight:900;font-size:26px;color:#7489a4;z-index:5}
+  .stage:last-child::after{display:none}
+  .stage-head{padding:14px 14px 10px;color:#fff;font-weight:800;display:flex;gap:9px;align-items:flex-start}
+  .stage-head .num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--ink);font-weight:900;flex:0 0 auto}
+  .stage-head strong{font-size:17px;line-height:1.1}
+  .stage-head small{display:block;font-weight:600;opacity:.95;margin-top:3px}
+  .stage-body{padding:12px;background:linear-gradient(#fff,#fbfdff)}
+  .s1 .stage-head{background:linear-gradient(135deg,#1f67e9,#3387ff)}
+  .s2 .stage-head{background:linear-gradient(135deg,#7256e8,#956ef1)}
+  .s3 .stage-head{background:linear-gradient(135deg,#e94c87,#f16ca3)}
+  .s4 .stage-head{background:linear-gradient(135deg,#ea7827,#f3a14c)}
+  .s5 .stage-head{background:linear-gradient(135deg,#2368dd,#4a91f0)}
+  .s6 .stage-head{background:linear-gradient(135deg,#1ca76b,#38c382)}
+  .s7 .stage-head{background:linear-gradient(135deg,#2a69dc,#3c8ce6)}
+  .card{border:1px solid var(--line);border-radius:13px;background:#fff;padding:11px;margin-bottom:10px}
+  .card:last-child{margin-bottom:0}
+  .card h3{margin:0 0 7px;font-size:13px;color:var(--ink)}
+  .card h4{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .card p{margin:5px 0;color:var(--muted);font-size:12px}
+  .card ul{margin:6px 0 0;padding-left:18px;font-size:12px}
+  .card li{margin:4px 0}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;background:#f5f8fc;border:1px solid #e2e9f2;border-radius:9px;padding:8px;font-size:11px;white-space:pre-wrap;word-break:break-word;color:#283d59}
+  .kv{display:grid;grid-template-columns:1fr 1.3fr;gap:6px;font-size:11px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .kv div:nth-child(even){font-weight:700;color:var(--ink)}
+  .ok{color:#148451;font-weight:800}.bad{color:#cf3535;font-weight:800}.warn{color:#ba7426;font-weight:800}
+  .flow{display:flex;align-items:center;justify-content:center;color:#7e91ab;font-weight:900;font-size:20px;margin:5px 0}
+  .mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .rpc{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-size:11px;background:#fff}
+  .rpc b{display:block;font-size:12px;margin-bottom:4px}
+  .consensus{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .consensus .pass,.consensus .fail{padding:8px;border-radius:10px;font-size:11px;font-weight:700}
+  .consensus .pass{background:#ebfbf2;border:1px solid #8dd9ad;color:#147546}
+  .consensus .fail{background:#fff0f0;border:1px solid #ef9f9f;color:#b83636}
+  .section{margin-top:18px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 22px rgba(18,40,72,.06);overflow:hidden}
+  .section h2{margin:0;padding:14px 16px;font-size:18px;background:#f3f7fc;border-bottom:1px solid var(--line)}
+  .section .inner{padding:14px}
+  .bottom-grid{display:grid;grid-template-columns:1.25fr 1.25fr 1.35fr 1.25fr 1.2fr 1.7fr;gap:10px}
+  .bottom-grid .card{margin:0;height:100%}
+  .trust{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .trust .box{border-radius:11px;padding:9px;font-size:11px;border:1px solid var(--line)}
+  .trust .trusted{background:#eefaf4;border-color:#a7dec0}.trust .semi{background:#fff7e8;border-color:#efd499}.trust .untrusted{background:#fff1f1;border-color:#efb0b0}.trust .public{background:#f2efff;border-color:#c7baf0}
+  .footer-note{margin:18px 0 6px;text-align:center;color:var(--muted);font-size:12px}
+  .toolbar{position:sticky;top:8px;z-index:10;display:flex;justify-content:flex-end;gap:8px;margin:10px 0}
+  button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 11px;font-weight:800;color:var(--ink);cursor:pointer;box-shadow:0 4px 10px rgba(18,40,72,.05)}
+  button:hover{background:#f8fbff}
+  body.compact .card p, body.compact .card ul, body.compact .mono, body.compact .kv{font-size:10px}
+  body.compact .stage-head strong{font-size:15px}
+  @media(max-width:1200px){
+    .hero{grid-template-columns:1fr}.bottom-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:700px){
+    .page{padding:8px}.hero{padding:20px}.hero .badges{grid-template-columns:1fr}.bottom-grid{grid-template-columns:1fr}.trust{grid-template-columns:1fr}
+  }
+  @media print{
+    body{background:#fff}.toolbar{display:none}.page{max-width:none;padding:0}.stage{box-shadow:none}.section{box-shadow:none}.pipeline{overflow:visible;grid-template-columns:repeat(7,1fr);gap:5px}.stage{min-width:0}.stage::after{display:none}.hero{border-radius:0}
+  }
+  .stage .mini-grid{grid-template-columns:1fr}
+  .stage .consensus{grid-template-columns:1fr}
+  .card p,.card li{overflow-wrap:anywhere}
+  .s0 .stage-head{background:linear-gradient(135deg,#334a6b,#4d6a92)}
+  .infra{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .infra .card{margin:0}
+  .events{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .events .card{margin:0}
+  @media(max-width:1200px){.infra{grid-template-columns:repeat(2,1fr)}.events{grid-template-columns:1fr}}
+  @media(max-width:700px){.infra{grid-template-columns:1fr}}
+</style>
+<body>
+<div class="page">
+  <header class="hero">
+    <div>
+      <h1>OmniCounter: OTC Pre-Settlement Firewall for Solana</h1>
+      <p>No proof, no payout. Trade-bound transaction verification and confidential policy enforcement on Squads v4, orchestrated by Chainlink CRE</p>
+    </div>
+    <div class="badges">
+      <div class="badge"><b>Proof before payout</b><span>The desk pays only after the client's leg is confirmed on-chain (Tron or Ethereum via NOWNodes)</span></div>
+      <div class="badge"><b>Exact transaction, exact trade</b><span>Independent decoding of the exact Squads transaction, bound to the approved trade</span></div>
+      <div class="badge"><b>Execution gate</b><span>Settlement only when trade, chain state, policy, humans and the exact tx all agree</span></div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <button onclick="document.body.classList.toggle('compact')">Toggle compact</button>
+    <button onclick="window.print()">Print / Save PDF</button>
+  </div>
+
+  <div class="legend">
+    <span class="pill">Trade truth = approved OTC trade ticket</span>
+    <span class="pill">Counterparty truth = client leg received on-chain</span>
+    <span class="pill">Blockchain truth = exact Squads VaultTransaction (msg_hash)</span>
+    <span class="pill">Policy truth = confidential desk rules (policy_hash on-chain)</span>
+    <span class="pill">Fail closed on ambiguity</span>
+  </div>
+
+  <main class="pipeline">
+    <section class="stage s1">
+      <div class="stage-head"><span class="num">1</span><div><strong>Trade &amp; Counterparty</strong><small>Off-chain source of commercial truth (mock trade API for the demo)</small></div></div>
+      <div class="stage-body">
+        <div class="card">
+          <h3>1.1 OTC Trade System / OMS / RFQ</h3>
+          <ul><li>Approved trade ticket</li><li>Trade status + version</li><li>Counterparty reference</li><li>Both legs: client pays, desk pays</li><li>API / webhook access</li></ul>
+          <div class="mono">TradeRecord {
+  trade_id: "OTC-10428",
+  version: 3,
+  counterparty_id: "CP-882",
+  side: "DESK_SENDS_AFTER_RECEIPT",
+  client_leg: {
+    network: "TRON",
+    asset: "USDT",
+    amount: "500250000000",
+    desk_deposit_address: "TQ7...9xK"
+  },
+  desk_leg: {
+    network: "SOLANA",
+    asset_mint: "EPjF...USDC",
+    amount: "500000000000",
+    settlement_wallet: "8FK...2Qa"
+  },
+  status: "SETTLEMENT_READY",
+  valid_until: 1760000000
+}</div>
+        </div>
+        <div class="card"><h3>1.2 Counterparty Registry</h3><ul><li>Legal entity / KYB profile</li><li>Verified Solana settlement wallets</li><li>Wallet status: VERIFIED / REVOKED</li><li>Risk tier / internal flags</li></ul></div>
+        <div class="card"><h3>1.3 Compliance &amp; Risk Data</h3><ul><li>Sanctions screening (Range / Chainalysis; local denylist for devnet)</li><li>Address risk provider</li><li>Internal investigations / holds</li><li>Counterparty status</li></ul></div>
+        <div class="card"><h3>1.4 Exposure &amp; Limits</h3><ul><li>Per-trade limit</li><li>Daily counterparty limit</li><li>Credit limit (optional)</li><li>Previous settlements</li></ul></div>
+      </div>
+    </section>
+
+    <section class="stage s2">
+      <div class="stage-head"><span class="num">2</span><div><strong>Settlement Initiation</strong><small>Operator selects an approved trade</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>2.1 Settlement Operator (Next.js)</h3><ul><li>Select trade from approved list</li><li>Trade details shown read-only</li><li>Review counterparty + destination</li><li>No manual retyping of key fields</li></ul>
+          <div class="kv"><div>Trade</div><div>OTC-10428</div><div>Counterparty</div><div>ABC Capital</div><div>Client pays</div><div>500,250 USDT (Tron)</div><div>Desk sends</div><div>500,000 USDC (Solana)</div><div>Destination</div><div>8FK...2Qa</div><div>Status</div><div class="ok">READY</div></div>
+        </div>
+        <div class="card"><h3>2.2 Settlement Intent</h3><p>Canonical object derived from the authoritative trade. This is what the desk intends to settle.</p>
+          <div class="mono">SettlementIntent {
+  schema_version: 1,
+  trade_id: "OTC-10428",
+  trade_version: 3,
+  counterparty_id: "CP-882",
+  network: "SOLANA",
+  asset_mint: "EPjF...USDC",
+  amount: "500000000000",
+  destination: "8FK...2Qa",
+  valid_until: 1760000000
+}</div>
+          <div class="flow">↓</div>
+          <div class="mono">settlement_intent_hash = SHA256(canonical_intent)
+trade_ref_hash = SHA256(trade_id + ":" + version)
+
+Canonical form defined once in packages/shared
+(fixed key order, no whitespace, amounts as strings).
+Trade details stay off-chain; only hashes go on-chain.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage s3">
+      <div class="stage-head"><span class="num">3</span><div><strong>Squads Transaction</strong><small>On-chain proposal creation</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>3.1 Construct Solana Instructions</h3><ul><li>SPL Token TransferChecked (USDC)</li><li>Recipient token account derived from the trade's settlement wallet</li><li>Amount derived from the trade</li><li>No extra instructions by default</li></ul>
+          <div class="mono">TransferChecked({
+  source: treasuryVaultUsdcAta,
+  mint: USDC_MINT,
+  destination: ata("8FK...2Qa"),
+  authority: treasuryVault,
+  amount: 500000000000,
+  decimals: 6
+})</div>
+        </div>
+        <div class="card"><h3>3.2 Squads v4 SDK</h3><div class="mono">vaultTransactionCreate(...)
+proposalCreate(...)</div><ul><li>VaultTransaction stores executable instructions</li><li>Proposal stores voting / approval state</li><li>3 humans: Initiate + Vote, threshold 3 of 3</li><li>Guard executor PDA: the only Execute member</li></ul></div>
+        <div class="mini-grid">
+          <div class="rpc"><b>VaultTransaction PDA</b>What will execute</div>
+          <div class="rpc"><b>Proposal PDA</b>Who approves</div>
+          <div class="rpc"><b>Multisig PDA</b>Governance root</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage s4">
+      <div class="stage-head"><span class="num">4</span><div><strong>Guard: Request Review</strong><small>On-chain review handshake</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>4.1 Guard Program</h3><div class="mono">request_review(
+  settlement_intent_hash: [u8; 32],
+  trade_ref_hash: [u8; 32]
+)
+accounts: multisig, vault_transaction,
+  proposal, review (init), payer</div><ul><li>Validate Squads account ownership</li><li>Validate vault tx / proposal ↔ multisig linkage and tx index</li><li>Review PDA <code>["review", multisig, tx_index]</code> uses <code>init</code>, so a second review for the same tx fails</li><li><b>Compute msg_hash = SHA-256 of the VaultTransaction account data, on-chain</b> (single definition of the tx hash)</li><li>Bind the settlement intent and trade ref</li></ul></div>
+        <div class="card"><h3>4.2 Review PDA (initial)</h3><div class="mono">Review {
+  status: PENDING,
+  multisig,
+  vault_transaction,
+  proposal,
+  transaction_index,
+  msg_hash: 0xABC123...,
+  settlement_intent_hash,
+  trade_ref_hash,
+  policy_hash: 0,
+  reason: 0,
+  expires_at: 0
+}</div></div>
+        <div class="card"><h3>4.3 Emit ReviewRequested</h3><p>The listener picks up this Anchor event and starts the CRE workflow for the exact Squads proposal.</p><div class="mono">ReviewRequested {
+  review,
+  multisig,
+  transaction_index,
+  msg_hash,
+  settlement_intent_hash,
+  trade_ref_hash
+}</div></div>
+      </div>
+    </section>
+
+    <section class="stage s5">
+      <div class="stage-head"><span class="num">5</span><div><strong>Chainlink CRE Workflow</strong><small>Proof before payout + confidential policy</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>5.1 Trigger</h3><p><b>Listener</b> (EC2) subscribes to guard logs via NOWNodes WebSocket <code>logsSubscribe</code>, backfills with <code>getSignaturesForAddress</code>, dedupes, then calls the <b>CRE HTTP trigger</b> with identifiers only.</p>
+          <div class="mono">POST /review { review, multisig, txIndex }</div>
+          <p>The workflow trusts nothing in the payload beyond identifiers and re-reads everything from chain. CRE Solana log trigger only if verified working.</p>
+        </div>
+        <div class="card"><h3>5.2 Fetch + Cross-Check Solana State</h3><p>Finalized reads of Review, VaultTransaction and destination token account owner.</p>
+          <div class="mini-grid"><div class="rpc"><b>SolanaClient</b>native read, DON consensus</div><div class="rpc"><b>NOWNodes</b>HTTP getAccountInfo</div><div class="rpc"><b>Helius</b>optional, if time</div></div>
+          <ul><li>Verify account owners / expected PDAs</li><li><b>SHA-256(VaultTransaction data) == Review.msg_hash</b></li><li>Sources compare decoded fields, not raw responses</li></ul>
+          <div class="consensus"><div class="pass">Sources agree + hash match → continue</div><div class="fail">Disagree → RPC_NO_CONSENSUS; hash differs → TX_HASH_MISMATCH</div></div>
+        </div>
+        <div class="card"><h3>5.3 Semantic Decoder (pure TS)</h3><p>Turn the exact transaction into structured actions for policy evaluation.</p><div class="mono">DecodedAction {
+  kind: "TOKEN_TRANSFER",
+  mint: "EPjF...USDC",
+  source: "TREASURY_ATA",
+  destination_owner: "8FK...2Qa",
+  amount: "500000000000"
+}</div><p>Also detects authority changes, delegates, account closes, durable nonce instructions, unknown programs, Address Lookup Tables and extra instructions.</p></div>
+        <div class="card"><h3>5.4 Fetch Off-chain Truth + Client Leg</h3><ul><li>Authoritative TradeRecord (version, status, expiry)</li><li>Counterparty Registry</li><li>Compliance / sanctions / wallet risk</li><li>Exposure / limits</li></ul>
+          <div class="mono">Client leg check (NOWNodes Tron / Ethereum RPC):
+USDT Transfer to desk_deposit_address
+amount >= 500,250 USDT
+confirmations >= N
+deposit tx not already used by another trade</div>
+          <p><b>Proof before payout:</b> no confirmed client leg → <span class="bad">COUNTERPARTY_LEG_NOT_RECEIVED</span>.</p>
+        </div>
+        <div class="card"><h3>5.5 Trade Match + Confidential Policy</h3><ul><li>Trade status = SETTLEMENT_READY</li><li>Recompute settlement_intent_hash and trade_ref_hash from the trade; must equal the Review</li><li><b>Client leg received on-chain</b></li><li>Network / asset / amount match</li><li>Destination owner = verified settlement wallet</li><li>Wallet not sanctioned, risk check passed</li><li>No unexpected instructions</li><li>No authority changes, delegates or closes</li><li>No durable nonce instruction</li><li>Only allowlisted programs</li><li>Trade not expired / cancelled / settled</li><li>Per-trade + daily limits pass</li></ul><p><b>Trade ticket fetch and sensitive rules run inside the CRE Confidential Workflow (TEE).</b> Rules are versioned; their hash is fixed in GuardConfig.</p></div>
+        <div class="card"><h3>5.6 Verdict + Report</h3><div class="mono">Report (Borsh, fixed 171 bytes) {
+  review: Pubkey,
+  verdict: u8,          // 1 approve, 2 reject
+  reason: u16,          // ReviewReason
+  msg_hash: [u8; 32],
+  settlement_intent_hash: [u8; 32],
+  trade_ref_hash: [u8; 32],
+  policy_hash: [u8; 32],
+  expires_at: i64       // min(policy expiry, trade valid_until)
+}</div><p>Delivered with <code>SolanaClient.writeReport</code>; the DON signs it and the Keystone Forwarder verifies the signatures. Plain-English summary is template-based, never AI.</p></div>
+      </div>
+    </section>
+
+    <section class="stage s6">
+      <div class="stage-head"><span class="num">6</span><div><strong>Result &amp; Human Approval</strong><small>Write verdict, then governance</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>6.1 Keystone Forwarder → Guard.on_report(metadata, report)</h3><p>The forwarder verifies the DON signatures. The guard then checks:</p><ul><li>Forwarder state account owned by GuardConfig.forwarder_program</li><li><code>forwarder_authority</code> = PDA <code>["forwarder", state, guard_id]</code> and is a signer</li><li>Payload exact length, verdict in {1, 2}, reason in table</li><li>Review exists and is PENDING</li><li>msg_hash, settlement_intent_hash, trade_ref_hash equal the Review</li><li><b>policy_hash == GuardConfig.policy_hash</b> (else PolicyMismatch)</li><li>Store reason / policy_hash / expiry; set APPROVED or REJECTED; emit DecisionRecorded</li></ul>
+          <p>Demo: <code>cre workflow simulate --broadcast</code> uses Chainlink's simulator mock forwarder on devnet (<code>7kuE...cNK</code>), so the same forwarder checks run in the demo.</p></div>
+        <div class="card"><h3>Review PDA (updated)</h3><div class="mono">status: APPROVED
+msg_hash: 0xABC123...
+settlement_intent_hash: 0xC13D...
+trade_ref_hash: 0x51A0...
+policy_hash: 0x9F99...
+reason: WITHIN_POLICY (0)
+expires_at: 1760000000</div></div>
+        <div class="card"><h3>6.2 Human Approval (Squads)</h3><p>The app shows the verdict and plain-English summary next to the operator's claim before signers vote.</p><ul><li>Signer 1 approves</li><li>Signer 2 approves</li><li>Signer 3 approves</li></ul><p><b>Humans authorize the business action. OmniCounter enforces whether it is allowed.</b></p><div class="mono">Proposal status = APPROVED (3 of 3)</div></div>
+      </div>
+    </section>
+
+    <section class="stage s7">
+      <div class="stage-head"><span class="num">7</span><div><strong>Execute Settlement</strong><small>The guard is the only execution path</small></div></div>
+      <div class="stage-body">
+        <div class="card"><h3>7.1 Anyone Can Call</h3><p>Operator clicks <b>Execute Settlement</b> in Next.js. The app calls the guard, never Squads execute directly (humans have no Execute permission).</p></div>
+        <div class="card"><h3>7.2 Guard.guarded_execute()</h3><ul><li>Review.status == APPROVED</li><li><code>Clock::get()</code> &lt; Review.expires_at</li><li>Squads proposal == APPROVED</li><li>Re-hash current VaultTransaction data == Review.msg_hash</li><li>Review.multisig / tx_index match the VaultTransaction</li><li>Instructions sysvar address verified, then <b>instruction 0 is not AdvanceNonceAccount</b> (else DurableNonceDetected)</li><li><b>CPI target == Squads program ID</b> <code>SQDS4ep6...pCf</code></li><li>Set status EXECUTED before the CPI (one-way, single use)</li></ul></div>
+        <div class="card"><h3>7.3 Executor PDA</h3><p>Seeds <code>["executor", multisig]</code>. Only Squads member with <b>Execute</b> permission. Signs only the <code>vault_transaction_execute</code> CPI via <code>invoke_signed()</code>.</p></div>
+        <div class="card"><h3>7.4 Squads Execution</h3><div class="mono">Guard
+  ↓ invoke_signed()
+Executor PDA
+  ↓ CPI
+Squads vaultTransactionExecute()
+  ↓
+Treasury / Settlement Vault
+  ↓
+Counterparty USDC account</div></div>
+        <div class="card" style="border-color:#8bd8ac;background:#effbf4"><h3 class="ok">SETTLEMENT EXECUTED ✓</h3><p>Guard emits <b>Executed</b>. The listener records signature, slot and review, updates the activity feed and marks the trade SETTLED in the trade system (mock API).</p></div>
+      </div>
+    </section>
+  </main>
+
+  <section class="section">
+    <h2>Data Schemas &amp; Security-Critical Structures</h2>
+    <div class="inner bottom-grid">
+      <div class="card"><h3>TradeRecord (off-chain)</h3><div class="mono">{
+  trade_id,
+  version,
+  counterparty_id,
+  side,
+  client_leg {
+    network, asset, amount,
+    desk_deposit_address
+  },
+  desk_leg {
+    network, asset_mint, amount,
+    settlement_wallet
+  },
+  status,
+  valid_until,
+  created_at,
+  updated_at
+}</div></div>
+      <div class="card"><h3>SettlementIntent (off-chain)</h3><div class="mono">{
+  schema_version,
+  trade_id,
+  trade_version,
+  counterparty_id,
+  network,
+  asset_mint,
+  amount,
+  destination,
+  valid_until
+}</div></div>
+      <div class="card"><h3>Review PDA (on-chain)</h3><div class="mono">seeds ["review", multisig, tx_index u64 LE]
+{
+  version,
+  multisig,
+  vault_transaction,
+  proposal,
+  transaction_index,
+  msg_hash,
+  settlement_intent_hash,
+  trade_ref_hash,
+  policy_hash,
+  status: Pending | Approved
+        | Rejected | Executed,
+  reason,
+  expires_at,
+  created_at,
+  bump
+}</div></div>
+      <div class="card"><h3>CRE Report (Borsh, 171 bytes)</h3><div class="mono">{
+  review,
+  verdict,
+  reason,
+  msg_hash,
+  settlement_intent_hash,
+  trade_ref_hash,
+  policy_hash,
+  expires_at
+}
+
+GuardConfig (immutable)
+seeds ["config", multisig]
+{
+  multisig,
+  forwarder_program,
+  forwarder_state,
+  policy_hash,
+  bump, executor_bump
+}</div></div>
+      <div class="card"><h3>ReviewReason (u16)</h3><div class="mono">0  WITHIN_POLICY
+1  RPC_NO_CONSENSUS
+2  TX_HASH_MISMATCH
+3  TRADE_NOT_FOUND
+4  TRADE_NOT_READY
+5  TRADE_EXPIRED
+6  TRADE_CANCELLED
+7  TRADE_ALREADY_SETTLED
+8  INTENT_HASH_MISMATCH
+9  COUNTERPARTY_LEG_NOT_RECEIVED
+10 ASSET_MISMATCH
+11 AMOUNT_MISMATCH
+12 DESTINATION_MISMATCH
+13 UNEXPECTED_INSTRUCTION
+14 UNKNOWN_PROGRAM
+15 AUTHORITY_CHANGE_BLOCKED
+16 DURABLE_NONCE_DETECTED
+17 COUNTERPARTY_SUSPENDED
+18 WALLET_NOT_VERIFIED
+19 SANCTIONED_WALLET
+20 WALLET_RISK_REJECTED
+21 LIMIT_EXCEEDED
+22 POLICY_HASH_MISMATCH</div></div>
+      <div class="card"><h3>Trust &amp; Security Boundaries</h3><div class="trust">
+        <div class="box untrusted"><b>Frontend: untrusted</b><br/>May propose and display, but cannot authorize or bypass the guard.</div>
+        <div class="box untrusted"><b>Listener: untrusted trigger</b><br/>Only passes identifiers. If it is down, reviews do not start and nothing executes (fail closed).</div>
+        <div class="box semi"><b>RPC providers: cross-checked</b><br/>Native SolanaClient (DON consensus) plus NOWNodes; disagreement fails closed.</div>
+        <div class="box trusted"><b>Chainlink CRE / DON: trusted computation</b><br/>BFT capability execution; confidential trade data and rules in TEE.</div>
+        <div class="box trusted"><b>Keystone Forwarder</b><br/>Verifies DON signatures. Guard verifies the forwarder state owner and authority PDA.</div>
+        <div class="box trusted"><b>Guard program: enforcement root</b><br/>Only path that can execute Squads settlement through the executor PDA. Config immutable.</div>
+        <div class="box public"><b>On-chain state: public</b><br/>Review stores hashes, verdict, reason and expiry, never trade details.</div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Guard Events (consumed by the listener)</h2>
+    <div class="inner events">
+      <div class="card"><h3>ReviewRequested</h3><div class="mono">{ review, multisig, transaction_index,
+  msg_hash, settlement_intent_hash,
+  trade_ref_hash }</div><p>Starts the CRE workflow.</p></div>
+      <div class="card"><h3>DecisionRecorded</h3><div class="mono">{ review, verdict, reason,
+  policy_hash, expires_at }</div><p>Updates the review screen and activity feed.</p></div>
+      <div class="card"><h3>Executed</h3><div class="mono">{ review, multisig, transaction_index }</div><p>Marks the trade SETTLED and closes the loop.</p></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Infrastructure (devnet demo)</h2>
+    <div class="inner infra">
+      <div class="card"><h3>Web app</h3><p>Next.js on AWS Amplify. Demo mode with server-side devnet signer keys. Label: "Devnet demo, test keys only".</p></div>
+      <div class="card"><h3>Mock trade system</h3><p>Small API with TradeRecords, counterparty registry and limits. Next.js server route or the runner.</p></div>
+      <div class="card"><h3>Listener + event DB</h3><p>EC2 t3.small, systemd. NOWNodes WebSocket, SQLite history. DB is history, chain is truth.</p></div>
+      <div class="card"><h3>CRE runner</h3><p>Same EC2 behind Caddy (HTTPS). <code>POST /review</code> runs <code>cre workflow simulate --broadcast</code>; logs saved to <code>evidence/cre/</code>.</p></div>
+      <div class="card"><h3>NOWNodes</h3><p>Solana devnet RPC + WebSocket, and Tron / Ethereum RPC for the client leg (multichain).</p></div>
+      <div class="card"><h3>Chainlink + Squads</h3><p>Simulator mock forwarder on devnet. Squads v4 <code>SQDS4ep6...pCf</code> (same ID on devnet). Secrets in SSM / Amplify env.</p></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Non-Negotiable Execution Invariant</h2>
+    <div class="inner">
+      <div class="mono" style="font-size:14px;text-align:center;padding:18px">APPROVED TRADE INTENT
+        + CLIENT LEG RECEIVED ON-CHAIN
+        + CROSS-CHECKED SOLANA STATE
+        + TRADE ↔ TRANSACTION EXACT MATCH
+        + CONFIDENTIAL POLICY PASS (policy_hash matches)
+        + VALID FORWARDER-DELIVERED CRE REVIEW, NOT EXPIRED
+        + 3 OF 3 SQUADS HUMAN APPROVALS
+        + UNCHANGED msg_hash, NO DURABLE NONCE
+        = SETTLEMENT MAY EXECUTE (ONCE)</div>
+      <p style="text-align:center;color:var(--muted);margin-bottom:0"><b>If the system cannot prove all required conditions, it fails closed.</b></p>
+    </div>
+  </section>
+
+  <p class="footer-note">OmniCounter architecture reference for product, engineering, security review and coding agents.</p>
+</div>
+</body>
+</html>

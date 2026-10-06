@@ -8,10 +8,10 @@ skip-lint = false
 # Placeholder program ID. Replace with the real one in Task 0 (spike 1): `anchor keys sync`,
 # then update packages/shared and deployments/devnet.json.
 [programs.localnet]
-wysiwys_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+omnicounter_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
 [programs.devnet]
-wysiwys_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+omnicounter_guard = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
 [provider]
 cluster = "localnet"

@@ -1,13 +1,13 @@
 [package]
-name = "wysiwys_guard"
+name = "omnicounter_guard"
 version = "0.1.0"
-description = "Wysiwys guard: executes a Squads v4 vault transaction only after a CRE approval"
+description = "OmniCounter guard: executes a Squads v4 OTC payout only after a CRE approval"
 edition.workspace = true
 rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "wysiwys_guard"
+name = "omnicounter_guard"
 
 [features]
 default = []
