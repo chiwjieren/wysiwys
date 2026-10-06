@@ -50,7 +50,7 @@ npm test                                   # all TS workspaces
 # Guard program
 anchor build
 anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
-anchor deploy --provider.cluster devnet
+scripts/deploy-guard-devnet.sh             # devnet deploy/upgrade via HELIUS_DEVNET_RPC_URL from .env
 cargo test -p omnicounter_guard --lib      # guard pure logic unit tests
 
 # Devnet setup and end-to-end
@@ -179,6 +179,7 @@ Kickoff check: confirm Sepolia appears in the NOWNodes dashboard. If not, tell t
 ## Secrets
 
 - Never commit keypairs, API keys, tokens or `.env` files. Devnet keypairs go in `keys/` (gitignored).
+- Local config: copy `.env.example` to `.env` and fill it in (`HELIUS_DEVNET_RPC_URL`, ...). Add every new variable to `.env.example` with a placeholder.
 - Hosted secrets live in AWS SSM Parameter Store (runner) and Amplify environment variables (app).
 - Treat every key as devnet-only. Label Demo mode "Devnet demo, test keys only".
 
