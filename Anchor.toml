@@ -37,6 +37,11 @@ rpc_port = 8899
 address = "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
 program = "tests/fixtures/squads_multisig.so"
 
+# Metaplex Token Metadata (mUSD name and symbol), devnet dump, for the bootstrap test.
+[[test.genesis]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+program = "tests/fixtures/mpl_token_metadata.so"
+
 [[test.validator.account]]
 address = "BSTq9w3kZwNwpBXJEvTZz2G9ZTNyKBvoSeXMvwb4cNZr"
 filename = "tests/fixtures/squads_program_config.json"
