@@ -62,12 +62,13 @@ anchor build
 anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
 anchor deploy --provider.cluster devnet
 
-# Devnet setup and end-to-end (e2e not written yet)
+# Devnet setup and end-to-end
 npx tsx scripts/bootstrap-devnet.ts        # idempotent; mUSD mint + metadata, Squads, recipients,
                                            # guard config once GUARD_* CRE values are set; writes deployments/devnet.json
 SIGNERS=a,b,c npx tsx scripts/bootstrap-devnet.ts --treasury demo   # demo treasury signed by those wallets;
                                            # writes deployments/devnet.demo.json
-npx tsx scripts/e2e-devnet.ts              # approve path + reject paths
+npx tsx scripts/e2e-devnet.ts [scenario]   # clean, lookalike, drift, overCap, ownershipSwap, durableNonce on the test
+                                           # treasury; review step = local stand-in via the mock forwarder; evidence/e2e/
 
 # Decoder + policy
 npm test --workspace=packages/decoder
