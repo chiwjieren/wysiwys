@@ -372,6 +372,19 @@ test("runner-opened guarded groups must use the deployed guard and its derived e
   );
 });
 
+test("the checked-in devnet deployment pins guard args", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const raw = JSON.parse(
+    await readFile(
+      new URL("../../deployments/devnet.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const pinned = parseGuardArgs(raw);
+  assert.equal(pinned?.policyHash, raw.guard.policyHash);
+  assert.equal(encodeInitializeGuardArgs(pinned!).length, 140);
+});
+
 test("deployment guard args are parsed strictly", () => {
   assert.deepEqual(parseGuardArgs({ guard: args }), args);
   assert.equal(parseGuardArgs({}), undefined);
