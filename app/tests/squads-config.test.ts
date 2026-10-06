@@ -5,21 +5,41 @@ import {
   parseDeployment,
   assertSameOrigin,
 } from "../src/lib/squads/server-config";
-const addresses = {
+const deployment = {
   multisig: Keypair.generate().publicKey.toBase58(),
-  guardProgram: Keypair.generate().publicKey.toBase58(),
-  executor: PublicKey.findProgramAddressSync(
+  programId: Keypair.generate().publicKey.toBase58(),
+  executorPda: PublicKey.findProgramAddressSync(
     [Buffer.from("test")],
     Keypair.generate().publicKey,
   )[0].toBase58(),
 };
-test("deployment config exposes validated public addresses only", () => {
+const addresses = deployment;
+test("deployment config maps devnet.json keys to validated public addresses only", () => {
   assert.deepEqual(
     parseDeployment(
       { ...addresses, vaultIndex: 0, runnerToken: "secret", rpcUrl: "secret" },
       true,
     ),
-    { ...addresses, vaultIndex: 0, settlementEnabled: true },
+    {
+      multisig: deployment.multisig,
+      guardProgram: deployment.programId,
+      executor: deployment.executorPda,
+      vaultIndex: 0,
+      settlementEnabled: true,
+      executionMode: "guarded",
+    },
+  );
+  assert.throws(
+    () =>
+      parseDeployment(
+        {
+          multisig: deployment.multisig,
+          guardProgram: deployment.programId,
+          executor: deployment.executorPda,
+        },
+        false,
+      ),
+    /deployment/i,
   );
   assert.throws(
     () => parseDeployment({ ...addresses, multisig: "sample" }, false),
@@ -34,11 +54,37 @@ test("guard configuration rejects an on-curve wallet as the sole executor", () =
   assert.throws(
     () =>
       parseDeployment(
-        { ...addresses, executor: Keypair.generate().publicKey.toBase58() },
+        {
+          ...addresses,
+          executorPda: Keypair.generate().publicKey.toBase58(),
+        },
         false,
       ),
     /executor/i,
   );
+});
+test("runner group responses parse as guarded group configs", () => {
+  const config = parseDeployment(
+    { ...deployment, vaultIndex: 0, guardReady: true },
+    true,
+  );
+  assert.equal(config.guardProgram, deployment.programId);
+  assert.equal(config.executor, deployment.executorPda);
+  assert.equal(config.executionMode, "guarded");
+  assert.equal(config.settlementEnabled, true);
+});
+test("the checked-in devnet deployment parses", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const raw = JSON.parse(
+    await readFile(
+      new URL("../../deployments/devnet.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const config = parseDeployment(raw, false);
+  assert.equal(config.multisig, raw.multisig);
+  assert.equal(config.executor, raw.executorPda);
+  assert.equal(config.guardProgram, raw.programId);
 });
 test("same-origin checks support Next.js bound-host URLs while rejecting foreign browser origins", () => {
   assert.doesNotThrow(() =>

@@ -10,16 +10,23 @@ export function parseDeployment(
   if (!input || typeof input !== "object")
     throw new Error("Invalid deployment configuration.");
   const record = input as Record<string, unknown>;
-  const keys = ["multisig", "guardProgram", "executor"] as const;
-  const addresses = {} as Record<(typeof keys)[number], string>;
+  // devnet.json and the runner's group response name the guard program
+  // `programId` and the executor `executorPda`; SquadConfig keeps its own names.
+  const keys = {
+    multisig: "multisig",
+    guardProgram: "programId",
+    executor: "executorPda",
+  } as const;
+  const addresses = {} as Record<keyof typeof keys, string>;
   try {
-    for (const key of keys) {
-      if (typeof record[key] !== "string") throw new Error();
-      addresses[key] = new PublicKey(record[key]).toBase58();
+    for (const field of Object.keys(keys) as (keyof typeof keys)[]) {
+      const value = record[keys[field]];
+      if (typeof value !== "string") throw new Error();
+      addresses[field] = new PublicKey(value).toBase58();
     }
   } catch {
     throw new Error(
-      "Invalid deployment addresses. Expected multisig, guardProgram and executor.",
+      "Invalid deployment addresses. Expected multisig, programId and executorPda.",
     );
   }
   if (PublicKey.isOnCurve(new PublicKey(addresses.executor).toBytes()))
@@ -34,7 +41,12 @@ export function parseDeployment(
     vaultIndex > 255
   )
     throw new Error("Invalid vault index.");
-  return { ...addresses, vaultIndex, settlementEnabled };
+  return {
+    ...addresses,
+    vaultIndex,
+    settlementEnabled,
+    executionMode: "guarded",
+  };
 }
 export async function loadConfig(): Promise<SquadConfig | null> {
   const configuredPath = process.env.OMNICOUNTER_DEPLOYMENT_PATH;
