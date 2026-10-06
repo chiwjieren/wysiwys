@@ -1,0 +1,35 @@
+Initializing...
+Loading settings...
+Checking RPC connectivity...
+Compiling workflow...
+✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: c6cb46e94288d77a3a9bad7041911c75c31b7eff190f5460080358d91079f821
+  Config hash: 3712ecdeb58b6efffc8dea1b1c07167f377660084298cdb37c117e744d99cc86
+2026-10-06T22:08:59Z [SIMULATION] Simulator Initialized
+
+2026-10-06T22:08:59Z [SIMULATION] Running trigger trigger=cron-trigger@1.0.0
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Trigger requested TEE Execution your trigger will run in one of the following Tees:                │
+│     - AWS Nitro in us-west-2                                                                       │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+2026-10-06T22:09:01Z [USER LOG] Devnet RPC probe passed: QuickNode, Helius, Alchemy. Account review not performed.
+
+✓ Workflow Simulation Result:
+"{\"mode\":\"local-simulation\",\"operation\":\"network-probe\",\"genesisHash\":\"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\",\"providers\":[\"quicknode\",\"helius\",\"alchemy\"],\"verifiedProviders\":3,\"accountQuorumVerified\":false,\"paymentAuthorized\":false}"
+
+2026-10-06T22:09:01Z [SIMULATION] Execution finished signal received
+2026-10-06T22:09:01Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

@@ -1,0 +1,21 @@
++Command (from workflow/confidential-preflight):
+cre workflow simulate confidential-check --target local-simulation --non-interactive --trigger-index 0
+
+TDD: initial test failed because adapter module was missing; final suite passed 21 tests.
+TypeScript check passed. CRE native compilation succeeded.
+Runtime stopped before API invocation because its secret environment reference was missing.
+No live Scorechain screening result. No report delivery, payment, broadcast or deployment.
+After this run, secret environment mapping was renamed to CRE_SCORECHAIN_SANCTIONS_API_KEY.
+
+Initializing...
+Loading settings...
+! Using default private key for chain write simulation. To use your own key, set CRE_ETH_PRIVATE_KEY in your .env file or system environment.
+Checking RPC connectivity...
+Compiling workflow...
+✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 9e1e04b4ce88be0320287b639ec07e748f984db43feeb95a41dd63cf61d8b2ae
+  Config hash: 465583e850401ce1d3197a7a897b6cf4a9aec6ef91d7fe76471049ef54bbafba
+! Secret "SCORECHAIN_SANCTIONS_API_KEY" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_SCORECHAIN_SANCTIONS_API_KEY").
+✗ failed to replace secret names with environment variables: environment variable SCORECHAIN_SANCTIONS_API_KEY for secret value not found, please export it to your environment

@@ -1,0 +1,24 @@
+Requested address: dXWz5fHLr8a7AdmSfYUw7ZvD5e6YWDcYJYosfX4wf8Tw
+Command: cre workflow simulate confidential-check --target local-simulation --non-interactive --trigger-index 0
+An initial config edit introduced a UTF-8 BOM; corrected before retry.
+Retry compiled but rejected the address before any Scorechain API request.
+Independent base58 decoding: 44 characters, 33 decoded bytes; Solana requires 32.
+Restored the prior valid address in local configuration.
+No sanctions determination exists for this input.
+
++✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 721a3a9b2e27688de74be97d371770f62c4975782a0d91c1cbea4f6316e155df
+  Config hash: 94b11d95cf7d0a38729f78a6dd5f8cdc2348c278bb04504d8449cc5cd8f2f098
+Failed to create engine: failed to execute subscribe: Config validation failed. Expectations were not matched:
+
+[
+  {
+    "code": "custom",
+    "message": "A valid public Solana address is required",
+    "path": [
+      "address"
+    ]
+  }
+]

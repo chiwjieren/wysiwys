@@ -1,0 +1,27 @@
+Command (from workflow/cre):
+cre workflow simulate preflight --target local-simulation --non-interactive --trigger-index 0
+
+CRE CLI v1.37.0; Bun 1.4.2; @chainlink/cre-sdk 1.23.0
+Non-broadcast cron-only preflight. No report, receiver or payment operation.
+
++✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 22993a4ff7b552e19e2dbcd527ab7daa4d3970fd10690667e454ba2026545c13
+  Config hash: 3bdaebcc2f639d77cb248242c1d01c8651f540cdbf423d26fe3128516fd225b6
+2026-10-06T18:59:24Z [SIMULATION] Simulator Initialized
+
+2026-10-06T18:59:24Z [SIMULATION] Running trigger trigger=cron-trigger@1.0.0
+2026-10-06T18:59:24Z [USER LOG] Hello world! Workflow triggered.
+
+✓ Workflow Simulation Result:
+"Hello world!"
+
+2026-10-06T18:59:24Z [SIMULATION] Execution finished signal received
+2026-10-06T18:59:24Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

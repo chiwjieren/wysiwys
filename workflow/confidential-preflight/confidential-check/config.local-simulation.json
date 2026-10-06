@@ -1,0 +1,6 @@
+{
+    "mode":  "local-simulation",
+    "schedule":  "0 */5 * * * *",
+    "address":  "97mGfZ9Au2ifWtrZ9qMKXwUqwgxvipvXQEwgvzzsG8tJ",
+    "secretId":  "SCORECHAIN_SANCTIONS_API_KEY"
+}

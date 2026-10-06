@@ -1,0 +1,39 @@
+Command (from workflow/confidential-preflight):
+cre workflow simulate confidential-check --target local-simulation --non-interactive --trigger-index 0
+
+CRE CLI v1.37.0; SDK 1.18.0; real HTTPS Scorechain sanctions request.
+Credential consumed by CLI from gitignored local .env; credential values not logged.
+Result: SANCTIONED. No payment approval, report generation, chain write or broadcast.
+Test-first parser adjustment for direct result object: 22 tests passed; TypeScript passed.
+Process exit code: 0
+
++✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 721a3a9b2e27688de74be97d371770f62c4975782a0d91c1cbea4f6316e155df
+  Config hash: 465583e850401ce1d3197a7a897b6cf4a9aec6ef91d7fe76471049ef54bbafba
+2026-10-06T20:48:32Z [SIMULATION] Simulator Initialized
+
+2026-10-06T20:48:32Z [SIMULATION] Running trigger trigger=cron-trigger@1.0.0
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Trigger requested TEE Execution your trigger will run in one of the following Tees:                │
+│     - AWS Nitro in us-west-2                                                                       │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+✓ Workflow Simulation Result:
+"{\"mode\":\"local-simulation\",\"provider\":\"scorechain\",\"address\":\"Fc1EwQUZyTEagaDvA1utHXCcZNyG1x2PLt2DfNu1cJdH\",\"sanctionsStatus\":\"SANCTIONED\",\"paymentAuthorized\":false}"
+
+2026-10-06T20:48:33Z [SIMULATION] Execution finished signal received
+2026-10-06T20:48:33Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

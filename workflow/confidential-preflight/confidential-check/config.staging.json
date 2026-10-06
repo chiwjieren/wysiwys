@@ -1,0 +1,6 @@
+{
+  "mode": "report-preflight",
+  "schedule": "0 */5 * * * *",
+  "address": "Fc1EwQUZyTEagaDvA1utHXCcZNyG1x2PLt2DfNu1cJdH",
+  "secretId": "SCORECHAIN_SANCTIONS_API_KEY"
+}

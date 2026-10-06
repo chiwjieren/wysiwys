@@ -1,0 +1,8 @@
+local-simulation:
+  user-workflow:
+    workflow-name: "wysiwys-three-provider-rpc-preflight"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.local-simulation.json"
+    secrets-path: "../../rpc-secrets.yaml"

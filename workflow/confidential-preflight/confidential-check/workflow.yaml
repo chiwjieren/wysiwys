@@ -1,0 +1,22 @@
+# ==========================================================================
+# CRE WORKFLOW SETTINGS FILE
+# ==========================================================================
+local-simulation:
+  user-workflow:
+    workflow-name: "wysiwys-scorechain-local-simulation"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.local-simulation.json"
+    secrets-path: "../scorechain-secrets.yaml"
+
+staging-settings:
+  user-workflow:
+    workflow-name: "wysiwys-scorechain-report-preflight"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: "../scorechain-secrets.yaml"
+
+# ==========================================================================
