@@ -13,8 +13,8 @@ Built for the TOKEN2049 Origins Hackathon (Singapore, 6 to 8 Oct 2026). Tracks: 
 1. The settlement operator selects an approved trade from the (mock) trade system. The app derives the `SettlementIntent` and computes `settlement_intent_hash` and `trade_ref_hash`.
 2. The app builds the payout (USDC `TransferChecked` to the counterparty's verified wallet) → Squads `vaultTransactionCreate` + `proposalCreate`.
 3. The app calls the guard's `request_review(settlement_intent_hash, trade_ref_hash)` → stores a `Review` (`msg_hash` = SHA-256 of the Squads `VaultTransaction` account data, computed on-chain) and emits `ReviewRequested`.
-4. The **listener** (NOWNodes WebSocket) catches the event, stores it, and POSTs identifiers to the **CRE workflow** HTTP trigger.
-5. The workflow reads the Review, VaultTransaction and destination owner (`SolanaClient` + NOWNodes cross-check, finalized), checks `msg_hash`, decodes, fetches the trade ticket, **verifies the client's leg on Tron/Ethereum via NOWNodes**, recomputes both hashes, applies the confidential policy, builds a summary and reason code.
+4. The **listener** (Helius devnet webhook + backfill poll) catches the event, stores it, and POSTs identifiers to the **CRE workflow** HTTP trigger.
+5. The workflow reads the Review, VaultTransaction and destination owner (`SolanaClient` + Helius devnet cross-check, finalized), checks `msg_hash`, decodes, fetches the trade ticket, **verifies the client's leg on Ethereum Sepolia via NOWNodes**, recomputes both hashes, applies the confidential policy, builds a summary and reason code.
 6. The report goes through the Keystone Forwarder to `on_report` (demo: `cre workflow simulate --broadcast` uses Chainlink's simulator mock forwarder on devnet).
 7. The web app shows the verdict and plain-English summary next to the operator's claim. Signers approve 3 of 3 in Squads.
 8. Anyone calls `guarded_execute` → guard checks verdict, expiry, hash, durable nonce, Squads program ID → sets Executed → CPI into Squads execute, signed by the executor PDA → emits `Executed` → listener marks the trade SETTLED.
@@ -24,19 +24,19 @@ Architecture reference: `docs/plans/omnicounter_otc_architecture.html`.
 ## Repo layout
 
 ```
-programs/omnicounter_guard/    Anchor guard program
-tests/                         Anchor TS tests (local validator)
-packages/shared/               Seeds, events, payload, reason codes, intent hashing,
-                               DecodedAction schema, IDL, runner API types
-packages/decoder/              Pure TS decoder + policy + summary
-workflow/                      CRE workflow (TypeScript)
-services/runner/               EC2: listener + CRE runner + SQLite
-app/                           Next.js web app, Demo mode, server routes,
-                               mock trade system API (trades, registry, limits)
-scripts/                       bootstrap, e2e, demo scenario builders
-deployments/devnet.json        Addresses written by bootstrap
-docs/                          Plans, specs, spikes, diagrams, pitch
-evidence/cre/                  CRE simulation logs (track evidence)
+programs/omnicounter_guard/  Anchor guard program
+tests/                       Anchor TS tests (local validator)
+packages/shared/             Seeds, events, payload, reason codes,
+                             DecodedAction schema, IDL, runner API types
+packages/decoder/            Pure TS decoder + policy + summary
+workflow/                    CRE workflow (TypeScript)
+services/runner/             EC2: listener + CRE runner + SQLite
+app/                         Next.js web app, Demo mode, server routes,
+                             mock trade system API (trades, registry, limits)
+scripts/                     bootstrap, e2e, demo scenario builders
+deployments/devnet.json      Addresses written by bootstrap
+docs/                        Plans, specs, spikes, diagrams, pitch
+evidence/cre/                CRE simulation logs (track evidence)
 ```
 
 ## Commands
@@ -125,8 +125,8 @@ Keep this section accurate. Update it in the same commit that changes a command.
 ### CRE workflow (`workflow/`)
 - CRE is the orchestration layer: trigger → fetch → hash check → decode → trade fetch → client leg check → policy → summary → report.
 - Triggers: HTTP (primary, called by the runner/listener). Solana log trigger only if verified working.
-- Solana reads: native `SolanaClient` (DON consensus) cross-checked with NOWNodes HTTP, `finalized` commitment, compare decoded fields (not raw responses). Disagreement → `RPC_NO_CONSENSUS`. Helius/Triton only if time allows.
-- Client leg ("proof before payout"): via NOWNodes Tron/Ethereum RPC, confirm the USDT transfer to the desk deposit address, amount >= expected, enough confirmations, deposit tx not reused. Missing → `COUNTERPARTY_LEG_NOT_RECEIVED`.
+- Solana reads (devnet): native `SolanaClient` (DON consensus) cross-checked with Helius devnet RPC over HTTP (public `api.devnet.solana.com` as fallback), `finalized` commitment, compare decoded fields (not raw responses). Disagreement → `RPC_NO_CONSENSUS`.
+- Client leg ("proof before payout"): via NOWNodes **Ethereum Sepolia** RPC (HTTP capability), read the mock USDT (`mUSDT`, ERC-20 we deploy on Sepolia) `Transfer` logs to the desk deposit address; amount >= expected, enough confirmations, deposit tx not reused. Missing → `COUNTERPARTY_LEG_NOT_RECEIVED`.
 - Recompute `settlement_intent_hash` and `trade_ref_hash` from the fetched trade with `packages/shared`; mismatch → `INTENT_HASH_MISMATCH`.
 - Trade ticket fetch and sensitive rules run in the Confidential Workflow if available; otherwise the normal workflow.
 - Always re-read `msg_hash` and the transaction from chain. Never trust data in the trigger payload beyond identifiers.
@@ -134,7 +134,7 @@ Keep this section accurate. Update it in the same commit that changes a command.
 - Keep every simulation log for the Chainlink track (`evidence/cre/`).
 
 ### Listener and runner (`services/runner`)
-- Listener: NOWNodes WebSocket `logsSubscribe` on the guard program, parse Anchor events with the IDL, backfill with `getSignaturesForAddress` on startup and every minute, dedupe by `review`.
+- Listener: Helius `rawDevnet` webhook on the guard program → `POST /hooks/helius` (verify the `authHeader`), parse Anchor events from the logs (fetch the tx by signature if logs are missing), backfill with `getSignaturesForAddress` on startup and every 30 to 60 s, dedupe by `review`. Local dev: WebSocket `logsSubscribe` mode (no tunnel needed). The workflow retries for a few seconds if the Review is not yet finalized.
 - Runner: `POST /review` runs `cre workflow simulate` for that review; protected by a bearer token; rate limited; returns logs.
 - Store events in SQLite for the activity feed. The DB is history, not truth.
 - On `Executed`, call the mock trade API `POST /trades/:id/settled`.
@@ -144,7 +144,7 @@ Keep this section accurate. Update it in the same commit that changes a command.
 - Screens: Demo mode (3 scenario buttons), Propose, Review screen (verdict + summary + proposer claim vs reality), Approve x3, Execute, Activity feed, `/status`.
 - Read current state (balances, votes, Review status) directly from chain via a server route proxy. Read history from the runner DB.
 - Show the on-chain verdict first. The local decoder preview is labelled "preview" and never overrides it.
-- Demo signer keys, the NOWNodes key and the runner token live only in server routes. Nothing secret in client bundles.
+- Demo signer keys, the Helius and NOWNodes keys and the runner token live only in server routes. Nothing secret in client bundles.
 - Rate limit Demo mode and cap amounts so the demo vault cannot be drained.
 
 ### Scripts (`scripts/`)
@@ -153,13 +153,28 @@ Keep this section accurate. Update it in the same commit that changes a command.
 
 ## Working style
 
-- **TDD always.** Failing test → run → implement → run. Use superpowers skills (brainstorming, writing-plans, executing-plans) for non-trivial work.
-- **Never commit or push automatically.** Run `git commit` or `git push` only when the user explicitly asks. Stop after tests pass and report.
-- **Small commits** (when asked), conventional style: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, scoped by component (`feat(decoder): ...`).
+- **TDD always.** Failing test → run → implement → run → commit. Use superpowers skills (brainstorming, writing-plans, executing-plans) for non-trivial work.
+- **Small commits**, conventional style: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, scoped by component (`feat(decoder): ...`).
 - **Ask before changing a frozen interface**, the security rules or the policy layers.
 - **Integrate early.** Use mocks to unblock (mock trade API, stub decoder, fake Review data, mock client-leg result) but replace them before the 7 Oct 12:00 integration milestone.
 - **Prefer cutting scope over adding it.** Stretch items only after the full flow works on devnet.
 - Never use em dashes in user-facing text, docs, the README or the deck.
+
+## Networks (devnet and testnet only)
+
+Every dependency must work on Solana devnet or a public testnet. No mainnet calls anywhere.
+
+| Need | Provider | Network |
+|---|---|---|
+| Solana RPC (app, scripts, CRE cross-check) | Helius | devnet (`api.devnet.solana.com` fallback) |
+| Guard event delivery | Helius webhook (`rawDevnet`) + poll | devnet |
+| Multisig | Squads v4 `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` | devnet |
+| CRE reads / writes | `SolanaClient`, simulator mock forwarder | devnet |
+| Client leg | NOWNodes, mock USDT (`mUSDT`) we deploy | Ethereum Sepolia |
+| Desk payout token | Test USDC mint created by bootstrap | devnet |
+| Sanctions | Local denylist in `workflow/policy.json` (Range / Chainalysis are mainnet data: production roadmap only) | n/a |
+
+Kickoff check: confirm Sepolia appears in the NOWNodes dashboard. If not, tell the team immediately (the NOWNodes track depends on it).
 
 ## Secrets
 
@@ -177,7 +192,7 @@ Keep this section accurate. Update it in the same commit that changes a command.
 
 ## Demo scenarios (must always work)
 
-1. Clean settlement: client's 500,250 USDT received on Tron → payout of 500,000 USDC to ABC Capital's verified wallet → approved → 3 of 3 → executed → trade SETTLED.
+1. Clean settlement: client's 500,250 mUSDT received on Ethereum Sepolia → payout of 500,000 USDC to ABC Capital's verified wallet → approved → 3 of 3 → executed → trade SETTLED.
 2. No proof, no payout: same trade before the client leg arrives → `COUNTERPARTY_LEG_NOT_RECEIVED`.
 3. Lookalike destination: payout to an address resembling the verified wallet → `DESTINATION_MISMATCH`.
 4. Drift-style takeover: extra `SetAuthority` + `AdvanceNonceAccount` hidden in the payout → `AUTHORITY_CHANGE_BLOCKED`, blocked on-chain.

@@ -11,10 +11,10 @@
 **Architecture:**
 - Squads v4 is the multisig: 3 humans with Initiate + Vote, threshold **3 of 3**, and the guard's `executor` PDA as the only member with Execute.
 - The guard stores a `Review` per Squads transaction, receives the CRE verdict via `on_report`, and executes through a CPI into Squads `vault_transaction_execute`, signed by the executor PDA.
-- CRE reads Solana with the native `SolanaClient`, cross-checked with NOWNodes. It is triggered over HTTP by an off-chain **listener** that subscribes to the guard's events via NOWNodes WebSocket, so the guard must emit clear Anchor events.
+- CRE reads Solana with the native `SolanaClient`, cross-checked with Helius devnet. It is triggered over HTTP by an off-chain **listener** that receives the guard's events via a Helius devnet webhook (plus a backfill poll), so the guard must emit clear Anchor events.
 - One reporter path: the **Keystone Forwarder**. `cre workflow simulate --broadcast` uses Chainlink's simulator mock forwarder on devnet (program `7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK`, state `5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7`), so the demo exercises the real forwarder checks. `CRE_SOLANA_PRIVATE_KEY` only pays fees. No dev-key mode.
 
-**Tech stack:** Rust, Anchor, Solana devnet, Squads v4 (`SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`, same ID on devnet), `@sqds/multisig` for tests, scripts and the web app, TypeScript tests via `anchor test` on a local validator that clones Squads from devnet.
+**Tech stack:** Rust, Anchor, Solana devnet, Squads v4 (`SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`, same ID on devnet), `@sqds/multisig` for tests, scripts and the web app, TypeScript tests via `anchor test --validator legacy` on a local validator that loads Squads from a devnet dump (`tests/fixtures`).
 
 ---
 
@@ -165,7 +165,7 @@ Record answers in `docs/spikes.md`.
 **Files:** `scripts/bootstrap-devnet.ts`, `scripts/e2e-devnet.ts`, `deployments/devnet.json`
 
 **Steps:**
-- First devnet deploy by **22:00 day 1** (even partial). Deploy with priority fee via NOWNodes or a paid RPC; resume from buffer on failure.
+- First devnet deploy by **22:00 day 1** (even partial). Deploy with priority fee via Helius devnet RPC; resume from buffer on failure.
 - Bootstrap (idempotent, re-runnable): test USDC mint, 3 signer keypairs, Squads multisig (3 of 3 + executor), `initialize_guard` (mock forwarder program + state, policy hash), vault funding, counterparty token accounts. Writes `deployments/devnet.json`.
 - e2e script: propose → `request_review` → `cre workflow simulate --broadcast` (mock forwarder) → 3 votes → `guarded_execute`, for the clean settlement and the reject paths (no client leg, lookalike, Drift-style). Log signatures and explorer links.
 

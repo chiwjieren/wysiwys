@@ -112,7 +112,7 @@
       <p>No proof, no payout. Trade-bound transaction verification and confidential policy enforcement on Squads v4, orchestrated by Chainlink CRE</p>
     </div>
     <div class="badges">
-      <div class="badge"><b>Proof before payout</b><span>The desk pays only after the client's leg is confirmed on-chain (Tron or Ethereum via NOWNodes)</span></div>
+      <div class="badge"><b>Proof before payout</b><span>The desk pays only after the client's leg is confirmed on-chain (Ethereum Sepolia via NOWNodes)</span></div>
       <div class="badge"><b>Exact transaction, exact trade</b><span>Independent decoding of the exact Squads transaction, bound to the approved trade</span></div>
       <div class="badge"><b>Execution gate</b><span>Settlement only when trade, chain state, policy, humans and the exact tx all agree</span></div>
     </div>
@@ -144,10 +144,10 @@
   counterparty_id: "CP-882",
   side: "DESK_SENDS_AFTER_RECEIPT",
   client_leg: {
-    network: "TRON",
-    asset: "USDT",
+    network: "ETHEREUM_SEPOLIA",
+    asset: "mUSDT",
     amount: "500250000000",
-    desk_deposit_address: "TQ7...9xK"
+    desk_deposit_address: "0x7Ad...91c"
   },
   desk_leg: {
     network: "SOLANA",
@@ -160,7 +160,7 @@
 }</div>
         </div>
         <div class="card"><h3>1.2 Counterparty Registry</h3><ul><li>Legal entity / KYB profile</li><li>Verified Solana settlement wallets</li><li>Wallet status: VERIFIED / REVOKED</li><li>Risk tier / internal flags</li></ul></div>
-        <div class="card"><h3>1.3 Compliance &amp; Risk Data</h3><ul><li>Sanctions screening (Range / Chainalysis; local denylist for devnet)</li><li>Address risk provider</li><li>Internal investigations / holds</li><li>Counterparty status</li></ul></div>
+        <div class="card"><h3>1.3 Compliance &amp; Risk Data</h3><ul><li>Sanctions screening (local denylist on devnet; Range / Chainalysis in production)</li><li>Address risk provider</li><li>Internal investigations / holds</li><li>Counterparty status</li></ul></div>
         <div class="card"><h3>1.4 Exposure &amp; Limits</h3><ul><li>Per-trade limit</li><li>Daily counterparty limit</li><li>Credit limit (optional)</li><li>Previous settlements</li></ul></div>
       </div>
     </section>
@@ -169,7 +169,7 @@
       <div class="stage-head"><span class="num">2</span><div><strong>Settlement Initiation</strong><small>Operator selects an approved trade</small></div></div>
       <div class="stage-body">
         <div class="card"><h3>2.1 Settlement Operator (Next.js)</h3><ul><li>Select trade from approved list</li><li>Trade details shown read-only</li><li>Review counterparty + destination</li><li>No manual retyping of key fields</li></ul>
-          <div class="kv"><div>Trade</div><div>OTC-10428</div><div>Counterparty</div><div>ABC Capital</div><div>Client pays</div><div>500,250 USDT (Tron)</div><div>Desk sends</div><div>500,000 USDC (Solana)</div><div>Destination</div><div>8FK...2Qa</div><div>Status</div><div class="ok">READY</div></div>
+          <div class="kv"><div>Trade</div><div>OTC-10428</div><div>Counterparty</div><div>ABC Capital</div><div>Client pays</div><div>500,250 mUSDT (Ethereum Sepolia)</div><div>Desk sends</div><div>500,000 test USDC (Solana devnet)</div><div>Destination</div><div>8FK...2Qa</div><div>Status</div><div class="ok">READY</div></div>
         </div>
         <div class="card"><h3>2.2 Settlement Intent</h3><p>Canonical object derived from the authoritative trade. This is what the desk intends to settle.</p>
           <div class="mono">SettlementIntent {
@@ -253,12 +253,12 @@ accounts: multisig, vault_transaction,
     <section class="stage s5">
       <div class="stage-head"><span class="num">5</span><div><strong>Chainlink CRE Workflow</strong><small>Proof before payout + confidential policy</small></div></div>
       <div class="stage-body">
-        <div class="card"><h3>5.1 Trigger</h3><p><b>Listener</b> (EC2) subscribes to guard logs via NOWNodes WebSocket <code>logsSubscribe</code>, backfills with <code>getSignaturesForAddress</code>, dedupes, then calls the <b>CRE HTTP trigger</b> with identifiers only.</p>
+        <div class="card"><h3>5.1 Trigger</h3><p><b>Listener</b> (EC2) receives guard transactions from a <b>Helius devnet webhook</b> (auth header checked), backfills with <code>getSignaturesForAddress</code> every 30 to 60 s, dedupes, then calls the <b>CRE HTTP trigger</b> with identifiers only.</p>
           <div class="mono">POST /review { review, multisig, txIndex }</div>
           <p>The workflow trusts nothing in the payload beyond identifiers and re-reads everything from chain. CRE Solana log trigger only if verified working.</p>
         </div>
         <div class="card"><h3>5.2 Fetch + Cross-Check Solana State</h3><p>Finalized reads of Review, VaultTransaction and destination token account owner.</p>
-          <div class="mini-grid"><div class="rpc"><b>SolanaClient</b>native read, DON consensus</div><div class="rpc"><b>NOWNodes</b>HTTP getAccountInfo</div><div class="rpc"><b>Helius</b>optional, if time</div></div>
+          <div class="mini-grid"><div class="rpc"><b>SolanaClient</b>native read, DON consensus</div><div class="rpc"><b>Helius devnet</b>HTTP getAccountInfo</div><div class="rpc"><b>Public devnet</b>fallback</div></div>
           <ul><li>Verify account owners / expected PDAs</li><li><b>SHA-256(VaultTransaction data) == Review.msg_hash</b></li><li>Sources compare decoded fields, not raw responses</li></ul>
           <div class="consensus"><div class="pass">Sources agree + hash match → continue</div><div class="fail">Disagree → RPC_NO_CONSENSUS; hash differs → TX_HASH_MISMATCH</div></div>
         </div>
@@ -270,24 +270,23 @@ accounts: multisig, vault_transaction,
   amount: "500000000000"
 }</div><p>Also detects authority changes, delegates, account closes, durable nonce instructions, unknown programs, Address Lookup Tables and extra instructions.</p></div>
         <div class="card"><h3>5.4 Fetch Off-chain Truth + Client Leg</h3><ul><li>Authoritative TradeRecord (version, status, expiry)</li><li>Counterparty Registry</li><li>Compliance / sanctions / wallet risk</li><li>Exposure / limits</li></ul>
-          <div class="mono">Client leg check (NOWNodes Tron / Ethereum RPC):
-USDT Transfer to desk_deposit_address
-amount >= 500,250 USDT
+          <div class="mono">Client leg check (NOWNodes Ethereum Sepolia RPC):
+mUSDT Transfer log to desk_deposit_address
+amount >= 500,250 mUSDT
 confirmations >= N
 deposit tx not already used by another trade</div>
           <p><b>Proof before payout:</b> no confirmed client leg → <span class="bad">COUNTERPARTY_LEG_NOT_RECEIVED</span>.</p>
         </div>
         <div class="card"><h3>5.5 Trade Match + Confidential Policy</h3><ul><li>Trade status = SETTLEMENT_READY</li><li>Recompute settlement_intent_hash and trade_ref_hash from the trade; must equal the Review</li><li><b>Client leg received on-chain</b></li><li>Network / asset / amount match</li><li>Destination owner = verified settlement wallet</li><li>Wallet not sanctioned, risk check passed</li><li>No unexpected instructions</li><li>No authority changes, delegates or closes</li><li>No durable nonce instruction</li><li>Only allowlisted programs</li><li>Trade not expired / cancelled / settled</li><li>Per-trade + daily limits pass</li></ul><p><b>Trade ticket fetch and sensitive rules run inside the CRE Confidential Workflow (TEE).</b> Rules are versioned; their hash is fixed in GuardConfig.</p></div>
-        <div class="card"><h3>5.6 Verdict + Report</h3><div class="mono">Report (Borsh, fixed 171 bytes) {
-  review: Pubkey,
+        <div class="card"><h3>5.6 Verdict + Report</h3><div class="mono">Report (fixed 107 bytes, little-endian) {
   verdict: u8,          // 1 approve, 2 reject
   reason: u16,          // ReviewReason
   msg_hash: [u8; 32],
-  settlement_intent_hash: [u8; 32],
-  trade_ref_hash: [u8; 32],
+  intent_hash: [u8; 32], // sha256(settlement_intent_hash || trade_ref_hash)
   policy_hash: [u8; 32],
   expires_at: i64       // min(policy expiry, trade valid_until)
-}</div><p>Delivered with <code>SolanaClient.writeReport</code>; the DON signs it and the Keystone Forwarder verifies the signatures. Plain-English summary is template-based, never AI.</p></div>
+}
+// Review = the account passed to on_report (fits CRE's 265-byte report limit)</div><p>Delivered with <code>SolanaClient.writeReport</code>; the DON signs it and the Keystone Forwarder verifies the signatures. Plain-English summary is template-based, never AI.</p></div>
       </div>
     </section>
 
@@ -377,13 +376,11 @@ Counterparty USDC account</div></div>
   created_at,
   bump
 }</div></div>
-      <div class="card"><h3>CRE Report (Borsh, 171 bytes)</h3><div class="mono">{
-  review,
+      <div class="card"><h3>CRE Report (107 bytes)</h3><div class="mono">{
   verdict,
   reason,
   msg_hash,
-  settlement_intent_hash,
-  trade_ref_hash,
+  intent_hash,
   policy_hash,
   expires_at
 }
@@ -423,7 +420,7 @@ seeds ["config", multisig]
       <div class="card"><h3>Trust &amp; Security Boundaries</h3><div class="trust">
         <div class="box untrusted"><b>Frontend: untrusted</b><br/>May propose and display, but cannot authorize or bypass the guard.</div>
         <div class="box untrusted"><b>Listener: untrusted trigger</b><br/>Only passes identifiers. If it is down, reviews do not start and nothing executes (fail closed).</div>
-        <div class="box semi"><b>RPC providers: cross-checked</b><br/>Native SolanaClient (DON consensus) plus NOWNodes; disagreement fails closed.</div>
+        <div class="box semi"><b>RPC providers: cross-checked</b><br/>Native SolanaClient (DON consensus) plus Helius devnet; disagreement fails closed.</div>
         <div class="box trusted"><b>Chainlink CRE / DON: trusted computation</b><br/>BFT capability execution; confidential trade data and rules in TEE.</div>
         <div class="box trusted"><b>Keystone Forwarder</b><br/>Verifies DON signatures. Guard verifies the forwarder state owner and authority PDA.</div>
         <div class="box trusted"><b>Guard program: enforcement root</b><br/>Only path that can execute Squads settlement through the executor PDA. Config immutable.</div>
@@ -449,9 +446,9 @@ seeds ["config", multisig]
     <div class="inner infra">
       <div class="card"><h3>Web app</h3><p>Next.js on AWS Amplify. Demo mode with server-side devnet signer keys. Label: "Devnet demo, test keys only".</p></div>
       <div class="card"><h3>Mock trade system</h3><p>Small API with TradeRecords, counterparty registry and limits. Next.js server route or the runner.</p></div>
-      <div class="card"><h3>Listener + event DB</h3><p>EC2 t3.small, systemd. NOWNodes WebSocket, SQLite history. DB is history, chain is truth.</p></div>
+      <div class="card"><h3>Listener + event DB</h3><p>EC2 t3.small, systemd. Helius devnet webhook + backfill poll, SQLite history. DB is history, chain is truth.</p></div>
       <div class="card"><h3>CRE runner</h3><p>Same EC2 behind Caddy (HTTPS). <code>POST /review</code> runs <code>cre workflow simulate --broadcast</code>; logs saved to <code>evidence/cre/</code>.</p></div>
-      <div class="card"><h3>NOWNodes</h3><p>Solana devnet RPC + WebSocket, and Tron / Ethereum RPC for the client leg (multichain).</p></div>
+      <div class="card"><h3>NOWNodes + Helius</h3><p>NOWNodes: Ethereum Sepolia RPC for the client leg (multichain). Helius: Solana devnet RPC + webhook. Devnet / testnet only.</p></div>
       <div class="card"><h3>Chainlink + Squads</h3><p>Simulator mock forwarder on devnet. Squads v4 <code>SQDS4ep6...pCf</code> (same ID on devnet). Secrets in SSM / Amplify env.</p></div>
     </div>
   </section>

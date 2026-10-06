@@ -2829,7 +2829,7 @@ anchor build -p omnicounter_guard
 solana balance -u d    # deploy needs about 4 SOL on devnet
 solana program deploy target/deploy/omnicounter_guard.so \
   --program-id keys/omnicounter_guard-program-keypair.json \
-  -u <NOWNodes or paid devnet RPC URL> \
+  -u <Helius devnet RPC URL> \
   --with-compute-unit-price 100000 --max-sign-attempts 50
 solana program show <GUARD_PROGRAM_ID> -u d
 ```
