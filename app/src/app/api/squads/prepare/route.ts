@@ -5,21 +5,21 @@ import {
   loadConfig,
   rateLimit,
 } from "@/lib/squads/server-config";
-import { fromWire, validateGuardInstruction } from "@/lib/squads/sdk";
+import { fromWire, toWire, validateGuardInstruction } from "@/lib/squads/sdk";
+import { callRunner, fetchGuardedGroup } from "@/lib/squads/guard-groups";
 import { authenticate, AuthenticationError } from "@/lib/auth/server";
 export const runtime = "nodejs";
+const unavailable = () =>
+  Response.json(
+    { error: "Guard settlement adapter is not configured." },
+    { status: 503 },
+  );
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     rateLimit();
     const wallet = await authenticate(request);
-    const config = await loadConfig();
-    const base = process.env.WYSIWYS_SETTLEMENT_URL;
-    if (!config || !config.guardProgram || !config.executor || !base)
-      return Response.json(
-        { error: "Guard settlement adapter is not configured." },
-        { status: 503 },
-      );
+    if (!process.env.WYSIWYS_SETTLEMENT_URL) return unavailable();
     const body = await request.text();
     if (body.length > 2048)
       return Response.json({ error: "Request is too large." }, { status: 413 });
@@ -34,38 +34,33 @@ export async function POST(request: Request) {
       throw new AuthenticationError(
         "Connect the request’s wallet to continue.",
       );
-    const response = await fetch(
-      new URL(
-        `frontend/${input.action}`,
-        base.endsWith("/") ? base : base + "/",
-      ),
-      {
+    // The open guarded treasury: the deployment's, or one the runner reports
+    // as guarded by the deployed guard program.
+    const deployment = await loadConfig();
+    const config =
+      deployment?.multisig === input.multisig
+        ? deployment
+        : await fetchGuardedGroup(input.multisig, deployment?.guardProgram);
+    if (!config.guardProgram || !config.executor || !config.settlementEnabled)
+      return unavailable();
+    let prepared: { guardInstruction?: unknown };
+    try {
+      prepared = (await callRunner(`frontend/${input.action}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
-            ? {
-                Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
-              }
-            : {}),
-        },
         body: JSON.stringify({
           multisig: config.multisig,
           txIndex: input.index,
           member: member.toBase58(),
         }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(15000),
-      },
-    );
-    if (!response.ok)
+      })) as { guardInstruction?: unknown };
+    } catch {
       return Response.json(
         { error: "The settlement service could not prepare this action." },
         { status: 409 },
       );
-    const prepared = await response.json();
-    validateGuardInstruction(
-      fromWire(prepared.guardInstruction),
+    }
+    const guardInstruction = validateGuardInstruction(
+      fromWire(prepared.guardInstruction as never),
       new PublicKey(config.guardProgram),
       new PublicKey(config.multisig),
       BigInt(input.index),
@@ -73,7 +68,7 @@ export async function POST(request: Request) {
     );
     // Return only public instruction data. Never return arbitrary upstream fields.
     return Response.json(
-      { guardInstruction: prepared.guardInstruction },
+      { guardInstruction: toWire(guardInstruction) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

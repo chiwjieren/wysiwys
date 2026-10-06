@@ -141,11 +141,24 @@ export async function loadDeployment(): Promise<{
         guardArgs: parseGuardArgs(raw),
       };
 }
-export function isPrepareRequest(
-  input: unknown,
-): input is { action: "propose" | "execute"; index: string; member: unknown } {
+export function isPrepareRequest(input: unknown): input is {
+  multisig: string;
+  action: "propose" | "execute";
+  index: string;
+  member: unknown;
+} {
   if (!input || typeof input !== "object") return false;
-  const { action, index } = input as Record<string, unknown>;
+  const { action, index, multisig } = input as Record<string, unknown>;
+  try {
+    // The open treasury, bound into the wallet-signed request body.
+    if (
+      typeof multisig !== "string" ||
+      new PublicKey(multisig).toBase58() !== multisig
+    )
+      return false;
+  } catch {
+    return false;
+  }
   return (
     (action === "propose" || action === "execute") &&
     typeof index === "string" &&

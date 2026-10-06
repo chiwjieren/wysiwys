@@ -4,7 +4,7 @@ import type { RunnerReview, RunnerStatus } from "./types";
 // Server-only access to the runner's public read endpoints. The runner URL
 // never leaves the server and upstream text is never echoed to the client.
 export async function fetchRunner(
-  path: "/status" | "/reviews?limit=50",
+  path: "/status" | "/reviews?limit=200",
 ): Promise<
   | { kind: "unconfigured" }
   | { kind: "unreachable" }
@@ -82,6 +82,10 @@ function base58(value: unknown) {
   } catch {
     return null;
   }
+}
+// The treasury whose review history is requested (`?multisig=`), or null.
+export function reviewsMultisig(url: URL) {
+  return base58(url.searchParams.get("multisig"));
 }
 
 export function sanitizeRunnerReviews(
