@@ -44,7 +44,7 @@ The invariant that holds today, even with every gap below: money moves only when
 | # | Gap | Today | Risk | Production fix | Severity |
 |---|---|---|---|---|---|
 | 21 | Policy changes | Closed on devnet (7 Oct): members vote a policy change in Squads; the guard applies it after a waiting period (`max(time lock, 300 s)`), and approvals under the old policy stop working. The workflow fetches the document by hash and verifies it | Signers who reach the threshold can still loosen the policy after the wait (members can cancel during it). The workflow fetches each treasury's document by hash from the runner store, so no operator step | CRE review of policy changes (screen added addresses); encrypted policy store read by the TEE | Medium |
-| 22 | Shared policy | Every UI-created treasury starts with the deployment's policy; each can then vote its own (the registry serves every document by hash) | The first policy is shared | Policy chosen at creation | Low |
+| 22 | Policy at creation | Closed (7 Oct): the creator picks the demo policy or the treasury's own (whitelist, cap, screening); the document is stored by hash before `initialize_guard` commits to it | Tokens and payment types are fixed to the deployment token and both transfer types in the form | Editable tokens and payment types; per-token caps | Low |
 | 23 | Policy custody | Policy JSON and its salt live in one place | Losing the salt makes the hash unreproducible; one author | Backed-up, access-controlled policy store; approval workflow for edits | Medium |
 
 ## Operations
