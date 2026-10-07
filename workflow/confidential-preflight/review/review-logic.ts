@@ -157,12 +157,12 @@ export function planReview(vaultTx: AccountSnapshot, vault: string, policy: Poli
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
 
 /**
- * The policy document whose hash the treasury's GuardConfig committed to. The POLICY_DOCUMENT secret holds
- * one document or an array of them (a registry), so treasuries still on an older policy keep working after
- * another treasury votes a change. Every entry must be a valid Policy v1 with a distinct hash; no match is
- * POLICY_STALE. Both fail closed (no report); messages name the entry, never its contents.
+ * The secret's document whose hash the treasury's GuardConfig committed to, or null. The POLICY_DOCUMENT
+ * secret holds one document or an array (a registry); every entry must be a valid Policy v1 with a distinct
+ * hash, else POLICY_INVALID (fail closed). Messages name the entry, never its contents. When this returns
+ * null the workflow fetches the document by hash from the runner's policy store.
  */
-export function selectPolicy(secret: unknown, guardPolicyHash: Uint8Array, decoderVersion: string): Policy {
+export function findPolicy(secret: unknown, guardPolicyHash: Uint8Array, decoderVersion: string): Policy | null {
 	const entries = Array.isArray(secret) ? secret : [secret]
 	if (!entries.length) throw new Error('POLICY_INVALID: the policy registry is empty')
 	const wanted = hex(guardPolicyHash)
@@ -180,8 +180,7 @@ export function selectPolicy(secret: unknown, guardPolicyHash: Uint8Array, decod
 		seen.add(hash)
 		if (hash === wanted) match = doc
 	})
-	if (!match) throw new Error('POLICY_STALE: no policy document matches the guard config')
-	return match
+	return match ?? null
 }
 
 /** Finish an SPL decision with the destination token account (null when it does not exist). */

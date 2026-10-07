@@ -9,5 +9,6 @@
   "maxSlotLag": 32,
   "computeLimit": 200000,
   "screening": true,
+  "policyStoreUrl": "http://127.0.0.1:8787",
   "authorizedKeys": []
 }

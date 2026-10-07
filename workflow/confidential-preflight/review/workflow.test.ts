@@ -40,6 +40,8 @@ function harness(options: {
   policyDoc?: Record<string, unknown>;
   /** POLICY_DOCUMENT secret value: one document or a registry array (default: the committed document). */
   policySecret?: unknown;
+  /** Runner policy store reply to GET /cre/policies/:hash (default 404). */
+  store?: { status: number; document?: unknown };
 } = {}) {
   const doc = options.policyDoc ?? policy
   const secretValue = JSON.stringify(options.policySecret ?? doc)
@@ -67,6 +69,10 @@ function harness(options: {
     [s.destination!.address, s.destination!],
   ])
   const request = spyOn(cre.capabilities.HTTPClient.prototype, 'sendRequest').mockImplementation((_runtime: any, input: any) => {
+    if (input.method === 'GET' && String(input.url).includes('/cre/policies/')) {
+      const reply = options.store ?? { status: 404 }
+      return { result: () => ({ statusCode: reply.status, body: new TextEncoder().encode(JSON.stringify({ document: reply.document })) }) } as any
+    }
     if (input.method === 'GET') return { result: () => ({ statusCode: options.screeningStatus ?? 200,
       body: new TextEncoder().encode(JSON.stringify(options.screeningBody ?? { isSanctioned: options.sanctioned ?? false })) }) } as any
     const provider = endpoints.indexOf(input.url)
@@ -96,6 +102,7 @@ function harness(options: {
       // Without a TEE (execution "don") the policy and screening key are Vault DON secrets too.
       if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: secretValue }) }
       if (options.execution === 'don' && id === 'SCORECHAIN_SANCTIONS_API_KEY') return { result: () => ({ value: 'dummy-test-api-key' }) }
+      if (options.execution === 'don' && id === 'POLICY_STORE_TOKEN') return { result: () => ({ value: 'store-token' }) }
       if (!(id in secrets)) throw new Error('private secret crossed into DON')
       return { result: () => ({ value: secrets[id]! }) }
     },
@@ -103,7 +110,7 @@ function harness(options: {
     report: () => { reports++; return { result: () => ({}) } },
   }
   const tee = { config: runtimeConfig, log: () => {}, usingTheDons: () => don,
-    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? secretValue : 'dummy-test-api-key' }) }) }
+    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? secretValue : id === 'POLICY_STORE_TOKEN' ? 'store-token' : 'dummy-test-api-key' }) }) }
   const payload = { input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })) } as HTTPPayload
   return { run: () => JSON.parse(options.execution === 'don'
     ? onReviewDon(don as unknown as Runtime<Config>, payload)
@@ -221,8 +228,8 @@ describe('workflow registration and live config', () => {
     expect(config.forwarderState).toBe('8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9')
     expect(config.execution).toBe('don')
     expect(config.authorizedKeys).toEqual([{ type: 'KEY_TYPE_ECDSA_EVM', publicKey: '0xD6Bbf377d9ce95975a78b84656548B255d816325' }])
-    expect({ ...live, forwarderProgram: undefined, forwarderState: undefined, authorizedKeys: undefined, execution: undefined })
-      .toEqual({ ...staging, forwarderProgram: undefined, forwarderState: undefined, authorizedKeys: undefined, execution: undefined })
+    const perTarget = { forwarderProgram: undefined, forwarderState: undefined, authorizedKeys: undefined, execution: undefined, policyStoreUrl: undefined }
+    expect({ ...live, ...perTarget }).toEqual({ ...staging, ...perTarget })
   })
   test('authorized keys must be EVM key objects', () => {
     expect(() => configSchema.parse({ ...staging, authorizedKeys: ['0xD6Bbf377d9ce95975a78b84656548B255d816325'] })).toThrow()
@@ -296,4 +303,40 @@ describe('sanctions screening request', () => {
       expect(screening[0].timeout).toBe('10s')
     })
   }
+})
+
+describe('policy fetched by hash from the runner store', () => {
+  const other = (n: number) => ({ ...policy, version: n, salt: String(n).padStart(2, '0').repeat(16) })
+  const fetches = (h: ReturnType<typeof harness>) =>
+    h.request.mock.calls.map(([, r]: any) => r).filter((r: any) => String(r.url).includes('/cre/policies/'))
+  for (const execution of ['tee', 'don'] as const) {
+    test(`a matching secret needs no fetch (${execution})`, () => {
+      const h = harness({ execution, store: { status: 200, document: policy } })
+      expect(h.run().verdict).toBe('approve')
+      expect(fetches(h)).toHaveLength(0)
+    })
+    test(`fetches the treasury's document by hash when the secret lacks it, verifies it and approves (${execution})`, () => {
+      const h = harness({ execution, policySecret: other(2), store: { status: 200, document: policy } })
+      expect(h.run().verdict).toBe('approve')
+      const [f] = fetches(h)
+      expect(f.url).toBe(`${staging.policyStoreUrl}/cre/policies/${Buffer.from(policyHash(policy, staging.decoderVersion)).toString('hex')}`)
+      expect(f.multiHeaders.authorization.values).toEqual(['Bearer store-token'])
+      // 12 RPC calls + the policy fetch + screening stays within CRE's 15 HTTP calls.
+      expect(h.request.mock.calls.length).toBe(14)
+    })
+    for (const store of [{ status: 200, document: other(3) }, { status: 404 }, { status: 200, document: { ...policy, extra: 1 } }]) {
+      test(`a missing or mismatched document fails closed with POLICY_STALE (${execution}, ${JSON.stringify(store).slice(0, 40)})`, () => {
+        const h = harness({ execution, policySecret: other(2), store })
+        expect(h.run).toThrow('POLICY_STALE'); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+      })
+    }
+    test(`a store outage fails closed without a report (${execution})`, () => {
+      const h = harness({ execution, policySecret: other(2), store: { status: 500 } })
+      expect(h.run).toThrow(); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+    })
+  }
+  test('live and staging configs name a policy store', () => {
+    expect(configSchema.parse(live)).toMatchObject({ policyStoreUrl: 'https://runner.13-250-78-41.sslip.io' })
+    expect(configSchema.parse(staging)).toMatchObject({ policyStoreUrl: 'http://127.0.0.1:8787' })
+  })
 })
