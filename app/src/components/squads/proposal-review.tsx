@@ -511,43 +511,27 @@ export function LiveProposal({ id }: { id: string }) {
                       )}
                     </Panel>
                   )}
-                <div
-                  className={`rounded-2xl border p-5 sm:p-6 ${supported || record.kind === "archived" ? "bg-card" : "border-destructive/30 bg-danger-bg/40"}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <ScanLine className="size-5 text-muted-foreground" />
-                    <h2>
-                      {record.kind === "archived"
-                        ? "Payment executed"
-                        : configActions?.refused
+                {/* Shown only when something blocks approval; a successful decode needs no banner. */}
+                {!supported && record.kind !== "archived" && (
+                  <div className="rounded-2xl border border-destructive/30 bg-danger-bg/40 p-5 sm:p-6">
+                    <div className="flex items-center gap-3">
+                      <ScanLine className="size-5 text-muted-foreground" />
+                      <h2>
+                        {configActions?.refused
                           ? GUARD_REFUSES
-                          : supported
-                            ? guarded && record.kind !== "config"
-                              ? "Transaction decoded (preview)"
-                              : "Transaction decoded"
-                            : "Unable to fully decode"}
-                    </h2>
+                          : "Unable to fully decode"}
+                      </h2>
+                    </div>
+                    <p className="mt-3">
+                      {record.kind === "batch"
+                        ? "Batch approval is unavailable until every payment can be fully decoded."
+                        : configActions?.refused
+                          ? "This proposal includes a change the guard does not execute. Reject it and propose a supported change."
+                          : decoded?.reason ||
+                            "This configuration action is not supported by the preview."}
+                    </p>
                   </div>
-                  <p className="mt-3">
-                    {record.kind === "archived"
-                      ? "This proposal has completed. Its stored payment details have been cleared by Squads."
-                      : supported
-                        ? "Read the exact stored actions below before signing your approval."
-                        : record.kind === "batch"
-                          ? "Batch approval is unavailable until every payment can be fully decoded."
-                          : configActions?.refused
-                            ? "This proposal includes a change the guard does not execute. Reject it and propose a supported change."
-                            : decoded?.reason ||
-                              "This configuration action is not supported by the preview."}
-                  </p>
-                  <p className="caption mt-3">
-                    {standard
-                      ? "Decoded from the stored Squads transaction."
-                      : record.kind === "config"
-                        ? "Decoded from the stored Squads config transaction. The guard checks every action on-chain."
-                        : "Local decoder preview. It never overrides the on-chain review verdict."}
-                  </p>
-                </div>
+                )}
                 <Panel className="gap-5">
                   <h2>
                     {record.kind === "vault"
@@ -563,17 +547,19 @@ export function LiveProposal({ id }: { id: string }) {
                       {configActions.headline.text}
                     </p>
                   )}
+                  {record.kind === "config" && (
+                    <p className="caption">
+                      Decoded from the stored Squads config transaction.
+                      {guarded
+                        ? " The guard checks every action on-chain."
+                        : ""}
+                    </p>
+                  )}
                   {record.kind === "vault" && decoded && (
                     <PaymentInsights preview={decoded} />
                   )}
                   {fields && (
                     <div className="space-y-5">
-                      <div>
-                        <p className="eyebrow">Treasury payment</p>
-                        <p className="mt-2 text-[36px] leading-tight font-semibold tracking-[-0.04em]">
-                          {fields.amount}
-                        </p>
-                      </div>
                       <div
                         className={`rounded-xl border p-4 ${wrongRecipient ? "border-destructive/30 bg-danger-bg/30" : "bg-background/40"}`}
                       >

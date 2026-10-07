@@ -848,6 +848,14 @@ for (const scenario of [
           .click();
       await page.getByRole("link", { name: "Inspect proposal #1" }).click();
       await expect(page).toHaveURL(/transactions\/1$/, { timeout: 45000 });
+      if (!configExecuting) {
+        // One payment card: a plain headline, no routine "decoded" banner, no repeated amount block.
+        await expect(page.getByText(/^Pay 0\.1 SOL to /)).toBeVisible();
+        await expect(page.getByText(/^Transaction decoded/)).toHaveCount(0);
+        await expect(
+          page.getByText("Treasury payment", { exact: true }),
+        ).toHaveCount(0);
+      }
       if (guardRejected) {
         await expect(
           page.getByText("Recipient is not approved", { exact: true }),
