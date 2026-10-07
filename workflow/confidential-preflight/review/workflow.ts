@@ -261,19 +261,25 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 		})
 		.result()
 
-	if (write.txStatus !== SolanaTxStatus.SUCCESS || write.receiverContractExecutionStatus !== SolanaReceiverContractExecutionStatus.SUCCESS ||
-		write.errorMessage || write.txSignature?.length !== 64 || !write.txSignature.some(b => b !== 0)) {
-		throw new Error('REPORT_DELIVERY_FAILED: successful transaction, receiver execution and signature required')
+	// Fail on any evidence of failure. The live DON reply can omit the optional receiver status and
+	// signature; that is not failure (the guard's Review account is the record), only unconfirmed here.
+	const sig = write.txSignature?.length ? write.txSignature : undefined
+	runtime.log(`write reply: txStatus=${write.txStatus} receiver=${write.receiverContractExecutionStatus ?? 'none'} signature=${sig?.length ?? 0}B error=${write.errorMessage ? 'yes' : 'no'}`)
+	if (write.txStatus !== SolanaTxStatus.SUCCESS || write.errorMessage ||
+		(write.receiverContractExecutionStatus !== undefined && write.receiverContractExecutionStatus !== SolanaReceiverContractExecutionStatus.SUCCESS) ||
+		(sig !== undefined && (sig.length !== 64 || !sig.some(b => b !== 0)))) {
+		throw new Error('REPORT_DELIVERY_FAILED: transaction, receiver execution or signature reported a failure')
 	}
-	const signature = bs58(write.txSignature)
+	const confirmed = sig !== undefined && write.receiverContractExecutionStatus === SolanaReceiverContractExecutionStatus.SUCCESS
 	return JSON.stringify({
 		review: reviewPda,
 		verdict: decision.verdict === VERDICT.APPROVE ? 'approve' : 'reject',
 		reason: decision.reason,
 		summary: decision.summary,
+		delivery: confirmed ? 'confirmed' : 'unconfirmed',
 		txStatus: write.txStatus,
 		receiverStatus: write.receiverContractExecutionStatus ?? null,
-		txSignature: signature,
+		txSignature: sig ? bs58(sig) : null,
 		error: write.errorMessage || null,
 	})
 }

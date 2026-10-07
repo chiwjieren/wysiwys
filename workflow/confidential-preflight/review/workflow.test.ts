@@ -141,12 +141,24 @@ describe('complete confidential review handler', () => {
     expect(h.request.mock.calls.filter(([, r]: any) => r.method === 'GET')).toHaveLength(0)
   })
   for (const options of [{ txStatus: SolanaTxStatus.FATAL }, { txStatus: SolanaTxStatus.ABORTED },
-    { receiverStatus: SolanaReceiverContractExecutionStatus.REVERTED }, { receiverStatus: null },
-    { signature: new Uint8Array(0) }, { signature: new Uint8Array(32) }, { signature: new Uint8Array(64) }, { error: 'failed' }]) {
+    { receiverStatus: SolanaReceiverContractExecutionStatus.REVERTED },
+    { signature: new Uint8Array(32) }, { signature: new Uint8Array(64) }, { error: 'failed' }]) {
     test(`does not return success on unsuccessful delivery: ${JSON.stringify(options)}`, () => {
       const h = harness(options); expect(h.run).toThrow('REPORT_DELIVERY_FAILED')
     })
   }
+  // Live DON, 7 Oct: WriteReport succeeded and the guard recorded the decision, but the reply carried
+  // no receiver status or signature (optional fields). That is not evidence of failure; the chain is the record.
+  for (const options of [{ receiverStatus: null }, { signature: new Uint8Array(0) }, { receiverStatus: null, signature: new Uint8Array(0) }]) {
+    test(`a successful write whose reply omits optional fields is delivered but unconfirmed: ${JSON.stringify(options)}`, () => {
+      const result = harness(options).run()
+      expect(result.verdict).toBe('approve'); expect(result.delivery).toBe('unconfirmed')
+    })
+  }
+  test('a full reply is reported as confirmed with its signature', () => {
+    const result = harness().run()
+    expect(result.delivery).toBe('confirmed'); expect(result.txSignature).toBeTruthy()
+  })
   test('local simulation evaluates the real handler path but cannot generate or send a report', () => {
     const h = harness({ mode: 'local-simulation' }); const result = h.run()
     expect(result.mode).toBe('local-simulation'); expect(result.verdict).toBe('approve')
