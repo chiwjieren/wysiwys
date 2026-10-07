@@ -9,11 +9,21 @@
   "vaultIndex": 0,
   "executorPda": "8TpYUbf5RLGuqosw55hM1VDjgz8Z8z9VqXcynPBxQm1d",
   "configPda": "3CkstZUS4JguoceC12wP9aMkGq41xmAY4dU9McYzQuUb",
+  "forwarders": {
+    "simulator": {
+      "program": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
+      "state": "5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7"
+    },
+    "live": {
+      "program": "CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5",
+      "state": "8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9"
+    }
+  },
   "guard": {
-    "forwarderProgram": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
-    "forwarderState": "5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7",
+    "forwarderProgram": "CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5",
+    "forwarderState": "8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9",
     "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
-    "workflowOwner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "workflowOwner": "c6680ac5e2a0a6d63a172a9ac99b52b3eb9a2662",
     "maxReviewLifetime": "3600",
     "reviewDeadlineSecs": "900"
   },

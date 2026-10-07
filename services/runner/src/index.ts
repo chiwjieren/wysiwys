@@ -14,6 +14,7 @@ import { createReviewVerifier } from "./delivery";
 import { openStore } from "./store";
 import { HttpTrigger, LogTrigger } from "./trigger";
 import { GatewayTrigger } from "./gateway";
+import { guardForwarderReader, PathFilteredTrigger } from "./path-filter";
 
 // Secrets (RPC key, trigger token) come from the root .env locally and from SSM on EC2.
 try {
@@ -39,13 +40,23 @@ const creRunner = cfg.cre
       verifyReview: createReviewVerifier(connection, programId),
     })
   : null;
-const trigger = cfg.gateway
-  ? new GatewayTrigger(cfg.gateway)
+const gateway = cfg.gateway ? new GatewayTrigger(cfg.gateway) : null;
+const baseTrigger = gateway
+  ? gateway
   : creRunner
   ? creRunner.asTrigger()
   : cfg.triggerUrl
     ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined)
     : new LogTrigger();
+// One review path per runner: live (gateway) or simulator (cre simulate); skip the other path's treasuries.
+const servedForwarder = gateway
+  ? cfg.forwarders?.live.program
+  : creRunner
+    ? cfg.forwarders?.simulator.program
+    : undefined;
+const trigger = servedForwarder
+  ? new PathFilteredTrigger(baseTrigger, guardForwarderReader(connection, programId), servedForwarder)
+  : baseTrigger;
 const listener = new Listener({
   connection,
   programId,
@@ -79,7 +90,10 @@ console.log(
   `[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`,
 );
 console.log(
-  `[runner] trigger: ${cfg.gateway ? `CRE gateway, live workflow ${cfg.gateway.workflowId.replace(/^0x/, "").slice(0, 12)}..., signer ${(trigger as GatewayTrigger).address}` : cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
+  `[runner] review path: ${servedForwarder ? `only treasuries using forwarder ${servedForwarder}` : "all treasuries (no forwarders in deployments/devnet.json)"}`,
+);
+console.log(
+  `[runner] trigger: ${gateway ? `CRE gateway, live workflow ${cfg.gateway!.workflowId.replace(/^0x/, "").slice(0, 12)}..., signer ${gateway.address}` : cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
 );
 console.log(
   `[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`,

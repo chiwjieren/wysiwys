@@ -27,6 +27,8 @@ export type RunnerConfig = {
   reviewToken: string | null;
   /** GuardConfig values for treasuries created in the app (deployments/devnet.json `guard`). */
   guardSetup: GuardSetup | null;
+  /** Forwarders of both review paths (deployments/devnet.json `forwarders`); the runner serves one. */
+  forwarders: { simulator: { program: string; state: string }; live: { program: string; state: string } } | null;
   /** Treasury token (mUSD) for group descriptions. */
   token: TokenInfo | null;
 };
@@ -77,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
         : null,
     reviewToken: env.REVIEW_TOKEN || null,
     guardSetup: dep.guard ?? null,
+    forwarders: dep.forwarders ?? null,
     token: dep.mint && dep.token ? { mint: dep.mint, symbol: dep.token.symbol, decimals: dep.token.decimals } : null,
   };
 }

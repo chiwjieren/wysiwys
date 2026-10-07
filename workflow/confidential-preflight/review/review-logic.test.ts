@@ -33,8 +33,9 @@ describe('parseReview / parseGuardConfig (real devnet accounts)', () => {
 	test('reads the guard config', () => {
 		const c = parseGuardConfig(snap(fixtures.config)!, fixtures.guardProgram)
 		expect(c.multisig).toBe(fixtures.multisig)
-		expect(c.forwarderProgram).toBe(deployment.guard!.forwarderProgram)
-		expect(c.forwarderState).toBe(deployment.guard!.forwarderState)
+		// The fixture is the simulator test treasury; new treasuries (deployment.guard) use the live forwarder.
+		expect(c.forwarderProgram).toBe(deployment.forwarders.simulator.program)
+		expect(c.forwarderState).toBe(deployment.forwarders.simulator.state)
 		// The fixture was recorded under the first policy; GuardConfig is immutable, so it keeps that hash
 		// after the 7 Oct rotation (deployments/devnet.json now names the new one for new treasuries).
 		expect(Buffer.from(c.policyHash).toString('hex')).toBe('402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0')
