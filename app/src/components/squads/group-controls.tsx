@@ -57,6 +57,8 @@ export function CreateGroupButton({
   const [standard, setStandard] = useState(false);
   // Payment policy: the deployment's demo policy, or the treasury's own (whitelist, cap, screening).
   const [ownPolicy, setOwnPolicy] = useState(false);
+  // The own-policy fields open a second panel on the right (stacked on small screens).
+  const policyPanel = !standard && ownPolicy;
   const [whitelist, setWhitelist] = useState("");
   const [cap, setCap] = useState("100000");
   const [screening, setScreening] = useState(true);
@@ -103,7 +105,9 @@ export function CreateGroupButton({
           {label}
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-card">
+      <DialogContent
+        className={`max-h-[90vh] overflow-y-auto bg-card ${policyPanel ? "lg:max-w-4xl" : ""}`}
+      >
         <DialogTitle>
           {standard ? "Create a standard group" : "Create a guarded treasury"}
         </DialogTitle>
@@ -129,168 +133,180 @@ export function CreateGroupButton({
             }
           }}
         >
-          <label className="block space-y-2">
-            <span>Treasury name</span>
-            <Input
-              value={name}
-              maxLength={80}
-              required
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <fieldset className="space-y-2">
-            <legend className="mb-2">Members</legend>
-            <div className="flex items-center gap-2 rounded-lg border bg-secondary px-3 py-2 text-xs">
-              <span className="flex-1">
-                {auth.address
-                  ? `${shortAddress(auth.address)} (you)`
-                  : "Your wallet (connect to continue)"}
-              </span>
-              <span className="caption">Joins automatically</span>
-            </div>
-            {members.map((value, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Input
-                    aria-label={`Member ${i + 2} wallet address`}
-                    aria-invalid={!!checked.errors[i]}
-                    className="font-mono text-xs"
-                    value={value}
-                    placeholder={`Member ${i + 2} wallet address`}
-                    spellCheck={false}
-                    autoComplete="off"
-                    onChange={(e) =>
-                      setMembers(
-                        members.map((m, j) => (j === i ? e.target.value : m)),
-                      )
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove member ${i + 2}`}
-                    onClick={() =>
-                      setMembers(members.filter((_, j) => j !== i))
-                    }
-                  >
-                    <X className="size-4" />
-                  </Button>
+          <div
+            className={
+              policyPanel ? "grid items-start gap-6 lg:grid-cols-2" : undefined
+            }
+          >
+            <div className="space-y-4">
+              <label className="block space-y-2">
+                <span>Treasury name</span>
+                <Input
+                  value={name}
+                  maxLength={80}
+                  required
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <fieldset className="space-y-2">
+                <legend className="mb-2">Members</legend>
+                <div className="flex items-center gap-2 rounded-lg border bg-secondary px-3 py-2 text-xs">
+                  <span className="flex-1">
+                    {auth.address
+                      ? `${shortAddress(auth.address)} (you)`
+                      : "Your wallet (connect to continue)"}
+                  </span>
+                  <span className="caption">Joins automatically</span>
                 </div>
-                {checked.errors[i] && (
-                  <p className="text-xs text-destructive">
-                    {checked.errors[i]}
-                  </p>
-                )}
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={members.length >= maxInvites}
-              onClick={() => setMembers([...members, ""])}
-            >
-              <Plus className="size-4" /> Add member
-            </Button>
-          </fieldset>
-          <p className="caption">
-            Your wallet joins automatically. Up to {maxInvites} other wallets.
-            {!standard &&
-              " Member changes need the members' vote and are checked by the guard."}
-          </p>
-          <label className="block space-y-2">
-            <span>Required approvals</span>
-            <Input
-              type="number"
-              min={1}
-              max={count}
-              required
-              value={required}
-              onChange={(e) => setThreshold(e.target.value)}
-            />
-          </label>
-          <p className="caption">
-            {required} of {count} members · Solana Devnet · Test funds only
-          </p>
-          <p className="caption">
-            {standard
-              ? "Your wallet pays creation fees and account rent. You can propose, vote and execute approved proposals. Other members can propose and vote."
-              : "One transaction creates the Squads multisig and its guard configuration. Your wallet pays fees and account rent. Every member can propose and vote; only the guard executes payouts. Fund it with Deposit afterwards."}
-          </p>
-          {!standard && (
-            <fieldset className="space-y-2">
-              <legend className="mb-2">Payment policy</legend>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="policy"
-                  checked={!ownPolicy}
-                  onChange={() => setOwnPolicy(false)}
+                {members.map((value, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        aria-label={`Member ${i + 2} wallet address`}
+                        aria-invalid={!!checked.errors[i]}
+                        className="font-mono text-xs"
+                        value={value}
+                        placeholder={`Member ${i + 2} wallet address`}
+                        spellCheck={false}
+                        autoComplete="off"
+                        onChange={(e) =>
+                          setMembers(
+                            members.map((m, j) =>
+                              j === i ? e.target.value : m,
+                            ),
+                          )
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove member ${i + 2}`}
+                        onClick={() =>
+                          setMembers(members.filter((_, j) => j !== i))
+                        }
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                    {checked.errors[i] && (
+                      <p className="text-xs text-destructive">
+                        {checked.errors[i]}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={members.length >= maxInvites}
+                  onClick={() => setMembers([...members, ""])}
+                >
+                  <Plus className="size-4" /> Add member
+                </Button>
+              </fieldset>
+              <p className="caption">
+                Your wallet joins automatically. Up to {maxInvites} other
+                wallets.
+                {!standard &&
+                  " Member changes need the members' vote and are checked by the guard."}
+              </p>
+              <label className="block space-y-2">
+                <span>Required approvals</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={count}
+                  required
+                  value={required}
+                  onChange={(e) => setThreshold(e.target.value)}
                 />
-                Demo policy (the deployment's default; its whitelist stays
-                private)
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="policy"
-                  checked={ownPolicy}
-                  onChange={() => setOwnPolicy(true)}
-                />
-                This treasury's own policy
-              </label>
-              {ownPolicy && (
-                <div className="space-y-3 rounded-lg border p-3">
-                  <label className="block space-y-1 text-sm">
-                    <span>Whitelisted wallets (one per line)</span>
-                    <textarea
-                      aria-label="Whitelisted wallets"
-                      className="min-h-24 w-full rounded-md border bg-transparent p-2 font-mono text-xs"
-                      value={whitelist}
-                      spellCheck={false}
-                      onChange={(e) => setWhitelist(e.target.value)}
+              <p className="caption">
+                {required} of {count} members · Solana Devnet · Test funds only
+              </p>
+              <p className="caption">
+                {standard
+                  ? "Your wallet pays creation fees and account rent. You can propose, vote and execute approved proposals. Other members can propose and vote."
+                  : "One transaction creates the Squads multisig and its guard configuration. Your wallet pays fees and account rent. Every member can propose and vote; only the guard executes payouts. Fund it with Deposit afterwards."}
+              </p>
+              {!standard && (
+                <fieldset className="space-y-2">
+                  <legend className="mb-2">Payment policy</legend>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="policy"
+                      checked={!ownPolicy}
+                      onChange={() => setOwnPolicy(false)}
                     />
-                  </label>
-                  <label className="block space-y-1 text-sm">
-                    <span>
-                      Per-payment cap ({deploymentToken?.symbol ?? "token"})
-                    </span>
-                    <Input
-                      inputMode="decimal"
-                      value={cap}
-                      onChange={(e) => setCap(e.target.value)}
-                    />
+                    Demo policy (the deployment's default; its whitelist stays
+                    private)
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
-                      type="checkbox"
-                      checked={screening}
-                      onChange={(e) => setScreening(e.target.checked)}
+                      type="radio"
+                      name="policy"
+                      checked={ownPolicy}
+                      onChange={() => setOwnPolicy(true)}
                     />
-                    Sanctions screening (Scorechain)
+                    This treasury's own policy
                   </label>
-                  {policyDraft.error ? (
-                    <p className="text-xs text-destructive">
-                      {policyDraft.error}
-                    </p>
-                  ) : (
-                    <p className="caption">
-                      Pays only these wallets, in{" "}
-                      {deploymentToken?.symbol ?? "the treasury token"} or SOL.
-                      The cap is one number in base units, so SOL payments are
-                      capped at{" "}
-                      {tokenAmount(
-                        policyDraft.policy?.maxAmountPerPayment ?? "0",
-                        9,
-                      )}{" "}
-                      SOL. Members can change the policy later by vote. Your
-                      wallet signs once to store it.
-                    </p>
-                  )}
-                </div>
+                </fieldset>
               )}
-            </fieldset>
-          )}
+            </div>
+            {policyPanel && (
+              <div className="space-y-3 rounded-lg border p-4">
+                <p className="font-medium">This treasury&apos;s policy</p>
+                <label className="block space-y-1 text-sm">
+                  <span>Whitelisted wallets (one per line)</span>
+                  <textarea
+                    aria-label="Whitelisted wallets"
+                    className="min-h-24 w-full rounded-md border bg-transparent p-2 font-mono text-xs"
+                    value={whitelist}
+                    spellCheck={false}
+                    onChange={(e) => setWhitelist(e.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1 text-sm">
+                  <span>
+                    Per-payment cap ({deploymentToken?.symbol ?? "token"})
+                  </span>
+                  <Input
+                    inputMode="decimal"
+                    value={cap}
+                    onChange={(e) => setCap(e.target.value)}
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={screening}
+                    onChange={(e) => setScreening(e.target.checked)}
+                  />
+                  Sanctions screening (Scorechain)
+                </label>
+                {policyDraft.error ? (
+                  <p className="text-xs text-destructive">
+                    {policyDraft.error}
+                  </p>
+                ) : (
+                  <p className="caption">
+                    Pays only these wallets, in{" "}
+                    {deploymentToken?.symbol ?? "the treasury token"} or SOL.
+                    The cap is one number in base units, so SOL payments are
+                    capped at{" "}
+                    {tokenAmount(
+                      policyDraft.policy?.maxAmountPerPayment ?? "0",
+                      9,
+                    )}{" "}
+                    SOL. Members can change the policy later by vote. Your
+                    wallet signs once to store it.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
           {standardEnabled && (
             <label className="flex items-center gap-2">
               <input
