@@ -38,8 +38,11 @@ function harness(options: {
   expired?: boolean; decided?: boolean; execution?: 'tee' | 'don';
   /** Replaces the policy document (the GuardConfig commits to whatever is passed). */
   policyDoc?: Record<string, unknown>;
+  /** POLICY_DOCUMENT secret value: one document or a registry array (default: the committed document). */
+  policySecret?: unknown;
 } = {}) {
   const doc = options.policyDoc ?? policy
+  const secretValue = JSON.stringify(options.policySecret ?? doc)
   const config = configSchema.parse(options.execution === 'don' ? { ...staging, execution: 'don' } : staging)
   const local = { mode: 'local-simulation', chainSelector: staging.chainSelector, guardProgram: staging.guardProgram,
     decoderVersion: staging.decoderVersion, approvalSeconds: staging.approvalSeconds, maxSlotLag: staging.maxSlotLag,
@@ -91,7 +94,7 @@ function harness(options: {
     config: runtimeConfig, log: () => {}, now: () => new Date(NOW * 1000),
     getSecret: ({ id }: { id: string }) => {
       // Without a TEE (execution "don") the policy and screening key are Vault DON secrets too.
-      if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: JSON.stringify(doc) }) }
+      if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: secretValue }) }
       if (options.execution === 'don' && id === 'SCORECHAIN_SANCTIONS_API_KEY') return { result: () => ({ value: 'dummy-test-api-key' }) }
       if (!(id in secrets)) throw new Error('private secret crossed into DON')
       return { result: () => ({ value: secrets[id]! }) }
@@ -100,7 +103,7 @@ function harness(options: {
     report: () => { reports++; return { result: () => ({}) } },
   }
   const tee = { config: runtimeConfig, log: () => {}, usingTheDons: () => don,
-    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? JSON.stringify(doc) : 'dummy-test-api-key' }) }) }
+    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? secretValue : 'dummy-test-api-key' }) }) }
   const payload = { input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })) } as HTTPPayload
   return { run: () => JSON.parse(options.execution === 'don'
     ? onReviewDon(don as unknown as Runtime<Config>, payload)
@@ -256,6 +259,27 @@ describe('policy document handling', () => {
       const h = harness({ execution, policyDoc: { ...policy, extra: 'not in Policy v1' } })
       expect(h.run).toThrow('POLICY_INVALID')
       expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+    }
+  })
+})
+
+describe('policy registry (one secret, one document per policy hash)', () => {
+  const other = (n: number) => ({ ...policy, version: n, salt: String(n).padStart(2, '0').repeat(16) })
+  test('picks the document whose hash the treasury committed to', () => {
+    const h = harness({ policySecret: [other(2), policy, other(3)] })
+    expect(h.run().verdict).toBe('approve')
+  })
+  test('a single document secret still works', () => {
+    expect(harness({ policySecret: policy }).run().verdict).toBe('approve')
+  })
+  test('no matching document fails closed with POLICY_STALE and no report', () => {
+    const h = harness({ policySecret: [other(2), other(3)] })
+    expect(h.run).toThrow('POLICY_STALE'); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+  })
+  test('duplicate or malformed registry entries are rejected even when one matches', () => {
+    for (const policySecret of [[policy, policy], [policy, { ...other(2), extra: 1 }], [], 'not a policy']) {
+      const h = harness({ policySecret })
+      expect(h.run).toThrow('POLICY_INVALID'); expect(h.reports()).toBe(0)
     }
   })
 })

@@ -18,8 +18,8 @@ import {
 } from '@chainlink/cre-sdk'
 import { PublicKey } from '@solana/web3.js'
 import { z } from 'zod'
-import { ReviewReason, VERDICT, parsePolicy, PolicyFormatError, policyHash, txHash } from '../../../packages/shared/src/index'
-import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
+import { ReviewReason, VERDICT, txHash } from '../../../packages/shared/src/index'
+import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, selectPolicy, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
 import { normalizeSnapshot, selectQuorum, type SnapshotAccount } from './rpc-quorum'
 
 // Wysiwys review workflow. HTTP trigger with identifiers only -> 2-of-3 RPC reads of the Review, the
@@ -185,12 +185,12 @@ export function onReviewDon(runtime: Runtime<Config>, payload: HTTPPayload): str
 
 type ReviewHost = Pick<Runtime<Config>, 'config' | 'getSecret' | 'log'>
 
-/** Policy v1 from the secret. A malformed document fails closed (no report); the error names the field only. */
-function readPolicy(secret: string): Policy {
+/** The POLICY_DOCUMENT secret as JSON (one document or a registry array); never echoed. */
+function parseSecretJson(secret: string): unknown {
 	try {
-		return parsePolicy(JSON.parse(secret))
-	} catch (e) {
-		throw new Error(`POLICY_INVALID: ${e instanceof PolicyFormatError ? e.message : 'policy document is not valid JSON'}`)
+		return JSON.parse(secret)
+	} catch {
+		throw new Error('POLICY_INVALID: the policy secret is not valid JSON')
 	}
 }
 
@@ -220,10 +220,8 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 		throw new Error('guard config names another forwarder')
 	}
 
-	// Private policy (decrypted inside the enclave in TEE execution); its commitment must equal the guard's.
-	const policy = readPolicy(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value)
-	const commitment = policyHash(policy as unknown as Record<string, unknown>, config.decoderVersion)
-	if (!commitment.every((b, i) => b === guard.policyHash[i])) throw new Error('POLICY_STALE: policy document does not match the guard config')
+	// Private policy (decrypted inside the enclave in TEE execution): the registry entry the guard committed to.
+	const policy = selectPolicy(parseSecretJson(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value), guard.policyHash, config.decoderVersion)
 
 	let decision: Decision
 	const recomputed = txHash(new PublicKey(vaultTxPda).toBytes(), vaultTxAcc.data)

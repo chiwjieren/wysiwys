@@ -30,6 +30,8 @@ services/runner/data/
 
 # Private policy document (whitelist + salt). Only its hash (GUARD_POLICY_HASH) is public.
 workflow/policy.json
+# Policy registry documents (private whitelists), see scripts/policy-hash.ts --registry
+workflow/policies/
 
 # cre workflow deploy output
 binary.wasm.br.b64
