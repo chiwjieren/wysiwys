@@ -42,10 +42,10 @@ Wysiwys is a hackathon build on Solana devnet. One invariant holds even with eve
 
 | Gap | Today | Production fix |
 |---|---|---|
-| Report authenticity | CRE simulator mock forwarder (`cre workflow simulate --broadcast`); no DON signature check | Deploy the workflow to a live Chainlink DON with the Keystone forwarder; new GuardConfig pointing at it |
+| Report authenticity | Demo treasuries use the CRE simulator mock forwarder (no DON signature check). A live treasury already runs on a live Chainlink DON with the production Keystone forwarder, approve and reject verified (`evidence/cre/2026-10-07-live-don-e2e.md`) | Move every treasury to the live GuardConfig |
 | Workflow provenance | Guard checks the 20-byte workflow owner only | Bind the workflow ID once the live Solana report path exposes it |
-| DON consensus | Simulation runs a single node | Live DON; verify membership, fault bound and quorum |
-| Confidential execution | TEE simulated locally; no attestation | Confidential Workflows enrollment; verify attestation |
+| DON consensus | Demo: single-node simulation. Live treasury: 10-node DON, per-provider majority for RPC health | Verify the DON's fault bound; higher RPC tiers for 10-node load |
+| Confidential execution | TEE simulated locally; the live DON runs without a TEE (policy visible to node operators at run time) | Confidential Workflows enrollment (private beta); verify attestation |
 | Upgrade authority | One deployer key can upgrade the guard | Squads multisig as upgrade authority; immutable after audit |
 | Audit | Guard not audited (the instruction-0 durable-nonce check matches the runtime, which honours a nonce only as the first instruction) | External audit; internal security review first |
 | Recovery path | CRE or the runner down means nothing can execute (funds safe but stuck) | Timelocked recovery, e.g. a supermajority can execute after N days without a review |

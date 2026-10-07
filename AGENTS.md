@@ -79,9 +79,15 @@ cd workflow/confidential-preflight && cre workflow simulate review --target loca
 cd workflow/confidential-preflight && cre workflow simulate review --target staging-settings --non-interactive \
   --trigger-index 0 --broadcast --http-payload '{"multisig":"...","txIndex":"..."}'   # report mode needs a real devnet write; see its README
 npx tsx scripts/propose-devnet.ts <scenario> / scripts/finish-devnet.ts <txIndex>   # pending review / vote + execute
+                                           # WYSIWYS_DEPLOYMENT=deployments/devnet.live.json targets the live-DON treasury
+cd workflow/confidential-preflight && cre workflow deploy review --target live-devnet --non-interactive --yes
+                                           # live DON (private registry, execution "don", production Keystone forwarder);
+                                           # secrets first: cre secrets create review-secrets.yaml --target live-devnet --secrets-auth browser
 
 # Runner (event adapter)
 npm run dev --workspace=services/runner
+CRE_WORKFLOW_ID=<id> PORT=8788 RUNNER_DB_PATH=<path> npm run dev --workspace=services/runner
+                                           # live DON: signed CRE gateway trigger (CRE_GATEWAY_PRIVATE_KEY in .env)
 
 # Web app (root npm workspace; env in app/.env.example)
 npm run dev --workspace=app    # also: test, test:e2e, typecheck, build

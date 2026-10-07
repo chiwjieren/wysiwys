@@ -9,9 +9,9 @@ The invariant that holds today, even with every gap below: money moves only when
 | # | Gap | Today | Risk | Production fix | Severity |
 |---|---|---|---|---|---|
 | 1 | Guard upgrade authority | One deployer key (`6GsX…`) can upgrade the guard program | An upgrade can change what the executor checks | Move the upgrade authority to a Squads multisig; make the program immutable after an audit | High |
-| 2 | Report authenticity | CRE simulator mock forwarder: no DON signature check; every simulator reports the same workflow owner | Anyone on devnet can deliver an "approved" report (human votes are still required) | Deploy the workflow to a live Chainlink DON with the Keystone forwarder; new GuardConfig pointing at it | High |
+| 2 | Report authenticity | Demo treasuries: CRE simulator mock forwarder, no DON signature check. Live treasury (`deployments/devnet.live.json`, 7 Oct): deployed workflow on a live DON, production Keystone forwarder, approve and reject verified end to end (`evidence/cre/2026-10-07-live-don-e2e.md`) | On demo treasuries anyone on devnet can deliver an "approved" report (human votes are still required) | Move every treasury to the live GuardConfig | High (demo), closed on the live treasury |
 | 3 | Workflow provenance | Guard checks the 20-byte workflow owner only | Any workflow of the same owner could report | Bind the workflow ID (or a per-workflow key) in the guard once the live Solana report path exposes it | High |
-| 4 | Confidential execution | TEE simulated locally; no attestation | Policy and screening inputs are not hardware-protected | Confidential Workflows enrollment; verify attestation before trusting enclave output | High |
+| 4 | Confidential execution | TEE simulated locally; no attestation. The live DON runs `execution: "don"`: the policy is a Vault DON secret visible to node operators at run time | Policy and screening inputs are not hardware-protected | Confidential Workflows enrollment (private beta), then `execution: "tee"`; verify attestation | High |
 | 5 | Transmitter key | Hot key on the server pays report transactions | Theft drains its SOL (it cannot approve or move treasury funds) | Small balance, alerts, separate key per runner, KMS-backed signing | Low |
 | 6 | Secrets storage | `.env` files on the EC2 box | Server compromise exposes RPC, Scorechain and policy secrets | AWS SSM Parameter Store / Secrets Manager; rotate the Scorechain key and the CRE API key (both were pasted in chat once) | Medium |
 | 7 | Token authority | mUSD mint authority is the deployer key | Unlimited minting of the demo token | Real USDC (or a mint with no authority) in production | Low (demo only) |
@@ -20,7 +20,7 @@ The invariant that holds today, even with every gap below: money moves only when
 
 | # | Gap | Today | Risk | Production fix | Severity |
 |---|---|---|---|---|---|
-| 8 | DON consensus | Simulation runs a single node | Multi-node agreement is designed but not exercised | Live DON; verify membership, fault bound and quorum | High |
+| 8 | DON consensus | Live DON (10 nodes) exercised on 7 Oct; it surfaced and we fixed a provider-health split and a reply-shape check. Fault bound not verified by us | Provider rate limits across 10 nodes (QuickNode failed on up to 5 nodes) | Higher RPC tiers; verify the DON's fault bound | Medium |
 | 9 | RPC sources | Same 3 providers (QuickNode, Helius, Alchemy) for every node, 2-of-3 | Two colluding or identically wrong providers mislead every node | More, independent providers; per-operator diversity | Medium |
 | 10 | Destination freshness | Follow-up destination read skips the slot pin (CRE 15-call limit) | Slightly older view of the destination account | Guard re-checks owner and mint at execution, so the risk is bounded; pin when limits allow | Low |
 | 11 | Screening scope | Scorechain sanctions only | No wallet-risk scoring; screening outage blocks payments (fail closed) | Add a verified risk provider and thresholds | Medium |
