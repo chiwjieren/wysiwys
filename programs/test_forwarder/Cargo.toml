@@ -18,6 +18,8 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-debug = []
 custom-heap = []
 custom-panic = []
+# Accepted so `anchor test -- --features short-policy-delay` builds every program; no effect here.
+short-policy-delay = []
 
 [dependencies]
 anchor-lang = "1.2.0"

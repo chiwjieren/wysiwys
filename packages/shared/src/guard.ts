@@ -40,6 +40,12 @@ const GUARD_ERRORS = [
   "ReviewDeadlinePassed",
   "InvalidConfig",
   "ConfigActionNotAllowed",
+  "PolicyChangeNotApproved",
+  "PolicyChangeTooEarly",
+  "PolicyChangeStale",
+  "PolicyChangeOutdated",
+  "InvalidPolicyChange",
+  "GuardInMessage",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];

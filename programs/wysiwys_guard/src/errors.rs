@@ -49,4 +49,16 @@ pub enum GuardError {
     InvalidConfig,
     #[msg("Config change not allowed: only adding or removing voters, threshold and time lock")]
     ConfigActionNotAllowed,
+    #[msg("Policy change proposal is not approved")]
+    PolicyChangeNotApproved,
+    #[msg("Policy change waiting period has not passed")]
+    PolicyChangeTooEarly,
+    #[msg("Policy change proposal is stale")]
+    PolicyChangeStale,
+    #[msg("Policy change was written against a policy that is no longer current")]
+    PolicyChangeOutdated,
+    #[msg("Not a policy change transaction: exactly one marker instruction to the guard is allowed")]
+    InvalidPolicyChange,
+    #[msg("Vault transaction must not invoke the guard program")]
+    GuardInMessage,
 }

@@ -20,6 +20,8 @@ export type DeskOptions = {
   executor?: "execute-only" | "with-vote" | "absent";
   humanExecute?: boolean;
   configAuthority?: PublicKey;
+  /** Squads time lock in seconds (default 0). */
+  timeLock?: number;
 };
 
 export type DeskFixture = {
@@ -113,7 +115,7 @@ export async function createDesk(
       configAuthority: opts.configAuthority ?? null,
       threshold: 3,
       members: squadMembers,
-      timeLock: 0,
+      timeLock: opts.timeLock ?? 0,
       rentCollector: null,
     }),
   );

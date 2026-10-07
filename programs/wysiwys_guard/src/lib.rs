@@ -50,4 +50,8 @@ pub mod wysiwys_guard {
     pub fn guarded_config_execute(ctx: Context<GuardedConfigExecute>) -> Result<()> {
         instructions::guarded_config_execute::handle_guarded_config_execute(ctx)
     }
+
+    pub fn apply_policy_change(ctx: Context<ApplyPolicyChange>) -> Result<()> {
+        instructions::apply_policy_change::handle_apply_policy_change(ctx)
+    }
 }

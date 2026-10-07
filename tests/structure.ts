@@ -11,9 +11,9 @@ const sources = [
 ].map((path) => ({ path, text: readFileSync(path, "utf8") }));
 
 describe("structure (security rules 2, 3, 8)", () => {
-  it("exposes exactly the five instructions (no guard config update path)", () => {
+  it("exposes exactly the six instructions (policy changes only through apply_policy_change)", () => {
     expect(idl.instructions.map((i: any) => i.name).sort()).to.deep.equal(
-      ["guarded_config_execute", "guarded_execute", "initialize_guard", "on_report", "request_review"],
+      ["apply_policy_change", "guarded_config_execute", "guarded_execute", "initialize_guard", "on_report", "request_review"],
     );
   });
 
