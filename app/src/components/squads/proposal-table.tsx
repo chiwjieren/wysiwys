@@ -4,7 +4,9 @@ import Link from "next/link";
 import { Panel, SectionTitle } from "@/components/design";
 import { Button } from "@/components/ui/button";
 import { useSquad } from "@/lib/squads/provider";
-import { previewMessage } from "@/lib/squads/payments";
+import { decodeVaultTransaction } from "@wysiwys/decoder";
+import { assetLabel } from "@/lib/squads/payments";
+import { paymentLabel } from "@/lib/squads/decoded-preview";
 import { EmptyState, ProposalStatus, ReviewBadge } from "./treasury-ui";
 import { isGuarded } from "@/lib/squads/review";
 import { describeConfigActions } from "@/lib/squads/config-actions";
@@ -51,12 +53,21 @@ export function ProposalTable({
           <tbody>
             {records.map((record) => {
               const id = record.proposal.transactionIndex.toString();
-              const decoded =
-                record.kind === "vault" && snapshot
-                  ? previewMessage(record.transaction.message, snapshot.vault)
+              const policyChange = isPolicyChangeRecord(
+                record,
+                config?.guardProgram,
+              );
+              // List label from the decoder's actions; the review page shows the full checks.
+              const decodedLabel =
+                record.kind === "vault" && !policyChange
+                  ? paymentLabel(
+                      decodeVaultTransaction(record.transactionData),
+                      (mint) => assetLabel(config, mint),
+                    )
                   : undefined;
-              const payment =
-                record.kind === "config"
+              const payment = policyChange
+                ? "Payment policy update"
+                : record.kind === "config"
                   ? describeConfigActions(
                       record.transaction.actions,
                       isGuarded(config) ? config?.executor : undefined,
@@ -65,17 +76,13 @@ export function ProposalTable({
                     ? "Details cleared after execution"
                     : record.kind === "batch"
                       ? `${record.transaction.size} transactions`
-                      : decoded?.supported
-                        ? decoded.lines
-                            .find((l) => l.startsWith("Send "))
-                            ?.split(" from ")[0]
-                        : "Needs inspection";
+                      : (decodedLabel ?? "Needs inspection");
               return (
                 <tr key={id}>
                   <td>
                     <p className="font-medium">
                       #{id} ·{" "}
-                      {isPolicyChangeRecord(record, config?.guardProgram)
+                      {policyChange
                         ? "Policy change"
                         : record.kind === "vault"
                           ? "Payment"

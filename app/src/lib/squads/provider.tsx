@@ -64,10 +64,12 @@ import {
   buildGuardedPaymentInstruction,
   buildPaymentInstructions,
   buildPaymentProposal,
-  readPaymentPreview,
-  assertReviewedPreview,
   type PaymentInput,
 } from "./payments";
+import {
+  assertReviewedPreview,
+  previewVaultTransaction,
+} from "./decoded-preview";
 type Snapshot = {
   squad: sqds.accounts.Multisig;
   vault: PublicKey;
@@ -499,10 +501,22 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           multisigPda: new PublicKey(config!.multisig),
           index: config!.vaultIndex,
         })[0];
-        const preview = await readPaymentPreview(
+        // Re-decode the stored bytes; on a guarded treasury they must match the Review's tx_hash.
+        const review = isGuarded(config)
+          ? (
+              await readReviews(
+                rpc,
+                new PublicKey(config!.guardProgram!),
+                new PublicKey(config!.multisig),
+                [index],
+              )
+            )[index.toString()]
+          : null;
+        const preview = await previewVaultTransaction(
           rpc,
-          record.transaction.message,
+          { address: record.transactionAddress, data: record.transactionData },
           vault,
+          review?.txHash,
         );
         assertReviewedPreview(reviewed, preview);
       }
@@ -550,7 +564,14 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         })[0];
         assertReviewedPreview(
           reviewed,
-          await readPaymentPreview(rpc, record.transaction.message, vault),
+          await previewVaultTransaction(
+            rpc,
+            {
+              address: record.transactionAddress,
+              data: record.transactionData,
+            },
+            vault,
+          ),
         );
         const { instruction, lookupTableAccounts } =
           await sqds.instructions.vaultTransactionExecute({
