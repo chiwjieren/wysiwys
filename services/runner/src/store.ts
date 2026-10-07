@@ -149,7 +149,8 @@ export function openStore(path: string) {
   const selectSetting = db.prepare("SELECT value FROM settings WHERE key = ?");
   const upsertSetting = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   const insertPolicy = db.prepare("INSERT OR IGNORE INTO policies (hash, multisig, document, created_at) VALUES (?, ?, ?, ?)");
-  const selectPolicy = db.prepare("SELECT document FROM policies WHERE hash = ? AND multisig = ?");
+  // Documents are content-addressed: the same hash is the same document, whichever multisig stored it.
+  const selectPolicy = db.prepare("SELECT document FROM policies WHERE hash = ? LIMIT 1");
   const requeuePending = db.prepare(
     "UPDATE reviews SET trigger_status = 'none', trigger_attempts = 0, trigger_error = NULL WHERE status = 'pending' AND updated_at >= ?",
   );
@@ -168,7 +169,7 @@ export function openStore(path: string) {
     /** Proposed policy documents (private), served only to the app server for members of the multisig. */
     putPolicy: (p: { hash: string; multisig: string; document: string; createdAt: number }) =>
       void insertPolicy.run(p.hash, p.multisig, p.document, p.createdAt),
-    getPolicy: (multisig: string, hash: string) => ((selectPolicy.get(hash, multisig) as { document: string } | undefined)?.document ?? null),
+    getPolicyDocument: (hash: string) => ((selectPolicy.get(hash) as { document: string } | undefined)?.document ?? null),
     getSetting: (key: string) => ((selectSetting.get(key) as { value: string } | undefined)?.value ?? null),
     setSetting: (key: string, value: string) => void upsertSetting.run(key, value),
     /** Makes pending reviews requested at or after `since` (unix seconds) eligible for triggering again. */

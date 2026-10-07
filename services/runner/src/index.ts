@@ -7,7 +7,8 @@ import idl from "@wysiwys/shared/idl/wysiwys_guard.json" with { type: "json" };
 import { loadConfig } from "./config";
 import { createEventParser } from "./events";
 import { Listener } from "./listener";
-import { createStatusServer } from "./server";
+import { createStatusServer, DECODER_VERSION } from "./server";
+import { seedPolicies } from "./policy-seed";
 import { createSettlement } from "./settlement";
 import { CreRunner } from "./cre";
 import { createReviewVerifier } from "./delivery";
@@ -93,6 +94,7 @@ const server = createStatusServer({
   reviewToken: cfg.reviewToken,
   reviewMode: reviewMode ?? undefined,
   adminToken: cfg.adminToken,
+  policyFetchToken: cfg.policyFetchToken,
 });
 
 const ws = cfg.wsUrl
@@ -110,6 +112,11 @@ console.log(
 console.log(
   `[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`,
 );
+// Policy documents already on this box (the CRE project .env) seed the content-addressed store.
+if (cfg.cre) {
+  const seeded = seedPolicies(store, `${cfg.cre.projectDir}/.env`, DECODER_VERSION);
+  console.log(`[runner] policy store: ${seeded} document(s) seeded; workflow fetch ${cfg.policyFetchToken ? "enabled" : "disabled (POLICY_FETCH_TOKEN unset)"}`);
+}
 await listener.start();
 server.listen(cfg.port, () =>
   console.log(`[runner] status on http://localhost:${cfg.port}/status`),

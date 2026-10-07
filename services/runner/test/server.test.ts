@@ -183,7 +183,7 @@ function fakeSettlement(calls: string[]): Settlement {
   };
 }
 
-async function serveSettlement(token: string | null, rateLimitPerMinute = 100) {
+async function serveSettlement(token: string | null, rateLimitPerMinute = 100, policyFetchToken: string | null = null) {
   const calls: string[] = [];
   const store = openStore(":memory:");
   const server = createStatusServer({
@@ -192,6 +192,7 @@ async function serveSettlement(token: string | null, rateLimitPerMinute = 100) {
     health: () => ({ ok: true, subscribed: true, lastBackfillAt: 1, lastBackfillError: null, lastLogAt: null, cursor: null }),
     settlement: fakeSettlement(calls),
     settlementToken: token,
+    policyFetchToken,
     rateLimitPerMinute,
     log: () => {},
   });
@@ -408,13 +409,13 @@ test("POST /frontend/policies validates, hashes and stores a proposed policy; GE
     assert.equal(body.currentPolicyHash, currentHash.value);
     assert.equal(body.currentVersionKnown, false);
     assert.equal(body.current, false);
-    const get = (ms: string, h: string) => fetch(`${s.base}/frontend/policies/${ms}/${h}`, { headers: { authorization: "Bearer t" } });
-    const got = await get(POLICY_MS, body.hash);
+    // Content-addressed: the app checks membership and which hashes a treasury may read.
+    const get = (h: string) => fetch(`${s.base}/frontend/policies/${h}`, { headers: { authorization: "Bearer t" } });
+    const got = await get(body.hash);
     assert.equal(got.status, 200);
     assert.deepEqual(((await got.json()) as any).document, doc);
-    assert.equal((await get(POLICY_MS, "00".repeat(32))).status, 404);
-    assert.equal((await get(Keypair.generate().publicKey.toBase58(), body.hash)).status, 404);
-    assert.equal((await fetch(`${s.base}/frontend/policies/${POLICY_MS}/${body.hash}`)).status, 401);
+    assert.equal((await get("00".repeat(32))).status, 404);
+    assert.equal((await fetch(`${s.base}/frontend/policies/${body.hash}`)).status, 401);
   } finally {
     s.close();
   }
@@ -456,6 +457,30 @@ test("POST /frontend/policy-apply returns the apply_policy_change instruction", 
     assert.equal(res.status, 200);
     assert.ok(((await res.json()) as any).guardInstruction.programId);
     assert.deepEqual(s.calls, ["policy-apply:12"]);
+  } finally {
+    s.close();
+  }
+});
+
+test("GET /cre/policies/:hash serves a stored document to the workflow with its own token, fail closed", async () => {
+  const off = await serveSettlement("t");
+  try {
+    assert.equal((await fetch(`${off.base}/cre/policies/${"ab".repeat(32)}`, { headers: { authorization: "Bearer x" } })).status, 503);
+  } finally {
+    off.close();
+  }
+  const s = await serveSettlement("t", 100, "cre-token");
+  try {
+    const doc = policyDoc(2);
+    s.store.putPolicy({ hash: hashOf(doc), multisig: POLICY_MS, document: JSON.stringify(doc), createdAt: 1 });
+    const get = (h: string, auth: string | null) =>
+      fetch(`${s.base}/cre/policies/${h}`, { headers: auth ? { authorization: auth } : {} });
+    assert.equal((await get(hashOf(doc), null)).status, 401);
+    assert.equal((await get(hashOf(doc), "Bearer t")).status, 401, "the settlement token is not the workflow's token");
+    assert.equal((await get("00".repeat(32), "Bearer cre-token")).status, 404);
+    const ok = await get(hashOf(doc), "Bearer cre-token");
+    assert.equal(ok.status, 200);
+    assert.deepEqual(((await ok.json()) as any).document, doc);
   } finally {
     s.close();
   }

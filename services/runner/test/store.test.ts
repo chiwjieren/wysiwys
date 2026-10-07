@@ -121,9 +121,9 @@ test("PolicyChanged goes to the activity feed without creating a review", () => 
 
 test("stores policy documents per multisig and hash", () => {
   const s = openStore(":memory:");
-  assert.equal(s.getPolicy("Ms11", "aa"), null);
+  assert.equal(s.getPolicyDocument("aa"), null);
   s.putPolicy({ hash: "aa", multisig: "Ms11", document: '{"version":2}', createdAt: 5 });
   s.putPolicy({ hash: "aa", multisig: "Ms11", document: '{"version":2}', createdAt: 6 }); // idempotent
-  assert.equal(s.getPolicy("Ms11", "aa"), '{"version":2}');
-  assert.equal(s.getPolicy("Other", "aa"), null, "a document is only served for its own multisig");
+  assert.equal(s.getPolicyDocument("aa"), '{"version":2}', "documents are content-addressed by hash");
+  assert.equal(s.getPolicyDocument("bb"), null);
 });
