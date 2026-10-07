@@ -38,29 +38,37 @@ The guard (`programs/wysiwys_guard`) holds the only Execute permission on the tr
 
 Wysiwys is a hackathon build on Solana devnet. One invariant holds even with every gap below: money moves only when the treasury's human threshold has voted AND the guard holds an Approved, unexpired review for that exact transaction and destination. Full list with today's state, risk and fix per item: `docs/production-gaps.md`.
 
+**Closed during the event (7 Oct)**
+
+| Gap | Now | Evidence |
+|---|---|---|
+| Report authenticity | Treasuries created in the app are reviewed by the deployed workflow on a live Chainlink DON. Reports are DON-signed and delivered by the production Keystone forwarder, and the guard checks the forwarder and the workflow owner. The CRE simulator path is kept only as an operator-switchable backup (`/status`) and for older treasuries | `evidence/cre/2026-10-07-live-don-e2e.md` |
+| DON consensus | Exercised on a 10-node DON. Two issues surfaced only live and were fixed: per-provider majority for RPC health (QuickNode failed on some nodes), and a 10 s Scorechain timeout (screening missed the deadline on 7 of 10 nodes). Failures stay closed: no agreement, no report | `docs/spikes.md`, CRE executions `922f105d`, `f78eafb8` |
+| Policy enforcement | Every field of the policy is binding: programs, payment types, tokens, per-payment cap, whitelist and screening (Policy v1, one validator in `packages/shared`) | `workflow/confidential-preflight/review/workflow.test.ts` |
+| Policy changes | Voted: a Squads proposal, a waiting period (`max(time lock, 300 s)`) in which members can cancel, then `apply_policy_change`. Approvals given under the old policy stop working. The workflow keeps a registry of documents, so other treasuries are unaffected | `tests/policy_change.ts` |
+| Membership changes | Voted Squads config proposals executed only by the guard (`guarded_config_execute`); voters only, no spending limits, the guard stays the sole executor | `tests/guarded_config.ts` |
+
 **High: must close before mainnet**
 
 | Gap | Today | Production fix |
 |---|---|---|
-| Report authenticity | Demo treasuries use the CRE simulator mock forwarder (no DON signature check). A live treasury already runs on a live Chainlink DON with the production Keystone forwarder, approve and reject verified (`evidence/cre/2026-10-07-live-don-e2e.md`) | Move every treasury to the live GuardConfig |
-| Workflow provenance | Guard checks the 20-byte workflow owner only | Bind the workflow ID once the live Solana report path exposes it |
-| DON consensus | Demo: single-node simulation. Live treasury: 10-node DON, per-provider majority for RPC health | Verify the DON's fault bound; higher RPC tiers for 10-node load |
-| Confidential execution | TEE simulated locally; the live DON runs without a TEE (policy visible to node operators at run time) | Confidential Workflows enrollment (private beta); verify attestation |
+| Confidential execution | The live DON runs the review without a TEE: the policy is a Vault DON secret that node operators can see at run time. The TEE path is built and simulated | Confidential Workflows enrollment (private beta); verify attestation |
+| Workflow provenance | The guard checks the 20-byte workflow owner (confirmed in live report metadata), not the workflow ID | Bind the workflow ID once the live Solana report path exposes it |
 | Upgrade authority | One deployer key can upgrade the guard | Squads multisig as upgrade authority; immutable after audit |
 | Audit | Guard not audited (the instruction-0 durable-nonce check matches the runtime, which honours a nonce only as the first instruction) | External audit; internal security review first |
-| Recovery path | CRE or the runner down means nothing can execute (funds safe but stuck) | Timelocked recovery, e.g. a supermajority can execute after N days without a review |
+| Recovery path | CRE or the runner down means nothing can execute (funds safe but stuck); a failed DON run can be re-triggered within the 15-minute review deadline | Timelocked recovery, e.g. a supermajority can execute after N days without a review |
 
 **Medium: product and operations**
 
 | Gap | Today | Production fix |
 |---|---|---|
-| Policy changes | Voted: a Squads proposal, a waiting period (`max(time lock, 300 s)`), then `apply_policy_change`; old approvals stop working | CRE review of the change itself; encrypted policy store |
+| Policy change review | Members vote policy changes, but the DON does not screen them (signers who reach the threshold can loosen the policy after the wait) | CRE review of the change itself (screen added addresses); encrypted policy store read by the TEE |
 | Shared policy | Every UI-created treasury starts with the deployment's policy, then votes its own changes | Policy chosen at creation |
 | Policy custody | Policy JSON and its salt live in one place | Backed-up, access-controlled policy store with an approval workflow |
 | Limits | Per-payment cap only | On-chain cumulative counters (daily budgets) |
 | Payment types | One SOL transfer or legacy SPL `TransferChecked` per payment | Batches, ATA creation, Token-2022, lookup tables |
-| RPC sources | Same 3 providers (QuickNode, Helius, Alchemy) for every node, 2 of 3 | More independent providers, per-operator diversity |
-| Screening | Scorechain sanctions only; an outage blocks payments (fail closed) | Add a wallet-risk provider and thresholds |
+| RPC sources | Same 3 providers (QuickNode, Helius, Alchemy) for every node, 2 of 3; 10 nodes calling at once can hit rate limits | More independent providers, per-operator diversity, paid tiers |
+| Screening | Scorechain sanctions only, called by every DON node; an outage or slow responses block payments (fail closed) | Add a wallet-risk provider and thresholds; a provider plan sized for DON load |
 | Single runner | One EC2 instance with SQLite; downtime delays reviews (fail closed) | 2+ runners behind health checks, or DON-native triggers |
 | Secrets | `.env` files on the EC2 instance | AWS SSM / Secrets Manager; rotate keys shared during the event |
 | Monitoring | Logs only | Alerts on `/status`, trigger failures, transmitter balance, missed review deadlines |
@@ -70,5 +78,6 @@ Wysiwys is a hackathon build on Solana devnet. One invariant holds even with eve
 - The 117-byte report payload is 3 bytes under CRE's 265-byte Solana limit; new fields must be hashed or compressed.
 - Treasury creation fits in one transaction up to 11 humans.
 - Membership changes are voted by members but not reviewed by CRE.
+- The DON size (10 nodes) is set by Chainlink, not by the workflow; every review costs about 10 times the calls of a simulation.
 - Squads v4 is upgradable by the Squads team (audited, widely used).
 - mUSD is a demo token whose mint authority is the deployer key.
