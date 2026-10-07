@@ -3,7 +3,6 @@ import {
 	calculateAccountsHash,
 	ConsensusAggregationByFields,
 	consensusIdenticalAggregation,
-	identical,
 	median,
 	SolanaTxStatus,
 	SolanaReceiverContractExecutionStatus,
@@ -90,9 +89,23 @@ function validateProviders(endpoints: string[]) {
 }
 
 type ReadContext = { minContextSlot: number; eligible: string }
+/** One node's health observation: the slot floor plus a 0/1 vote per provider. */
+type Health = { minContextSlot: number; quicknode: number; helius: number; alchemy: number }
 
-/** Health observations vary by node; CRE aggregates the floor by median and eligibility identically. */
-function readHealth(node: NodeRuntime<Config>, endpoints: string[]): ReadContext {
+/**
+ * Health observations vary by node (a rate-limited provider can fail on some nodes only), so every
+ * field is a median: the slot floor, and per provider a majority vote of the nodes' 0/1 health flags.
+ */
+export const HEALTH_AGGREGATION = ConsensusAggregationByFields<Health>({
+	minContextSlot: median, quicknode: median, helius: median, alchemy: median,
+})
+
+/** Providers the DON agreed are healthy, as the eligibility mask the account reads use. */
+export function eligibleFrom(health: Health): string {
+	return [health.quicknode, health.helius, health.alchemy].map((v) => (v >= 0.5 ? '1' : '0')).join('')
+}
+
+function readHealth(node: NodeRuntime<Config>, endpoints: string[]): Health {
 	const slots = endpoints.map((endpoint, i) => {
 		try {
 			const genesis = (rpc(node, endpoint, 'getGenesisHash', []) as { result?: unknown }).result
@@ -108,7 +121,8 @@ function readHealth(node: NodeRuntime<Config>, endpoints: string[]): ReadContext
 	const valid = slots.filter((s): s is number => s !== null).sort((a, b) => a - b)
 	if (valid.length < 2) throw new Error('RPC_NO_QUORUM')
 	const floor = Math.max(0, valid[Math.floor((valid.length - 1) / 2)]! - node.config.maxSlotLag)
-	return { minContextSlot: floor, eligible: slots.map(s => s === null ? '0' : '1').join('') }
+	const vote = (i: number) => (slots[i] === null ? 0 : 1)
+	return { minContextSlot: floor, quicknode: vote(0), helius: vote(1), alchemy: vote(2) }
 }
 
 /** Both reads reuse the DON-agreed floor and eligible-provider set; at most 13 HTTP calls total. */
@@ -184,9 +198,8 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 	// Chain reads and the write run on the DON; RPC credentials are operational, not confidential.
 	const endpoints = RPC_SECRETS.map((id) => don.getSecret({ id }).result().value)
 	validateProviders(endpoints)
-	const context = don.runInNodeMode(readHealth, ConsensusAggregationByFields<ReadContext>({
-		minContextSlot: median, eligible: identical,
-	}))(endpoints).result()
+	const health = don.runInNodeMode(readHealth, HEALTH_AGGREGATION)(endpoints).result()
+	const context: ReadContext = { minContextSlot: Math.floor(health.minContextSlot), eligible: eligibleFrom(health) }
 	const [reviewAcc, vaultTxAcc, configAcc] = readAgreed(don, endpoints, [reviewPda, vaultTxPda, configPda], context)
 	if (!reviewAcc || !vaultTxAcc || !configAcc) throw new Error('review, stored transaction or guard config not found')
 	const review = parseReview(reviewAcc, config.guardProgram)

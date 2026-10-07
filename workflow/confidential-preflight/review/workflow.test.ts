@@ -5,7 +5,7 @@ import staging from './config.staging.json'
 import live from './config.live.json'
 import { policyHash } from '../../../packages/shared/src/index'
 import { base64ToBytes } from './review-logic'
-import { initWorkflow, onReview, onReviewDon, configSchema, type Config } from './workflow'
+import { eligibleFrom, HEALTH_AGGREGATION, initWorkflow, onReview, onReviewDon, configSchema, type Config } from './workflow'
 
 // Public devnet fixture bytes, synthetic policy and dummy credentials. These tests invoke the actual
 // handler and RPC callbacks; capability I/O is mocked, not the decoder or policy evaluation.
@@ -205,5 +205,22 @@ describe('workflow registration and live config', () => {
   test('authorized keys must be EVM key objects', () => {
     expect(() => configSchema.parse({ ...staging, authorizedKeys: ['0xD6Bbf377d9ce95975a78b84656548B255d816325'] })).toThrow()
     expect(() => configSchema.parse({ ...staging, authorizedKeys: [{ type: 'KEY_TYPE_ECDSA_EVM', publicKey: '0x1234' }] })).toThrow()
+  })
+})
+
+describe('provider health consensus across DON nodes', () => {
+  // Live DON, 7 Oct: QuickNode failed the health check on 5 of 10 nodes. An identical-aggregated
+  // eligibility string could not reach consensus; a per-provider majority (median of 0/1) can.
+  test('every health field is a median (no identical field a provider split can break)', () => {
+    const fields = (HEALTH_AGGREGATION.descriptor.descriptor as any).value.fields
+    expect(Object.keys(fields).sort()).toEqual(['alchemy', 'helius', 'minContextSlot', 'quicknode'])
+    for (const f of Object.values(fields) as any[]) expect(f.descriptor).toEqual({ case: 'aggregation', value: 1 })
+  })
+  test('the DON-agreed per-provider votes decide eligibility', () => {
+    expect(eligibleFrom({ minContextSlot: 1, quicknode: 1, helius: 1, alchemy: 1 })).toBe('111')
+    expect(eligibleFrom({ minContextSlot: 1, quicknode: 0, helius: 1, alchemy: 1 })).toBe('011')
+    // An even split's median may land between 0 and 1; the provider stays eligible and the
+    // nodes where it fails simply do not count it in their 2-of-3 read.
+    expect(eligibleFrom({ minContextSlot: 1, quicknode: 0.5, helius: 1, alchemy: 0 })).toBe('110')
   })
 })

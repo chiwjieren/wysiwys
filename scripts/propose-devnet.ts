@@ -1,6 +1,7 @@
 // Proposes one scenario payment on the devnet test treasury and requests its review, without
 // reviewing it: leaves a Pending review for the CRE review workflow (or the runner) to process.
 // Usage: npx tsx scripts/propose-devnet.ts <clean|lookalike|drift|overCap|ownershipSwap|durableNonce>
+// WYSIWYS_DEPLOYMENT=deployments/devnet.live.json targets another treasury file (default deployments/devnet.json).
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,7 +24,7 @@ async function main() {
   const payer = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(readFileSync(env.SOLANA_WALLET || join(homedir(), ".config/solana/id.json"), "utf8"))),
   );
-  const deployment: Deployment = JSON.parse(readFileSync(join(root, "deployments/devnet.json"), "utf8"));
+  const deployment: Deployment = JSON.parse(readFileSync(resolve(root, process.env.WYSIWYS_DEPLOYMENT || "deployments/devnet.json"), "utf8"));
   const ctx = loadE2eContext({
     connection: new Connection(env.HELIUS_DEVNET_RPC_URL || "https://api.devnet.solana.com", "confirmed"),
     payer,
