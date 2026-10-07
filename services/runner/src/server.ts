@@ -94,8 +94,9 @@ export function createStatusServer(d: Deps): Server {
   };
 
   /**
-   * A proposed policy document: validated as Policy v1 and stored by hash for the multisig, so members can
-   * read what they vote on. When the treasury's current document is known, the version must increase.
+   * A policy document: validated as Policy v1 and stored by hash for the multisig, so members can read what
+   * they vote on. Either the treasury's current document (hash match) or a proposal whose version is higher
+   * than the current one when that is known.
    */
   async function storePolicy(input: unknown): Promise<[number, unknown]> {
     const body = (input ?? {}) as Record<string, unknown>;
@@ -114,14 +115,19 @@ export function createStatusServer(d: Deps): Server {
     const current = await d.settlement!.currentPolicyHash(multisig);
     if (!current) throw new HttpError(404, "multisig has no guard config");
     const hash = Buffer.from(policyHash(doc as unknown as Record<string, unknown>, DECODER_VERSION)).toString("hex");
-    if (hash === current) throw new HttpError(409, "this is already the current policy");
+    const now = Math.floor(Date.now() / 1000);
+    // The treasury's current document: its hash proves it, so store it for members to read and diff.
+    if (hash === current) {
+      d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: now });
+      return [200, { hash, currentPolicyHash: current, currentVersionKnown: true, current: true }];
+    }
     const currentDoc = d.store.getPolicy(multisig, current);
     const currentVersion = currentDoc ? (JSON.parse(currentDoc) as { version: number }).version : null;
     if (currentVersion !== null && doc.version <= currentVersion) {
       throw new HttpError(409, `version must be greater than ${currentVersion}`);
     }
-    d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: Math.floor(Date.now() / 1000) });
-    return [200, { hash, currentPolicyHash: current, currentVersionKnown: currentVersion !== null }];
+    d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: now });
+    return [200, { hash, currentPolicyHash: current, currentVersionKnown: currentVersion !== null, current: false }];
   }
 
   async function settlementRoute(req: IncomingMessage, url: URL): Promise<[number, unknown]> {

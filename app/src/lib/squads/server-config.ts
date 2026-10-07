@@ -147,6 +147,8 @@ const RUNNER_PATHS = {
   execute: "frontend/execute",
   // guarded_config_execute for a voted Squads config transaction.
   configExecute: "frontend/config-execute",
+  // apply_policy_change for a voted policy change proposal.
+  policyApply: "frontend/policy-apply",
 } as const;
 export type PrepareAction = keyof typeof RUNNER_PATHS;
 export function runnerPath(action: PrepareAction) {

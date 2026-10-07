@@ -407,6 +407,7 @@ test("POST /frontend/policies validates, hashes and stores a proposed policy; GE
     assert.equal(body.hash, hashOf(doc));
     assert.equal(body.currentPolicyHash, currentHash.value);
     assert.equal(body.currentVersionKnown, false);
+    assert.equal(body.current, false);
     const get = (ms: string, h: string) => fetch(`${s.base}/frontend/policies/${ms}/${h}`, { headers: { authorization: "Bearer t" } });
     const got = await get(POLICY_MS, body.hash);
     assert.equal(got.status, 200);
@@ -435,7 +436,10 @@ test("POST /frontend/policies refuses invalid documents, unguarded multisigs and
     const lower = await s.post("/frontend/policies", { multisig: POLICY_MS, document: policyDoc(3) });
     assert.equal(lower.status, 409);
     assert.match(((await lower.json()) as any).error, /version must be greater than 3/);
-    assert.equal((await s.post("/frontend/policies", { multisig: POLICY_MS, document: current })).status, 409);
+    // The current document itself (its hash is the treasury's) is accepted, so members can read and diff it.
+    const same = await s.post("/frontend/policies", { multisig: POLICY_MS, document: current });
+    assert.equal(same.status, 200);
+    assert.equal(((await same.json()) as any).current, true);
     const higher = await s.post("/frontend/policies", { multisig: POLICY_MS, document: policyDoc(4) });
     assert.equal(higher.status, 200);
     assert.equal(((await higher.json()) as any).currentVersionKnown, true);

@@ -1,4 +1,5 @@
 "use client";
+import { isPolicyChangeRecord } from "@/lib/squads/policy";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import { PaymentButton, ReceiveButton } from "./payment-dialog";
 import { ThresholdSettings } from "./account-actions";
 import { ProposalTable } from "./proposal-table";
 import { RecentReviews } from "./recent-reviews";
+import { PolicyPanel } from "./policy-panel";
 import {
   Explorer,
   EmptyState,
@@ -204,11 +206,13 @@ function Dashboard() {
               <AssetIcon src={figmaAssets.dashboard.imgIconClock} />
               <p className="flex-1">
                 Proposal #{r.proposal.transactionIndex.toString()} ·{" "}
-                {r.kind === "vault"
-                  ? "Payment"
-                  : r.kind === "batch"
-                    ? "Batch"
-                    : "Group settings"}
+                {isPolicyChangeRecord(r, config?.guardProgram)
+                  ? "Policy change"
+                  : r.kind === "vault"
+                    ? "Payment"
+                    : r.kind === "batch"
+                      ? "Batch"
+                      : "Group settings"}
               </p>
               <span className="caption">{r.proposal.status.__kind}</span>
               <Link
@@ -585,6 +589,7 @@ export function SquadSettings() {
               </EmptyState>
             </Panel>
           )}
+          <PolicyPanel />
           <Panel className="gap-4">
             <h2>Payment protection</h2>
             <div>

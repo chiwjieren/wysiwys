@@ -8,6 +8,12 @@ import {
   runnerPath,
 } from "../src/lib/squads/server-config";
 import { assetLabel } from "../src/lib/squads/payments";
+test("settlement preparation accepts applying a voted policy change through the runner", () => {
+  const member = Keypair.generate().publicKey.toBase58();
+  const multisig = Keypair.generate().publicKey.toBase58();
+  assert.ok(isPrepareRequest({ multisig, action: "policyApply", index: "7", member }));
+  assert.equal(runnerPath("policyApply"), "frontend/policy-apply");
+});
 test("settlement preparation accepts propose and execute for the open treasury without a trade id", () => {
   const member = Keypair.generate().publicKey.toBase58();
   const multisig = Keypair.generate().publicKey.toBase58();

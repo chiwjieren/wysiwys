@@ -1,4 +1,5 @@
 "use client";
+import { isPolicyChangeRecord } from "@/lib/squads/policy";
 import Link from "next/link";
 import { Panel, SectionTitle } from "@/components/design";
 import { Button } from "@/components/ui/button";
@@ -74,13 +75,15 @@ export function ProposalTable({
                   <td>
                     <p className="font-medium">
                       #{id} ·{" "}
-                      {record.kind === "vault"
-                        ? "Payment"
-                        : record.kind === "batch"
-                          ? "Batch"
-                          : record.kind === "archived"
-                            ? "Executed payment"
-                            : "Group settings"}
+                      {isPolicyChangeRecord(record, config?.guardProgram)
+                        ? "Policy change"
+                        : record.kind === "vault"
+                          ? "Payment"
+                          : record.kind === "batch"
+                            ? "Batch"
+                            : record.kind === "archived"
+                              ? "Executed payment"
+                              : "Group settings"}
                     </p>
                     <p className="caption">Solana Devnet</p>
                   </td>
