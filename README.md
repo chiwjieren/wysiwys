@@ -35,6 +35,39 @@ Human votes and the review can arrive in either order. A CRE verdict does not ca
 
 ---
 
+## Live deployment
+
+### Solana Guard program
+
+**Network:** Solana devnet. **Program address:**
+
+```text
+9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya
+```
+
+[View program on Solana Explorer](https://explorer.solana.com/address/9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya?cluster=devnet) · [Live treasury deployment manifest](deployments/devnet.live.json)
+
+### Chainlink CRE workflow
+
+**Workflow:** `wysiwys-review-live`. **Registry:** private. **DON family:** `zone-a`.
+
+Latest recorded workflow ID, from the 7 Oct 2026 deployment log:
+
+```text
+0007bda336f75bcb930240d5006341c6f4db26a868192ea8fc4377d1e43464d7
+```
+
+[Deployment record](evidence/cre/2026-10-07-live-redeploy-policy-fetch.log) · [CRE workflows dashboard](https://app.chain.link/cre/workflows) · [Live execution evidence](evidence/cre/2026-10-07-live-don-e2e.md)
+
+CRE identifies the workflow by its registry ID. The [dashboard requires login and access to the owning organization](https://docs.chain.link/cre/guides/operations/monitoring-workflows); it is not a public Solana program explorer. Public receipts from the recorded live flow are available here:
+
+- [DON report delivered through the Keystone Forwarder](https://explorer.solana.com/tx/2M4SasZwwPKU9z4EZeG8oYUc8jU3s4Fs1Zo95MUT6mdzKDkRgJwJMqXc75ZDQdSjK4g3oiSKXn4UQ4xCkTcyeueh?cluster=devnet).
+- [Approved payment executed through the Guard](https://explorer.solana.com/tx/66iwddN195m8DthNryZeRtBDfinnpkXdHiS5bqEBcZw25HQNXVFdDnh7kQZm3XWbA28egbxhVV4muzNQvHTVdygu?cluster=devnet).
+
+Redeployments produce new workflow IDs. These receipts demonstrate an earlier recorded deployment; the latest recorded ID is listed above.
+
+---
+
 ## Core stack
 
 - **Guard: Anchor / Rust** checks the review, transaction hash, policy and live destination before a Squads execution CPI.
