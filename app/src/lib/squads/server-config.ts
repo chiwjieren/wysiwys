@@ -183,11 +183,14 @@ export function rpcUrl() {
   return process.env.SOLANA_RPC_URL || clusterApiUrl("devnet");
 }
 export function assertSameOrigin(request: Request) {
-  const expected = new URL(request.url);
-  // Next dev binds to 0.0.0.0; browsers use the original Host header.
-  const host = request.headers.get("host");
-  if (host) expected.host = host;
-  if (request.headers.get("origin") !== expected.origin)
+  const url = new URL(request.url);
+  // Next dev binds to 0.0.0.0 and production sits behind Caddy (TLS ends there),
+  // so browsers use the original Host header and the forwarded scheme.
+  const host = request.headers.get("host") || url.host;
+  const proto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0].trim() ||
+    url.protocol.slice(0, -1);
+  if (request.headers.get("origin") !== `${proto}://${host}`)
     throw new Error("Invalid request origin.");
 }
 // Instance-wide ceiling also bounds requests from callers that forge forwarded IPs.

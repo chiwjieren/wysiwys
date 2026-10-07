@@ -214,6 +214,27 @@ test("same-origin checks support Next.js bound-host URLs while rejecting foreign
     ),
   );
 });
+test("same-origin checks work behind an HTTPS reverse proxy (Caddy on EC2)", () => {
+  const proxied = (origin: string) =>
+    new Request("http://127.0.0.1:3000/api/squads/rpc", {
+      headers: {
+        host: "app.13-250-78-41.sslip.io",
+        "x-forwarded-proto": "https",
+        origin,
+      },
+    });
+  assert.doesNotThrow(() =>
+    assertSameOrigin(proxied("https://app.13-250-78-41.sslip.io")),
+  );
+  assert.throws(
+    () => assertSameOrigin(proxied("http://app.13-250-78-41.sslip.io")),
+    /origin/i,
+  );
+  assert.throws(
+    () => assertSameOrigin(proxied("https://evil.example")),
+    /origin/i,
+  );
+});
 test("transaction preparation rejects foreign origins", () => {
   assert.doesNotThrow(() =>
     assertSameOrigin(
