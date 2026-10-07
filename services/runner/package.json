@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@anchor-lang/core": "^1.2.0",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
     "@solana/web3.js": "^1.99.0",
-    "@wysiwys/shared": "*",
     "@sqds/multisig": "2.1.4",
-    "@wysiwys/decoder": "*"
+    "@wysiwys/decoder": "*",
+    "@wysiwys/shared": "*"
   }
 }

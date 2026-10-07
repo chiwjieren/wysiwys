@@ -82,6 +82,22 @@ test("config takes guard values and token from deployments/devnet.json for new t
   assert.equal(loadConfig({}, () => null).guardSetup, null);
 });
 
+test("config enables the CRE gateway trigger only with a workflow id and a signing key", () => {
+  const key = `0x${"11".repeat(32)}`;
+  const id = "ab".repeat(32);
+  assert.equal(loadConfig({}, () => null).gateway, null);
+  assert.equal(loadConfig({ CRE_WORKFLOW_ID: id }, () => null).gateway, null);
+  assert.deepEqual(loadConfig({ CRE_WORKFLOW_ID: id, CRE_GATEWAY_PRIVATE_KEY: key }, () => null).gateway, {
+    url: "https://01.gateway.zone-a.cre.chain.link",
+    workflowId: id,
+    privateKey: key,
+  });
+  assert.equal(
+    loadConfig({ CRE_WORKFLOW_ID: id, CRE_GATEWAY_PRIVATE_KEY: key, CRE_GATEWAY_URL: "https://gw.example" }, () => null).gateway?.url,
+    "https://gw.example",
+  );
+});
+
 test("config falls back to the shared IDL address and public devnet RPC", () => {
   const cfg = loadConfig({}, () => null);
   assert.equal(cfg.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");

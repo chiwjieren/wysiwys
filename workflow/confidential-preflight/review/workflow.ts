@@ -3,7 +3,6 @@ import {
 	calculateAccountsHash,
 	ConsensusAggregationByFields,
 	consensusIdenticalAggregation,
-	identical,
 	median,
 	SolanaTxStatus,
 	SolanaReceiverContractExecutionStatus,
@@ -27,6 +26,8 @@ import { normalizeSnapshot, selectQuorum, type SnapshotAccount } from './rpc-quo
 // stored Squads transaction, the GuardConfig and the destination -> tx_hash check -> decode -> private
 // policy and Scorechain screening inside the TEE -> 117-byte report through the Keystone forwarder to
 // the guard's on_report. Contract: docs/specs/guard-cre-interface.md.
+// execution "don" runs the same review as a plain DON handler (live DON without Confidential Workflows
+// enrollment): the policy and screening key are Vault DON secrets visible to node operators at run time.
 
 const address = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)
 const commonConfig = {
@@ -36,7 +37,8 @@ const commonConfig = {
 		approvalSeconds: z.number().int().positive(),
 		maxSlotLag: z.number().int().nonnegative().max(128),
 		screening: z.boolean(),
-		authorizedKeys: z.array(z.string()),
+		execution: z.enum(['tee', 'don']).default('tee'),
+		authorizedKeys: z.array(z.object({ type: z.literal('KEY_TYPE_ECDSA_EVM'), publicKey: z.string().regex(/^0x[0-9a-fA-F]{40}$/) }).strict()),
 }
 export const configSchema = z.union([
 	z.object({ ...commonConfig, mode: z.literal('report').default('report'),
@@ -87,9 +89,23 @@ function validateProviders(endpoints: string[]) {
 }
 
 type ReadContext = { minContextSlot: number; eligible: string }
+/** One node's health observation: the slot floor plus a 0/1 vote per provider. */
+type Health = { minContextSlot: number; quicknode: number; helius: number; alchemy: number }
 
-/** Health observations vary by node; CRE aggregates the floor by median and eligibility identically. */
-function readHealth(node: NodeRuntime<Config>, endpoints: string[]): ReadContext {
+/**
+ * Health observations vary by node (a rate-limited provider can fail on some nodes only), so every
+ * field is a median: the slot floor, and per provider a majority vote of the nodes' 0/1 health flags.
+ */
+export const HEALTH_AGGREGATION = ConsensusAggregationByFields<Health>({
+	minContextSlot: median, quicknode: median, helius: median, alchemy: median,
+})
+
+/** Providers the DON agreed are healthy, as the eligibility mask the account reads use. */
+export function eligibleFrom(health: Health): string {
+	return [health.quicknode, health.helius, health.alchemy].map((v) => (v >= 0.5 ? '1' : '0')).join('')
+}
+
+function readHealth(node: NodeRuntime<Config>, endpoints: string[]): Health {
 	const slots = endpoints.map((endpoint, i) => {
 		try {
 			const genesis = (rpc(node, endpoint, 'getGenesisHash', []) as { result?: unknown }).result
@@ -105,7 +121,8 @@ function readHealth(node: NodeRuntime<Config>, endpoints: string[]): ReadContext
 	const valid = slots.filter((s): s is number => s !== null).sort((a, b) => a - b)
 	if (valid.length < 2) throw new Error('RPC_NO_QUORUM')
 	const floor = Math.max(0, valid[Math.floor((valid.length - 1) / 2)]! - node.config.maxSlotLag)
-	return { minContextSlot: floor, eligible: slots.map(s => s === null ? '0' : '1').join('') }
+	const vote = (i: number) => (slots[i] === null ? 0 : 1)
+	return { minContextSlot: floor, quicknode: vote(0), helius: vote(1), alchemy: vote(2) }
 }
 
 /** Both reads reuse the DON-agreed floor and eligible-provider set; at most 13 HTTP calls total. */
@@ -133,9 +150,10 @@ function readAgreed(don: Runtime<Config>, endpoints: string[], addresses: string
 	return (JSON.parse(agreed) as SnapshotAccount[]).map((a) => (a ? { address: a.address, owner: a.owner, data: base64ToBytes(a.data) } : null))
 }
 
-/** Scorechain sanctions screening of the recipient wallet, from inside the enclave. */
-function screen(runtime: TeeRuntime<Config>, wallet: string): 'SANCTIONED' | 'NO_SANCTIONS_MATCH' {
-	const apiKey = runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value
+type ScreeningResult = 'SANCTIONED' | 'NO_SANCTIONS_MATCH'
+
+/** Scorechain sanctions screening of the recipient wallet: inside the enclave, or on each node in DON execution. */
+function screenWallet(runtime: TeeRuntime<Config> | NodeRuntime<Config>, apiKey: string, wallet: string): ScreeningResult {
 	const response = new cre.capabilities.HTTPClient()
 		.sendRequest(runtime, {
 			url: `https://sanctions.api.scorechain.com/v1/addresses/${encodeURIComponent(wallet)}`,
@@ -151,7 +169,23 @@ function screen(runtime: TeeRuntime<Config>, wallet: string): 'SANCTIONED' | 'NO
 	return records.some((r) => r.isSanctioned === true) ? 'SANCTIONED' : 'NO_SANCTIONS_MATCH'
 }
 
+/** Confidential execution: the policy and the screening call stay inside the enclave. */
 export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): string {
+	return runReview(runtime, runtime.usingTheDons(), payload, (wallet) =>
+		screenWallet(runtime, runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value, wallet))
+}
+
+/** DON execution: same review; screening runs on every node and needs identical answers. */
+export function onReviewDon(runtime: Runtime<Config>, payload: HTTPPayload): string {
+	return runReview(runtime, runtime, payload, (wallet) => {
+		const apiKey = runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value
+		return runtime.runInNodeMode(screenWallet, consensusIdenticalAggregation<ScreeningResult>())(apiKey, wallet).result()
+	})
+}
+
+type ReviewHost = Pick<Runtime<Config>, 'config' | 'getSecret' | 'log'>
+
+function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPayload, screen: (wallet: string) => ScreeningResult): string {
 	const config = configSchema.parse(runtime.config)
 	const req = requestSchema.parse(JSON.parse(new TextDecoder().decode(payload.input)))
 	const txIndex = BigInt(req.txIndex)
@@ -162,12 +196,10 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 	const vault = pda([utf8('multisig'), ms, utf8('vault'), Uint8Array.of(0)], SQUADS_PROGRAM).toBase58()
 
 	// Chain reads and the write run on the DON; RPC credentials are operational, not confidential.
-	const don = runtime.usingTheDons()
 	const endpoints = RPC_SECRETS.map((id) => don.getSecret({ id }).result().value)
 	validateProviders(endpoints)
-	const context = don.runInNodeMode(readHealth, ConsensusAggregationByFields<ReadContext>({
-		minContextSlot: median, eligible: identical,
-	}))(endpoints).result()
+	const health = don.runInNodeMode(readHealth, HEALTH_AGGREGATION)(endpoints).result()
+	const context: ReadContext = { minContextSlot: Math.floor(health.minContextSlot), eligible: eligibleFrom(health) }
 	const [reviewAcc, vaultTxAcc, configAcc] = readAgreed(don, endpoints, [reviewPda, vaultTxPda, configPda], context)
 	if (!reviewAcc || !vaultTxAcc || !configAcc) throw new Error('review, stored transaction or guard config not found')
 	const review = parseReview(reviewAcc, config.guardProgram)
@@ -179,7 +211,7 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		throw new Error('guard config names another forwarder')
 	}
 
-	// Private policy, decrypted only inside the enclave; its commitment must equal the guard's.
+	// Private policy (decrypted inside the enclave in TEE execution); its commitment must equal the guard's.
 	const policy = JSON.parse(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value) as Policy
 	const commitment = policyHash(policy, config.decoderVersion)
 	if (!commitment.every((b, i) => b === guard.policyHash[i])) throw new Error('POLICY_STALE: policy document does not match the guard config')
@@ -192,7 +224,7 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		const plan = planReview(vaultTxAcc, vault, policy)
 		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination], context)[0] ?? null, policy)
 	}
-	if (decision.verdict === VERDICT.APPROVE && config.screening && screen(runtime, decision.wallet!) === 'SANCTIONED') {
+	if (decision.verdict === VERDICT.APPROVE && config.screening && screen(decision.wallet!) === 'SANCTIONED') {
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.SCREENING_REJECTED, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'recipient failed sanctions screening' }
 	}
 
@@ -229,19 +261,25 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		})
 		.result()
 
-	if (write.txStatus !== SolanaTxStatus.SUCCESS || write.receiverContractExecutionStatus !== SolanaReceiverContractExecutionStatus.SUCCESS ||
-		write.errorMessage || write.txSignature?.length !== 64 || !write.txSignature.some(b => b !== 0)) {
-		throw new Error('REPORT_DELIVERY_FAILED: successful transaction, receiver execution and signature required')
+	// Fail on any evidence of failure. The live DON reply can omit the optional receiver status and
+	// signature; that is not failure (the guard's Review account is the record), only unconfirmed here.
+	const sig = write.txSignature?.length ? write.txSignature : undefined
+	runtime.log(`write reply: txStatus=${write.txStatus} receiver=${write.receiverContractExecutionStatus ?? 'none'} signature=${sig?.length ?? 0}B error=${write.errorMessage ? 'yes' : 'no'}`)
+	if (write.txStatus !== SolanaTxStatus.SUCCESS || write.errorMessage ||
+		(write.receiverContractExecutionStatus !== undefined && write.receiverContractExecutionStatus !== SolanaReceiverContractExecutionStatus.SUCCESS) ||
+		(sig !== undefined && (sig.length !== 64 || !sig.some(b => b !== 0)))) {
+		throw new Error('REPORT_DELIVERY_FAILED: transaction, receiver execution or signature reported a failure')
 	}
-	const signature = bs58(write.txSignature)
+	const confirmed = sig !== undefined && write.receiverContractExecutionStatus === SolanaReceiverContractExecutionStatus.SUCCESS
 	return JSON.stringify({
 		review: reviewPda,
 		verdict: decision.verdict === VERDICT.APPROVE ? 'approve' : 'reject',
 		reason: decision.reason,
 		summary: decision.summary,
+		delivery: confirmed ? 'confirmed' : 'unconfirmed',
 		txStatus: write.txStatus,
 		receiverStatus: write.receiverContractExecutionStatus ?? null,
-		txSignature: signature,
+		txSignature: sig ? bs58(sig) : null,
 		error: write.errorMessage || null,
 	})
 }
@@ -264,8 +302,10 @@ function bs58(bytes: Uint8Array): string {
 }
 
 export function initWorkflow(config: Config) {
+	const trigger = new cre.capabilities.HTTPCapability().trigger({ authorizedKeys: config.authorizedKeys })
+	if (config.execution === 'don') return [cre.handler(trigger, onReviewDon)]
 	return [
-		cre.handlerInTee(new cre.capabilities.HTTPCapability().trigger({ authorizedKeys: config.authorizedKeys as never }), onReview, [
+		cre.handlerInTee(trigger, onReview, [
 			{ tee: 'nitro', regions: ['us-west-2'] },
 		]),
 	]

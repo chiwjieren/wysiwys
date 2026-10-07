@@ -13,6 +13,7 @@ import { CreRunner } from "./cre";
 import { createReviewVerifier } from "./delivery";
 import { openStore } from "./store";
 import { HttpTrigger, LogTrigger } from "./trigger";
+import { GatewayTrigger } from "./gateway";
 
 // Secrets (RPC key, trigger token) come from the root .env locally and from SSM on EC2.
 try {
@@ -27,7 +28,7 @@ const cfg = loadConfig();
 const programId = new PublicKey(cfg.programId);
 mkdirSync(dirname(cfg.dbPath), { recursive: true });
 const store = openStore(cfg.dbPath);
-// In-process CRE simulation when configured; else a remote HTTP trigger; else log only.
+// Live DON via the CRE gateway when configured; else in-process CRE simulation; else a remote HTTP trigger; else log only.
 const connection = new Connection(cfg.rpcUrl, {
   commitment: "finalized",
   wsEndpoint: cfg.wsUrl ?? undefined,
@@ -38,7 +39,9 @@ const creRunner = cfg.cre
       verifyReview: createReviewVerifier(connection, programId),
     })
   : null;
-const trigger = creRunner
+const trigger = cfg.gateway
+  ? new GatewayTrigger(cfg.gateway)
+  : creRunner
   ? creRunner.asTrigger()
   : cfg.triggerUrl
     ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined)
@@ -76,7 +79,7 @@ console.log(
   `[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`,
 );
 console.log(
-  `[runner] trigger: ${cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
+  `[runner] trigger: ${cfg.gateway ? `CRE gateway, live workflow ${cfg.gateway.workflowId.replace(/^0x/, "").slice(0, 12)}..., signer ${(trigger as GatewayTrigger).address}` : cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
 );
 console.log(
   `[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`,

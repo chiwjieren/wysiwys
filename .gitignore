@@ -30,3 +30,6 @@ services/runner/data/
 
 # Private policy document (whitelist + salt). Only its hash (GUARD_POLICY_HASH) is public.
 workflow/policy.json
+
+# cre workflow deploy output
+binary.wasm.br.b64

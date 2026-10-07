@@ -35,7 +35,7 @@ async function main() {
   const txIndex = BigInt(process.argv[2] ?? "");
   const env = process.env;
   const c = new Connection(env.HELIUS_DEVNET_RPC_URL || "https://api.devnet.solana.com", "confirmed");
-  const d: Deployment = JSON.parse(readFileSync(join(root, "deployments/devnet.json"), "utf8"));
+  const d: Deployment = JSON.parse(readFileSync(resolve(root, process.env.WYSIWYS_DEPLOYMENT || "deployments/devnet.json"), "utf8"));
   const signers = [1, 2, 3].map((i) => loadKey(join(root, `keys/signer-${i}.json`)));
   const ms = new PublicKey(d.multisig);
   const programId = new PublicKey(d.programId);
