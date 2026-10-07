@@ -155,16 +155,14 @@ test("policy change progress: votes, waiting period, applied", () => {
 test("policy requests: current, read and submit with strict fields", () => {
   const multisig = key();
   assert.deepEqual(parsePolicyRequest({ action: "current", multisig }), { action: "current", multisig });
-  assert.deepEqual(parsePolicyRequest({ action: "read", multisig, hash: "ab".repeat(32) }), { action: "read", multisig, hash: "ab".repeat(32) });
-  // One signed read can fetch a proposed document and the document it replaces.
-  assert.deepEqual(parsePolicyRequest({ action: "read", multisig, hash: "ab".repeat(32), base: "cd".repeat(32) }), {
-    action: "read", multisig, hash: "ab".repeat(32), base: "cd".repeat(32),
-  });
+  // A proposal read names the proposal; the server reads its marker on chain for the hashes.
+  assert.deepEqual(parsePolicyRequest({ action: "read", multisig, index: "7" }), { action: "read", multisig, index: "7" });
   const document = policy();
   assert.deepEqual(parsePolicyRequest({ action: "submit", multisig, document }), { action: "submit", multisig, document });
   for (const bad of [
     null, { action: "delete", multisig }, { action: "current", multisig: "nope" }, { action: "read", multisig, hash: "xyz" },
-    { action: "submit", multisig }, { action: "current", multisig, extra: 1 }, { action: "read", multisig, hash: "ab".repeat(32), base: "x" },
+    { action: "submit", multisig }, { action: "current", multisig, extra: 1 },
+    { action: "read", multisig, hash: "ab".repeat(32) }, { action: "read", multisig, index: "0" }, { action: "read", multisig, index: "x" },
   ])
     assert.throws(() => parsePolicyRequest(bad));
 });

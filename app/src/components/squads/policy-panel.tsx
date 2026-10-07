@@ -287,9 +287,8 @@ function PolicyEditor(p: {
         </ul>
       )}
       <p className="caption">
-        After the vote and the waiting period anyone can apply it. The Chainlink
-        workflow must have the new document before payments are reviewed under
-        it (the operator uploads it).
+        After the vote and the waiting period anyone can apply it. Reviews then
+        use the new policy automatically.
       </p>
       <div className="flex gap-2">
         <Button

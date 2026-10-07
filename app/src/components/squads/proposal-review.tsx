@@ -251,8 +251,7 @@ export function LiveProposal({ id }: { id: string }) {
       }>({
         action: "read",
         multisig: config.multisig,
-        hash: policyChange.newPolicyHash,
-        base: policyChange.expectedPolicyHash,
+        index: id,
       });
       setPolicyDocs({ current: r.baseDocument, next: r.document });
     } catch (e) {
