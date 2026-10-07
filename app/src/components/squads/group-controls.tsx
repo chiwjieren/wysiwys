@@ -14,11 +14,21 @@ import {
 import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
+import { PublicKey } from "@solana/web3.js";
 import {
-  fixedMembershipReason,
   GUARDED_GROUP_MAX_INVITES,
+  MEMBER_PERMISSION_CHOICES,
+  membershipChangeNote,
+  planMemberEdit,
+  planMemberRemoval,
   standardGroupsEnabled,
+  validateMemberInputs,
 } from "@/lib/squads/groups";
+import {
+  permissionChoiceLabel,
+  shortAddress,
+} from "@/lib/squads/config-actions";
+import { MEMBER_NAME_MAX, useMemberNames } from "@/lib/squads/member-names";
 
 // Next.js inlines NEXT_PUBLIC_* only for literal property access.
 const standardEnabled = standardGroupsEnabled(
@@ -43,9 +53,11 @@ export function CreateGroupButton({
   // Empty means "every member must approve" (the default).
   const [threshold, setThreshold] = useState("");
   const [standard, setStandard] = useState(false);
-  const invitees = members
-    .map((member) => member.address.trim())
-    .filter(Boolean);
+  const checked = validateMemberInputs(
+    members.map((member) => member.address),
+    auth.address ?? undefined,
+  );
+  const invitees = checked.invitees;
   const count = invitees.length + 1;
   const required = threshold || String(count);
   const maxInvites = standard ? 19 : GUARDED_GROUP_MAX_INVITES;
@@ -74,6 +86,7 @@ export function CreateGroupButton({
           className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!checked.valid) return;
             const address = await createGroup(
               name.trim(),
               invitees,
@@ -98,52 +111,68 @@ export function CreateGroupButton({
           <fieldset className="space-y-2">
             <legend className="mb-2">Other member wallets</legend>
             {members.map((member, index) => (
-              <div key={member.id} className="flex items-center gap-2">
-                <label
-                  className="sr-only"
-                  htmlFor={`${memberFieldId}-${member.id}`}
-                >
-                  Wallet address {index + 1}
-                </label>
-                <Input
-                  id={`${memberFieldId}-${member.id}`}
-                  value={member.address}
-                  placeholder="Solana wallet address"
-                  spellCheck={false}
-                  autoComplete="off"
-                  disabled={!!busy}
-                  onChange={(e) =>
-                    setMembers((current) =>
-                      current.map((row) =>
-                        row.id === member.id
-                          ? { ...row, address: e.target.value }
-                          : row,
-                      ),
-                    )
-                  }
-                />
-                {members.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    aria-label={`Remove wallet ${index + 1}`}
-                    disabled={!!busy}
-                    onClick={() => {
-                      const remaining = members.filter(
-                        (row) => row.id !== member.id,
-                      );
-                      setMembers(remaining);
-                      const nextCount =
-                        remaining.filter((row) => row.address.trim()).length +
-                        1;
-                      if (Number(threshold) > nextCount)
-                        setThreshold(String(nextCount));
-                    }}
+              <div key={member.id} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <label
+                    className="sr-only"
+                    htmlFor={`${memberFieldId}-${member.id}`}
                   >
-                    <X className="size-4" />
-                  </Button>
+                    Wallet address {index + 1}
+                  </label>
+                  <Input
+                    id={`${memberFieldId}-${member.id}`}
+                    aria-invalid={!!checked.errors[index]}
+                    aria-describedby={
+                      checked.errors[index]
+                        ? `${memberFieldId}-${member.id}-error`
+                        : undefined
+                    }
+                    value={member.address}
+                    placeholder="Solana wallet address"
+                    spellCheck={false}
+                    autoComplete="off"
+                    disabled={!!busy}
+                    onChange={(e) =>
+                      setMembers((current) =>
+                        current.map((row) =>
+                          row.id === member.id
+                            ? { ...row, address: e.target.value }
+                            : row,
+                        ),
+                      )
+                    }
+                  />
+                  {members.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      aria-label={`Remove wallet ${index + 1}`}
+                      disabled={!!busy}
+                      onClick={() => {
+                        const remaining = members.filter(
+                          (row) => row.id !== member.id,
+                        );
+                        setMembers(remaining);
+                        const nextCount =
+                          remaining.filter((row) => row.address.trim()).length +
+                          1;
+                        if (Number(threshold) > nextCount)
+                          setThreshold(String(nextCount));
+                      }}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  )}
+                </div>
+                {checked.errors[index] && (
+                  <p
+                    id={`${memberFieldId}-${member.id}-error`}
+                    className="text-xs text-destructive"
+                  >
+                    {checked.errors[index]}
+                  </p>
                 )}
               </div>
             ))}
@@ -163,7 +192,8 @@ export function CreateGroupButton({
           </fieldset>
           <p className="caption">
             Your wallet joins automatically. Up to {maxInvites} other wallets.
-            {!standard && " Members are fixed after creation."}
+            {!standard &&
+              " Member changes need the members' vote and are checked by the guard."}
           </p>
           <label className="block space-y-2">
             <span>Required approvals</span>
@@ -207,6 +237,7 @@ export function CreateGroupButton({
                 !name.trim() ||
                 !auth.address ||
                 invitees.length > maxInvites ||
+                !checked.valid ||
                 !/^\d+$/.test(required) ||
                 Number(required) < 1 ||
                 Number(required) > count
@@ -364,8 +395,9 @@ function InvitationForm() {
         Propose member invitation
       </Button>
       <p className="caption">
-        New members receive proposal and voting permissions. Invitations become
-        active after group approval and execution by an authorized executor.
+        {config.executor && config.executionMode !== "standard"
+          ? "New members can propose and vote, never execute. The invitation takes effect after the group approves it and it is executed through the guard."
+          : "New members receive proposal and voting permissions. Invitations become active after group approval and execution by an authorized executor."}
       </p>
     </div>
   );
@@ -373,16 +405,6 @@ function InvitationForm() {
 
 export function GroupInvite() {
   const { snapshot, config } = useSquad();
-  const fixed = fixedMembershipReason(config);
-  if (fixed)
-    return (
-      <div className="flex max-w-sm flex-col items-end gap-1 text-right">
-        <Button variant="secondary" disabled>
-          Invite member
-        </Button>
-        <p className="caption">{fixed}</p>
-      </div>
-    );
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -392,10 +414,282 @@ export function GroupInvite() {
       </DialogTrigger>
       <DialogContent className="bg-card">
         <DialogTitle>Invite a member</DialogTitle>
-        <DialogDescription>
-          Membership changes need your group’s approval.
-        </DialogDescription>
+        <DialogDescription>{membershipChangeNote(config)}</DialogDescription>
         <InvitationForm />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Proposes a RemoveMember config change. Never offered for the guard executor.
+export function RemoveMemberButton({ address }: { address: string }) {
+  const { config, snapshot, account, removeMember, busy, error } = useSquad();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  if (!snapshot || !config || address === config.executor) return null;
+  const squad = snapshot.squad;
+  const proposer = squad.members.find(
+    (m) => m.key.toBase58() === account?.address,
+  );
+  let plan: ReturnType<typeof planMemberRemoval> | undefined;
+  let problem = "";
+  try {
+    plan = planMemberRemoval(squad, new PublicKey(address), config.executor);
+  } catch (e) {
+    problem = e instanceof Error ? e.message : "This member cannot be removed.";
+  }
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!busy) setOpen(next);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          variant="secondary"
+          disabled={!proposer || !(proposer.permissions.mask & 1) || !!busy}
+        >
+          Remove
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-card">
+        <DialogTitle>Remove a member</DialogTitle>
+        <DialogDescription>{membershipChangeNote(config)}</DialogDescription>
+        <p className="break-all text-xs">{address}</p>
+        {problem ? (
+          <p role="alert" className="text-destructive">
+            {problem}
+          </p>
+        ) : plan?.newThreshold !== undefined ? (
+          <p>
+            Removing this member leaves {plan.remainingVoters} voters, so this
+            proposal also lowers required approvals from {squad.threshold} to{" "}
+            {plan.newThreshold}.
+          </p>
+        ) : (
+          <p>
+            Required approvals stay at {squad.threshold} of{" "}
+            {plan?.remainingVoters} voters.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          disabled={!!problem || !proposer || !!busy}
+          onClick={async () => {
+            const id = await removeMember(address);
+            if (id) {
+              setOpen(false);
+              router.push(`/transactions/${id}`);
+            }
+          }}
+        >
+          {busy || "Propose member removal"}
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function parseWallet(value: string) {
+  try {
+    return { key: new PublicKey(value) };
+  } catch {
+    return { problem: "Enter the new member's Solana wallet address." };
+  }
+}
+
+// Edit a member: a browser-only display name, and one config proposal that
+// replaces the wallet and/or changes permissions (never Execute). Never offered
+// for the guard executor.
+export function EditMemberButton({
+  address,
+  label,
+}: {
+  address: string;
+  label: string;
+}) {
+  const { config, snapshot, account, editMember, busy, error } = useSquad();
+  const { names, save } = useMemberNames(config?.multisig);
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [nameNote, setNameNote] = useState("");
+  const [wallet, setWallet] = useState("");
+  const [permissions, setPermissions] = useState<number>();
+  if (!snapshot || !config || address === config.executor) return null;
+  const squad = snapshot.squad;
+  const current = squad.members.find((m) => m.key.toBase58() === address);
+  const proposer = squad.members.find(
+    (m) => m.key.toBase58() === account?.address,
+  );
+  const canPropose = !!proposer && !!(proposer.permissions.mask & 1);
+  const guarded = !!config.executor && config.executionMode !== "standard";
+  const parsed = wallet.trim() ? parseWallet(wallet.trim()) : undefined;
+  const changesPermissions =
+    permissions !== undefined && permissions !== current?.permissions.mask;
+  let plan: ReturnType<typeof planMemberEdit> | undefined;
+  let problem = parsed?.problem ?? "";
+  if ((parsed || changesPermissions) && !problem) {
+    try {
+      plan = planMemberEdit(squad, {
+        member: new PublicKey(address),
+        newWallet: parsed?.key,
+        permissions: changesPermissions ? permissions : undefined,
+        executor: config.executor,
+        vault: snapshot.vault.toBase58(),
+        label: label.replace(/ · You$/, ""),
+      });
+    } catch (e) {
+      problem = e instanceof Error ? e.message : "This change is not allowed.";
+    }
+  }
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (busy) return;
+        setOpen(next);
+        if (next) {
+          setName(names[address] ?? "");
+          setNameNote("");
+          setWallet("");
+          setPermissions(undefined);
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="secondary" disabled={!!busy}>
+          Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-card">
+        <DialogTitle>Edit member</DialogTitle>
+        <DialogDescription className="break-all">
+          {label} · {address}
+        </DialogDescription>
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setNameNote(
+              save(address, name)
+                ? name.trim()
+                  ? "Name saved."
+                  : "Name cleared."
+                : "This browser blocked saving the name.",
+            );
+          }}
+        >
+          <label className="block" htmlFor="edit-member-name">
+            Name
+          </label>
+          <div className="flex gap-2">
+            <Input
+              id="edit-member-name"
+              value={name}
+              maxLength={MEMBER_NAME_MAX}
+              placeholder={label}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameNote("");
+              }}
+            />
+            <Button type="submit" variant="secondary">
+              Save name
+            </Button>
+          </div>
+          <p className="caption">
+            Only visible in this browser. Saving a name sends no transaction.
+            {nameNote && ` ${nameNote}`}
+          </p>
+        </form>
+        <div className="space-y-4 border-t pt-4">
+          <div>
+            <h3 className="font-medium">Propose a change</h3>
+            <p className="caption">
+              {membershipChangeNote(config)} Changes apply only after the
+              proposal is approved and executed.
+            </p>
+          </div>
+          <label className="block" htmlFor="edit-member-wallet">
+            Replace wallet
+          </label>
+          <Input
+            id="edit-member-wallet"
+            placeholder="New Solana wallet address (optional)"
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+          />
+          <fieldset className="space-y-2">
+            <legend className="mb-2">Permissions</legend>
+            {MEMBER_PERMISSION_CHOICES.map((mask) => (
+              <label key={mask} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="edit-member-permissions"
+                  value={mask}
+                  checked={(permissions ?? current?.permissions.mask) === mask}
+                  onChange={() => setPermissions(mask)}
+                />
+                <span>{permissionChoiceLabel(mask)}</span>
+              </label>
+            ))}
+            <p className="caption">
+              {guarded
+                ? "Members never get Execute. Only the guard executes."
+                : "Execute cannot be granted from here."}
+            </p>
+          </fieldset>
+          {problem ? (
+            <p role="alert" className="text-destructive">
+              {problem}
+            </p>
+          ) : plan ? (
+            <div className="space-y-1 rounded-lg bg-secondary p-3">
+              <p className="caption">This proposal will:</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {plan.summary.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="caption">
+              Enter a new wallet or choose different permissions to propose a
+              change.
+            </p>
+          )}
+          {!canPropose && (
+            <p className="caption">
+              Connect a member wallet with Initiate permission to propose.
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-destructive">
+              {error}
+            </p>
+          )}
+          <Button
+            disabled={!plan || !canPropose || !!busy}
+            onClick={async () => {
+              const id = await editMember(address, {
+                newWallet: parsed?.key?.toBase58(),
+                permissions: changesPermissions ? permissions : undefined,
+              });
+              if (id) {
+                setOpen(false);
+                router.push(`/transactions/${id}`);
+              }
+            }}
+          >
+            {busy || "Propose member change"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

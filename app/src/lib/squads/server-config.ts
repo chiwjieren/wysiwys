@@ -141,9 +141,20 @@ export async function loadDeployment(): Promise<{
         guardArgs: parseGuardArgs(raw),
       };
 }
+// Prepare actions and the runner settlement route each one calls.
+const RUNNER_PATHS = {
+  propose: "frontend/propose",
+  execute: "frontend/execute",
+  // guarded_config_execute for a voted Squads config transaction.
+  configExecute: "frontend/config-execute",
+} as const;
+export type PrepareAction = keyof typeof RUNNER_PATHS;
+export function runnerPath(action: PrepareAction) {
+  return RUNNER_PATHS[action];
+}
 export function isPrepareRequest(input: unknown): input is {
   multisig: string;
-  action: "propose" | "execute";
+  action: PrepareAction;
   index: string;
   member: unknown;
 } {
@@ -160,7 +171,8 @@ export function isPrepareRequest(input: unknown): input is {
     return false;
   }
   return (
-    (action === "propose" || action === "execute") &&
+    typeof action === "string" &&
+    Object.hasOwn(RUNNER_PATHS, action) &&
     typeof index === "string" &&
     /^\d{1,20}$/.test(index) &&
     BigInt(index) >= 1n &&
@@ -171,11 +183,14 @@ export function rpcUrl() {
   return process.env.SOLANA_RPC_URL || clusterApiUrl("devnet");
 }
 export function assertSameOrigin(request: Request) {
-  const expected = new URL(request.url);
-  // Next dev binds to 0.0.0.0; browsers use the original Host header.
-  const host = request.headers.get("host");
-  if (host) expected.host = host;
-  if (request.headers.get("origin") !== expected.origin)
+  const url = new URL(request.url);
+  // Next dev binds to 0.0.0.0 and production sits behind Caddy (TLS ends there),
+  // so browsers use the original Host header and the forwarded scheme.
+  const host = request.headers.get("host") || url.host;
+  const proto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0].trim() ||
+    url.protocol.slice(0, -1);
+  if (request.headers.get("origin") !== `${proto}://${host}`)
     throw new Error("Invalid request origin.");
 }
 // Instance-wide ceiling also bounds requests from callers that forge forwarded IPs.

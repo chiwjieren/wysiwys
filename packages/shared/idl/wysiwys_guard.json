@@ -8,6 +8,101 @@
   },
   "instructions": [
     {
+      "name": "guarded_config_execute",
+      "discriminator": [
+        65,
+        245,
+        14,
+        174,
+        164,
+        146,
+        165,
+        156
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "multisig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "multisig",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        },
+        {
+          "name": "config_transaction"
+        },
+        {
+          "name": "executor",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  101,
+                  99,
+                  117,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "multisig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "Pays (or receives) rent if the multisig account is resized. The executor holds no funds."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "squads_program",
+          "address": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+        },
+        {
+          "name": "instructions_sysvar"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "guarded_execute",
       "discriminator": [
         24,
@@ -376,6 +471,19 @@
   ],
   "events": [
     {
+      "name": "ConfigExecuted",
+      "discriminator": [
+        254,
+        34,
+        40,
+        201,
+        46,
+        148,
+        70,
+        249
+      ]
+    },
+    {
       "name": "DecisionRecorded",
       "discriminator": [
         236,
@@ -525,9 +633,30 @@
       "code": 6021,
       "name": "InvalidConfig",
       "msg": "Invalid guard configuration"
+    },
+    {
+      "code": 6022,
+      "name": "ConfigActionNotAllowed",
+      "msg": "Config change not allowed: only adding or removing voters, threshold and time lock"
     }
   ],
   "types": [
+    {
+      "name": "ConfigExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "multisig",
+            "type": "pubkey"
+          },
+          {
+            "name": "tx_index",
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "DecisionRecorded",
       "type": {

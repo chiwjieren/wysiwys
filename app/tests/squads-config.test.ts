@@ -5,6 +5,7 @@ import {
   parseDeployment,
   assertSameOrigin,
   isPrepareRequest,
+  runnerPath,
 } from "../src/lib/squads/server-config";
 import { assetLabel } from "../src/lib/squads/payments";
 test("settlement preparation accepts propose and execute for the open treasury without a trade id", () => {
@@ -38,6 +39,45 @@ test("settlement preparation accepts propose and execute for the open treasury w
   ])
     assert.equal(isPrepareRequest(bad), false);
 });
+test("prepare requests accept configExecute and route it to the runner's config-execute", () => {
+  const member = Keypair.generate().publicKey.toBase58();
+  const ms = Keypair.generate().publicKey.toBase58();
+  assert.ok(
+    isPrepareRequest({
+      multisig: ms,
+      action: "configExecute",
+      index: "3",
+      member,
+    }),
+  );
+  for (const bad of [
+    "config-execute",
+    "configexecute",
+    "ConfigExecute",
+    "",
+    "toString",
+    "constructor",
+    "__proto__",
+    undefined,
+  ])
+    assert.equal(
+      isPrepareRequest({ multisig: ms, action: bad, index: "3", member }),
+      false,
+    );
+  assert.equal(
+    isPrepareRequest({
+      multisig: ms,
+      action: "configExecute",
+      index: "0",
+      member,
+    }),
+    false,
+  );
+  assert.equal(runnerPath("propose"), "frontend/propose");
+  assert.equal(runnerPath("execute"), "frontend/execute");
+  assert.equal(runnerPath("configExecute"), "frontend/config-execute");
+});
+
 const deployment = {
   multisig: Keypair.generate().publicKey.toBase58(),
   programId: Keypair.generate().publicKey.toBase58(),
@@ -172,6 +212,27 @@ test("same-origin checks support Next.js bound-host URLs while rejecting foreign
         headers: { host: "127.0.0.1:3105", origin: "http://evil.example" },
       }),
     ),
+  );
+});
+test("same-origin checks work behind an HTTPS reverse proxy (Caddy on EC2)", () => {
+  const proxied = (origin: string) =>
+    new Request("http://127.0.0.1:3000/api/squads/rpc", {
+      headers: {
+        host: "app.13-250-78-41.sslip.io",
+        "x-forwarded-proto": "https",
+        origin,
+      },
+    });
+  assert.doesNotThrow(() =>
+    assertSameOrigin(proxied("https://app.13-250-78-41.sslip.io")),
+  );
+  assert.throws(
+    () => assertSameOrigin(proxied("http://app.13-250-78-41.sslip.io")),
+    /origin/i,
+  );
+  assert.throws(
+    () => assertSameOrigin(proxied("https://evil.example")),
+    /origin/i,
   );
 });
 test("transaction preparation rejects foreign origins", () => {

@@ -17,7 +17,15 @@ import {
   type ProposalRecord,
 } from "@/lib/squads/sdk";
 import { readPaymentPreview, type PaymentPreview } from "@/lib/squads/payments";
-import { assertStandardExecution } from "@/lib/squads/execution";
+import {
+  assertStandardExecution,
+  guardedConfigGate,
+} from "@/lib/squads/execution";
+import {
+  describeConfigActions,
+  GUARD_REFUSES,
+} from "@/lib/squads/config-actions";
+import { memberDisplayName, useMemberNames } from "@/lib/squads/member-names";
 import {
   executeGate,
   isGuarded,
@@ -36,6 +44,7 @@ import {
 } from "./treasury-ui";
 export function LiveProposal({ id }: { id: string }) {
   const { config, snapshot, account, error, busy, vote, execute } = useSquad();
+  const { names } = useMemberNames(config?.multisig);
   const [record, setRecord] = useState<ProposalRecord | null>();
   const [readError, setReadError] = useState("");
   const [decoded, setDecoded] = useState<PaymentPreview>();
@@ -110,23 +119,20 @@ export function LiveProposal({ id }: { id: string }) {
       clearInterval(timer);
     };
   }, [config, id, snapshot]);
-  const configLines =
+  // Config actions of a guarded treasury are also checked against what
+  // guarded_config_execute accepts, so refused changes are flagged up front.
+  const configActions =
     record?.kind === "config"
-      ? record.transaction.actions.map((a) =>
-          a.__kind === "ChangeThreshold"
-            ? `Change required approvals to ${a.newThreshold}.`
-            : a.__kind === "AddMember"
-              ? `Invite ${a.newMember.key.toBase58()} with ${a.newMember.permissions.mask & 1 ? "proposal " : ""}${a.newMember.permissions.mask & 2 ? "voting " : ""}${a.newMember.permissions.mask & 4 ? "execution " : ""}permissions.`
-              : `Configuration action: ${a.__kind}.`,
+      ? describeConfigActions(
+          record.transaction.actions,
+          guarded ? config?.executor : undefined,
         )
-      : [];
-  const supported =
-    record?.kind === "config"
-      ? record.transaction.actions.length > 0 &&
-        record.transaction.actions.every(
-          (a) => a.__kind === "ChangeThreshold" || a.__kind === "AddMember",
-        )
-      : !!decoded?.supported;
+      : undefined;
+  const configLines = configActions?.lines.map((l) => l.text) ?? [];
+  const flags = configActions?.lines.map((l) => l.reason) ?? [];
+  const supported = configActions
+    ? configActions.supported
+    : !!decoded?.supported;
   const lines =
     record?.kind === "vault"
       ? (decoded?.lines ?? [])
@@ -167,6 +173,15 @@ export function LiveProposal({ id }: { id: string }) {
   }
   const enabled =
     !!account && !!snapshot && !!record && !error && !readError && !busy;
+  const guardedConfig = guarded && record?.kind === "config";
+  const configGate =
+    guardedConfig && record && snapshot
+      ? guardedConfigGate(
+          snapshot.squad,
+          record.proposal,
+          Math.floor(Date.now() / 1000),
+        )
+      : { enabled: false, reason: "Loading the group" };
   const gate =
     guarded && record
       ? review === undefined
@@ -283,11 +298,13 @@ export function LiveProposal({ id }: { id: string }) {
                 <h2>
                   {record.kind === "archived"
                     ? "Payment executed"
-                    : supported
-                      ? guarded
-                        ? "Transaction decoded (preview)"
-                        : "Transaction decoded"
-                      : "Unable to fully decode"}
+                    : configActions?.refused
+                      ? GUARD_REFUSES
+                      : supported
+                        ? guarded && record.kind !== "config"
+                          ? "Transaction decoded (preview)"
+                          : "Transaction decoded"
+                        : "Unable to fully decode"}
                 </h2>
               </div>
               <p className="mt-3">
@@ -297,13 +314,17 @@ export function LiveProposal({ id }: { id: string }) {
                     ? "Read the exact stored actions below before signing your approval."
                     : record.kind === "batch"
                       ? "Batch approval is unavailable until every payment can be fully decoded."
-                      : decoded?.reason ||
-                        "This configuration action is not supported by the preview."}
+                      : configActions?.refused
+                        ? "This proposal includes a change the guard does not execute. Reject it and propose a supported change."
+                        : decoded?.reason ||
+                          "This configuration action is not supported by the preview."}
               </p>
               <p className="caption mt-3">
                 {standard
                   ? "Decoded from the stored Squads transaction."
-                  : "Local decoder preview. It never overrides the on-chain review verdict."}
+                  : record.kind === "config"
+                    ? "Decoded from the stored Squads config transaction. The guard checks every action on-chain."
+                    : "Local decoder preview. It never overrides the on-chain review verdict."}
               </p>
             </div>
             <Panel className="gap-5">
@@ -316,10 +337,20 @@ export function LiveProposal({ id }: { id: string }) {
                       ? "Completed payment"
                       : "Proposed settings change"}
               </h2>
-              {lines.map((line, i) => (
-                <p className="break-words" key={i}>
-                  {line}
+              {configActions?.headline && (
+                <p className="break-words font-medium">
+                  {configActions.headline.text}
                 </p>
+              )}
+              {lines.map((line, i) => (
+                <div key={i}>
+                  <p className="break-words">{line}</p>
+                  {flags[i] && (
+                    <p className="text-xs font-medium text-destructive">
+                      {flags[i]}
+                    </p>
+                  )}
+                </div>
               ))}
               {!lines.length && (
                 <p className="text-muted-foreground">
@@ -342,6 +373,11 @@ export function LiveProposal({ id }: { id: string }) {
                     <p className="mt-1 break-words text-muted-foreground">
                       {line}
                     </p>
+                    {flags[i] && (
+                      <p className="mt-1 text-xs font-medium text-destructive">
+                        {flags[i]}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -395,7 +431,11 @@ export function LiveProposal({ id }: { id: string }) {
               </div>
               {snapshot?.squad.members
                 .filter((m) => !!(m.permissions.mask & 2))
-                .map((m, i) => {
+                .map((m) => {
+                  // Numbered as on the Members page (human members in order).
+                  const i = snapshot.squad.members
+                    .filter((h) => h.key.toBase58() !== config?.executor)
+                    .findIndex((h) => h.key.equals(m.key));
                   const approved = record.proposal.approved.some((k) =>
                       k.equals(m.key),
                     ),
@@ -412,9 +452,12 @@ export function LiveProposal({ id }: { id: string }) {
                         size={32}
                       />
                       <p className="flex-1 text-xs">
-                        {m.key.toBase58() === account?.address
-                          ? "Your wallet · You"
-                          : `Member ${i + 1}`}
+                        {memberDisplayName(
+                          m.key.toBase58(),
+                          i,
+                          names,
+                          account?.address,
+                        )}
                       </p>
                       <span
                         className={`text-xs ${approved ? "text-success" : rejected ? "text-destructive" : "text-muted-foreground"}`}
@@ -464,7 +507,13 @@ export function LiveProposal({ id }: { id: string }) {
               )}
             </Panel>
             <Panel className="gap-4">
-              <h2>{standard ? "Execution" : "Guard review"}</h2>
+              <h2>
+                {standard
+                  ? "Execution"
+                  : record.kind === "config"
+                    ? "Guard check"
+                    : "Guard review"}
+              </h2>
               <div>
                 {standard ? (
                   <StatusBadge>
@@ -476,6 +525,14 @@ export function LiveProposal({ id }: { id: string }) {
                   </StatusBadge>
                 ) : record.kind === "vault" || record.kind === "archived" ? (
                   <ReviewBadge review={review} />
+                ) : record.kind === "config" ? (
+                  <StatusBadge>
+                    {record.proposal.status.__kind === "Executed"
+                      ? "Executed"
+                      : configActions?.refused
+                        ? "Refused by the guard"
+                        : "Checked on-chain"}
+                  </StatusBadge>
                 ) : (
                   <StatusBadge>Not applicable</StatusBadge>
                 )}
@@ -487,9 +544,13 @@ export function LiveProposal({ id }: { id: string }) {
                     ? "Execution needs the Squads approvals and an unexpired Approved review. The guard enforces both on-chain."
                     : record.kind === "archived"
                       ? "This payment has been executed."
-                      : "Approved settings require protected configuration execution."}
+                      : record.kind === "config"
+                        ? "Membership changes are checked on-chain by the guard: voters only, no spending limits."
+                        : "This transaction type cannot be executed through the guard."}
               </p>
-              {(standard || record.kind === "vault") && (
+              {(standard ||
+                record.kind === "vault" ||
+                record.kind === "config") && (
                 <Button
                   disabled={
                     !enabled ||
@@ -498,7 +559,7 @@ export function LiveProposal({ id }: { id: string }) {
                       ? !!executionIssue
                       : !config?.settlementEnabled ||
                         record.proposal.status.__kind !== "Approved" ||
-                        !gate.enabled)
+                        !(guardedConfig ? configGate.enabled : gate.enabled))
                   }
                   onClick={() => void execute(BigInt(id), lines)}
                 >
@@ -514,6 +575,9 @@ export function LiveProposal({ id }: { id: string }) {
               )}
               {!standard && record.kind === "vault" && gate.reason && (
                 <p className="caption">{gate.reason}</p>
+              )}
+              {guardedConfig && configGate.reason && (
+                <p className="caption">{configGate.reason}</p>
               )}
               <p className="caption">
                 Proposal account{" "}

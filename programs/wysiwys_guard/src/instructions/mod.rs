@@ -7,3 +7,5 @@ pub use guarded_execute::*;
 pub use initialize_guard::*;
 pub use on_report::*;
 pub use request_review::*;
+pub mod guarded_config_execute;
+pub use guarded_config_execute::*;

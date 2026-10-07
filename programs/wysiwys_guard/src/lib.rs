@@ -46,4 +46,8 @@ pub mod wysiwys_guard {
     pub fn guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>) -> Result<()> {
         instructions::guarded_execute::handle_guarded_execute(ctx)
     }
+
+    pub fn guarded_config_execute(ctx: Context<GuardedConfigExecute>) -> Result<()> {
+        instructions::guarded_config_execute::handle_guarded_config_execute(ctx)
+    }
 }

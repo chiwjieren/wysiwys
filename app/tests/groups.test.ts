@@ -10,7 +10,6 @@ const executor = PublicKey.findProgramAddressSync(
 import {
   buildGroupCreation,
   buildMemberInvitation,
-  fixedMembershipReason,
   memberRole,
   standardGroupConfig,
   standardGroupsEnabled,
@@ -149,33 +148,6 @@ test("standard classification depends on chain executor permissions, not Guard s
   );
 });
 
-test("guarded treasuries have fixed members; standard groups do not", () => {
-  const multisig = Keypair.generate().publicKey.toBase58();
-  const guarded = {
-    multisig,
-    guardProgram: Keypair.generate().publicKey.toBase58(),
-    executor: executor.toBase58(),
-    vaultIndex: 0,
-    settlementEnabled: true,
-    executionMode: "guarded" as const,
-  };
-  assert.match(fixedMembershipReason(guarded) ?? "", /fixed/i);
-  // A guard executor without settlement still cannot run config changes.
-  assert.match(
-    fixedMembershipReason({ ...guarded, settlementEnabled: false }) ?? "",
-    /fixed/i,
-  );
-  assert.equal(
-    fixedMembershipReason({
-      multisig,
-      vaultIndex: 0,
-      settlementEnabled: false,
-      executionMode: "standard",
-    }),
-    null,
-  );
-  assert.equal(fixedMembershipReason(undefined), null);
-});
 test("standard group creation is opt-in through an explicit flag", () => {
   assert.equal(standardGroupsEnabled("true"), true);
   for (const value of [undefined, "", "false", "1", "TRUE", " true"])

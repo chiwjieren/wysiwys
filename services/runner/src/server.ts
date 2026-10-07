@@ -100,6 +100,9 @@ export function createStatusServer(d: Deps): Server {
     }
     if (url.pathname === "/frontend/propose") return [200, { guardInstruction: toWire(await s.requestReview(await readJson(req))) }];
     if (url.pathname === "/frontend/execute") return [200, { guardInstruction: toWire(await s.guardedExecute(await readJson(req))) }];
+    if (url.pathname === "/frontend/config-execute") {
+      return [200, { guardInstruction: toWire(await s.guardedConfigExecute(await readJson(req))) }];
+    }
     throw new HttpError(404, "not found");
   }
 

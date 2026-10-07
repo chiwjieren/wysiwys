@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel } from "@/components/design";
 import { useSquad } from "@/lib/squads/provider";
-import { fixedMembershipReason } from "@/lib/squads/groups";
+import { membershipChangeNote } from "@/lib/squads/groups";
 import { Explorer } from "./treasury-ui";
 import {
   assetLabel,
@@ -84,7 +84,6 @@ export function ThresholdSettings() {
   const [threshold, setValue] = useState("");
   const router = useRouter();
   if (!snapshot) return null;
-  const fixed = !!fixedMembershipReason(config);
   const squad = snapshot.squad;
   const voters = squad.members.filter((m) =>
     sqds.types.Permissions.has(m.permissions, sqds.types.Permission.Vote),
@@ -111,12 +110,7 @@ export function ThresholdSettings() {
       <p>
         Current threshold: {squad.threshold} of {voters} voters
       </p>
-      {fixed ? (
-        <p className="caption">
-          The threshold is fixed after creation: only the guard can execute, and
-          it executes payments only.
-        </p>
-      ) : controlled ? (
+      {controlled ? (
         <>
           <p className="caption">
             The existing on-chain configuration authority can set this
@@ -125,11 +119,7 @@ export function ThresholdSettings() {
           <Explorer address={squad.configAuthority.toBase58()} />
         </>
       ) : (
-        <p className="caption">
-          {config?.executionMode === "standard"
-            ? "Changes need the current approval threshold, then execution by an authorized member."
-            : "Changes need the current approval threshold. Applying approved changes requires protected settings execution."}
-        </p>
+        <p className="caption">{membershipChangeNote(config)}</p>
       )}
       <label htmlFor="approval-threshold">Required approvals</label>
       <Input
@@ -141,7 +131,7 @@ export function ThresholdSettings() {
         onChange={(e) => setValue(e.target.value)}
       />
       <Button
-        disabled={fixed || !allowed || !valid || !!busy || !!error}
+        disabled={!allowed || !valid || !!busy || !!error}
         onClick={async () => {
           const id = await setThreshold(Number(threshold));
           if (id) router.push(`/transactions/${id}`);

@@ -20,7 +20,7 @@ import {
   parseDeployment,
   parseGuardArgs,
 } from "../src/lib/squads/server-config";
-import { fromWire, toWire } from "../src/lib/squads/sdk";
+import { fromWire, toWire, withComputeBudget } from "../src/lib/squads/sdk";
 import {
   parseCreateGroupRequest,
   parsePreparedGroup,
@@ -243,7 +243,8 @@ test("a guarded treasury with the maximum members is created in one transaction"
   const message = new TransactionMessage({
     payerKey: creator,
     recentBlockhash: Keypair.generate().publicKey.toBase58(),
-    instructions: [group.instruction, initializeGuard()],
+    // As sent: signAndConfirm adds the compute budget (limit + priority fee) to every transaction.
+    instructions: withComputeBudget([group.instruction, initializeGuard()]),
   }).compileToV0Message();
   assert.equal(message.header.numRequiredSignatures, 2);
   const size = new VersionedTransaction(message).serialize().length;

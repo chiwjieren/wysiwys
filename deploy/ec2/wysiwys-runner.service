@@ -1,0 +1,22 @@
+[Unit]
+Description=Wysiwys runner (guard listener, CRE review runner, settlement routes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=wysiwys
+Group=wysiwys
+WorkingDirectory=/opt/wysiwys
+# Secrets: /opt/wysiwys/.env (loaded by the runner) and workflow/confidential-preflight/.env (loaded by cre).
+Environment=HOME=/var/lib/wysiwys/home
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/npm run start --workspace=services/runner
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/wysiwys /var/lib/wysiwys
+
+[Install]
+WantedBy=multi-user.target

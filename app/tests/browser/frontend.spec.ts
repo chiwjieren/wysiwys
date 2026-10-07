@@ -1,8 +1,11 @@
 import { test, expect } from "@playwright/test";
+import { Keypair } from "@solana/web3.js";
 
 test("treasury members use individual wallet fields with add and remove controls", async ({
   page,
 }) => {
+  const firstWallet = Keypair.generate().publicKey.toBase58();
+  const secondWallet = Keypair.generate().publicKey.toBase58();
   await page.route("**/api/squads/config", (route) =>
     route.fulfill({ json: { config: null } }),
   );
@@ -18,6 +21,18 @@ test("treasury members use individual wallet fields with add and remove controls
     .getByLabel("Wallet address 1", { exact: true })
     .fill("wallet-one");
   await expect(
+    dialog.getByText("Enter a valid Solana wallet address."),
+  ).toBeVisible();
+  await expect(
+    dialog.getByLabel("Wallet address 1", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await dialog
+    .getByLabel("Wallet address 1", { exact: true })
+    .fill(firstWallet);
+  await expect(
+    dialog.getByText("Enter a valid Solana wallet address."),
+  ).toHaveCount(0);
+  await expect(
     dialog.getByText("2 of 2 members", { exact: false }),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Add wallet", exact: true }).click();
@@ -26,22 +41,22 @@ test("treasury members use individual wallet fields with add and remove controls
   ).toHaveCount(2);
   await dialog
     .getByLabel("Wallet address 2", { exact: true })
-    .fill("wallet-two");
+    .fill(secondWallet);
   await expect(dialog.getByLabel("Required approvals")).toHaveValue("3");
   await dialog
     .getByRole("button", { name: "Remove wallet 1", exact: true })
     .click();
   await expect(
     dialog.getByLabel("Wallet address 1", { exact: true }),
-  ).toHaveValue("wallet-two");
+  ).toHaveValue(secondWallet);
   await expect(dialog.getByLabel("Required approvals")).toHaveValue("2");
-  for (let i = 1; i < 12; i++)
+  for (let i = 1; i < 10; i++)
     await dialog
       .getByRole("button", { name: "Add wallet", exact: true })
       .click();
   await expect(
     dialog.getByRole("textbox", { name: /Wallet address \d+/ }),
-  ).toHaveCount(12);
+  ).toHaveCount(10);
   await expect(
     dialog.getByRole("button", { name: "Add wallet", exact: true }),
   ).toBeDisabled();

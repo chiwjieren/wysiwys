@@ -4,6 +4,7 @@ import { txHash } from "@wysiwys/shared";
 import type { StoredPayment } from "./payments";
 import {
   ComputeBudgetProgram,
+  type VersionedMessage,
   Connection,
   PublicKey,
   TransactionInstruction,
@@ -391,6 +392,46 @@ function decodeBoundProposal(
     throw new Error("Proposal account binding mismatch.");
   return proposal;
 }
+// Explicit budget builder for callers that need a compute limit and priority fee.
+export const COMPUTE_UNIT_LIMIT = 400_000;
+export const PRIORITY_FEE_MICROLAMPORTS = 10_000;
+const isComputeBudget = (ix: TransactionInstruction) =>
+  ix.programId.equals(ComputeBudgetProgram.programId);
+const SET_COMPUTE_UNIT_LIMIT = 2;
+const SET_COMPUTE_UNIT_PRICE = 3;
+
+/** Prepends a compute limit and a priority fee unless the instructions already set them. */
+export function withComputeBudget(instructions: TransactionInstruction[]) {
+  const has = (tag: number) =>
+    instructions.some((ix) => isComputeBudget(ix) && ix.data[0] === tag);
+  return [
+    ...(has(SET_COMPUTE_UNIT_LIMIT)
+      ? []
+      : [
+          ComputeBudgetProgram.setComputeUnitLimit({
+            units: COMPUTE_UNIT_LIMIT,
+          }),
+        ]),
+    ...(has(SET_COMPUTE_UNIT_PRICE)
+      ? []
+      : [
+          ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: PRIORITY_FEE_MICROLAMPORTS,
+          }),
+        ]),
+    ...instructions,
+  ];
+}
+
+/** Reject any message changes after the wallet signs, including fee changes. */
+export function assertSameIntent(
+  built: VersionedMessage,
+  signed: VersionedMessage,
+) {
+  if (!Buffer.from(built.serialize()).equals(Buffer.from(signed.serialize())))
+    throw new Error("Wallet changed the transaction message.");
+}
+
 export async function signAndConfirm(
   connection: Connection,
   wallet: PublicKey,
@@ -434,13 +475,8 @@ export async function signAndConfirm(
   } else {
     signed = VersionedTransaction.deserialize(response);
   }
-  if (
-    !Buffer.from(signed.message.serialize()).equals(
-      Buffer.from(transaction.message.serialize()),
-    )
-  )
-    throw new Error("Wallet changed the transaction message.");
-  // A connector may reconstruct the same message with only its own signature.
+  assertSameIntent(transaction.message, signed.message);
+  // Restore additional signatures only after verifying the exact original message.
   if (additionalSigners.length) signed.sign(additionalSigners);
   const signature = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: false,

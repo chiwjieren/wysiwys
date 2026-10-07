@@ -38,6 +38,7 @@ const GUARD_ERRORS = [
   "DestinationChanged",
   "ReviewDeadlinePassed",
   "InvalidConfig",
+  "ConfigActionNotAllowed",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];

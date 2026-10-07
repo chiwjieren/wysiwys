@@ -12,7 +12,7 @@
   "guard": {
     "forwarderProgram": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
     "forwarderState": "5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7",
-    "policyHash": "402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0",
+    "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
     "workflowOwner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "maxReviewLifetime": "3600",
     "reviewDeadlineSecs": "900"
