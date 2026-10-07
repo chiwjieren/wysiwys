@@ -59,7 +59,12 @@ npm test
 
 # Guard program
 anchor build
-anchor test --validator legacy             # solana-test-validator, Squads loaded from tests/fixtures
+anchor test --validator legacy -- --features short-policy-delay
+                                           # solana-test-validator, Squads loaded from tests/fixtures; the feature
+                                           # shortens the policy change waiting period to 2 s (never for devnet builds).
+                                           # Faster loop: anchor build -- --features short-policy-delay, then
+                                           # anchor localnet --skip-build and mocha on one test file (anchor build
+                                           # hangs while anchor localnet runs).
 anchor deploy --provider.cluster devnet
 
 # Devnet setup and end-to-end
@@ -107,33 +112,34 @@ Keep this section accurate. Update it in the same commit that changes a command.
 
 Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing any of these.
 
-- **Seeds:** `["config", multisig]`, `["review", multisig, tx_index u64 LE]`, `["executor", multisig]`. One Review per Squads transaction index; Reviews are never closed, so the Review is the permanent consumed marker. No `RequestHead` or review generations: a rejected or expired review means a new Squads transaction.
-- **`GuardConfig`** (immutable after `initialize_guard`): multisig, forwarder program and state, `policy_hash` (`policyHash` in `packages/shared`: commitment over the private policy document and the decoder version; compute with `npx tsx scripts/policy-hash.ts`), CRE `workflow_owner`, `max_review_lifetime`, `review_deadline_secs`, bumps. No pause or admin instructions.
+- **Seeds:** `["config", multisig]`, `["review", multisig, tx_index u64 LE]`, `["executor", multisig]`, `["policy_change", multisig, tx_index u64 LE]`. One Review per Squads transaction index; Reviews are never closed, so the Review is the permanent consumed marker. No `RequestHead` or review generations: a rejected or expired review means a new Squads transaction.
+- **`GuardConfig`** (immutable after `initialize_guard` except `policy_hash`, which only `apply_policy_change` changes after a Squads vote and a waiting period): multisig, forwarder program and state, `policy_hash` (`policyHash` in `packages/shared`: commitment over the private policy document and the decoder version; compute with `npx tsx scripts/policy-hash.ts`), CRE `workflow_owner`, `max_review_lifetime`, `review_deadline_secs`, bumps. No pause or admin instructions.
 - **`Review`:** multisig, vault transaction, proposal, tx_index, `tx_hash`, status, reason, `policy_hash`, `action_kind`, `destination_hash`, `issued_at`, `expires_at`, `created_at`.
 - **`tx_hash`** = SHA-256(`"wysiwys:tx:v1"` || vault transaction address || VaultTransaction account data), computed by the guard. One TS implementation (`txHash`) for the workflow and app.
 - **Report payload v2** (fixed layout, 117 bytes LE). CRE caps the Solana raw report at 265 bytes = 109 forwarder metadata + 32 account hash + 4 length + payload, so the payload must stay <= 120: `version u8 = 2 | verdict u8 (1 approve, 2 reject) | reason u16 | tx_hash [32] | policy_hash [32] | action_kind u8 (0 none, reject only, zero hash; 1 SOL; 2 SPL) | destination_hash [32] | issued_at i64 | expires_at i64`.
 - **`destination_hash`** = SHA-256(`"wysiwys:dest:v1"` || kind || destination || owner || mint). SOL: destination = owner = recipient wallet, mint zero. SPL: destination = token account, owner = its owner wallet, mint = its mint. `guarded_execute` recomputes it from the live account.
 - **Guard config values** (simulator): see `docs/specs/guard-cre-interface.md` section 7 (mock forwarder, simulator owner, policy hash) and its trust caveat.
 - **Reason codes** (`ReviewReason`, u16, append only): 0 WITHIN_POLICY, 1 RPC_NO_QUORUM, 2 TX_HASH_MISMATCH, 3 UNKNOWN_PROGRAM, 4 UNEXPECTED_INSTRUCTION, 5 UNSUPPORTED_FEATURE, 6 AUTHORITY_CHANGE_BLOCKED, 7 DURABLE_NONCE_DETECTED, 8 DESTINATION_NOT_WHITELISTED, 9 DESTINATION_OWNER_UNRESOLVED, 10 MINT_NOT_ALLOWED, 11 AMOUNT_OVER_CAP, 12 SCREENING_REJECTED, 13 POLICY_STALE.
-- **Instructions:** `initialize_guard(forwarder_program, forwarder_state, policy_hash, workflow_owner [20], max_review_lifetime i64, review_deadline_secs i64)`, `request_review()`, `on_report(metadata, report)`, `guarded_execute()` with the reviewed `destination` account.
-- **Events:** `ReviewRequested { review, multisig, tx_index, tx_hash }`, `DecisionRecorded { review, verdict, reason, policy_hash, action_kind, destination_hash, expires_at }` (no private policy data), `Executed { review, multisig, tx_index }`.
+- **Instructions:** `initialize_guard(forwarder_program, forwarder_state, policy_hash, workflow_owner [20], max_review_lifetime i64, review_deadline_secs i64)`, `request_review()`, `on_report(metadata, report)`, `guarded_execute()` with the reviewed `destination` account, `apply_policy_change()` for an approved Squads proposal whose only instruction is the policy change marker (`packages/shared/src/policy-change.ts`: discriminator `sha256("global:policy_change_marker")[..8]` || new hash || expected current hash; never executed), applied no earlier than `max(Squads time lock, POLICY_CHANGE_MIN_DELAY)` (300 s on devnet) after approval, recorded once in `PolicyChange ["policy_change", multisig, tx_index u64 LE]`.
+- **Policy document (v1):** `parsePolicy` in `packages/shared` is the only validator (version, salt, allowedPrograms, allowedInstructions, allowedMints, maxAmountPerPayment, destinationWhitelist, optional screening; unknown keys rejected) and the workflow enforces every field. The CRE secret `POLICY_DOCUMENT` holds one document or a registry array; the workflow uses the one whose hash the treasury's GuardConfig names (`npx tsx scripts/policy-hash.ts --registry`).
+- **Events:** `ReviewRequested { review, multisig, tx_index, tx_hash }`, `DecisionRecorded { review, verdict, reason, policy_hash, action_kind, destination_hash, expires_at }` (no private policy data), `Executed { review, multisig, tx_index }`, `PolicyChanged { multisig, tx_index, old_policy_hash, new_policy_hash }`.
 - **Review states shown to users:** PENDING, APPROVED, REJECTED, EXPIRED, INDETERMINATE/ERROR, EXECUTED. Only APPROVED with every other gate passing can execute. EXPIRED is derived from chain state (`expires_at`, or `created_at + review_deadline_secs` while PENDING); no background job revokes approvals.
 - **Runner API:** authenticated `POST /review { multisig, txIndex }`, `GET /status`. Event DB table: `reviews(review, multisig, tx_index, status, reason, tx_hash, tx_signature, updated_at)`.
 
 ## Component guidelines
 
 ### Guard program (`programs/wysiwys_guard`)
-- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, `guarded_config_execute` (agreed 7 Oct). No admin, pause or guard config update. Nothing else without team agreement.
+- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, `guarded_config_execute` (agreed 7 Oct), `apply_policy_change` (agreed 7 Oct, voted policy changes). No admin, pause or other guard config update. Nothing else without team agreement.
 - Security rules (every rule has a test; never weaken a security test to make something pass):
   1. CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. No general-purpose CPI or PDA-signing entry point.
   2. The executor PDA signs only two Squads CPIs: `vault_transaction_execute` (in `guarded_execute`, after the review checks) and `config_transaction_execute` (in `guarded_config_execute`, only when every action is AddMember with Initiate/Vote and not the executor, RemoveMember not the executor, ChangeThreshold or SetTimeLock; after the CPI the executor must still be the sole Execute member of an autonomous multisig). It is the sole Execute member.
-  3. `GuardConfig` is immutable after init; `max_review_lifetime` and `review_deadline_secs` must be positive. `request_review` takes no arguments, computes `tx_hash` on-chain and only the vault transaction's creator may call it.
+  3. `GuardConfig` is immutable after init except `policy_hash`, which only `apply_policy_change` changes: an Approved, non-stale Squads proposal of this multisig whose vault transaction is exactly one marker instruction to the guard (no accounts, no lookups, no ephemeral signers, keys = [vault, guard]), naming the current hash as expected, after `max(time lock, POLICY_CHANGE_MIN_DELAY)`; one `PolicyChange` per proposal (`init`). `max_review_lifetime` and `review_deadline_secs` must be positive. `request_review` takes no arguments, computes `tx_hash` on-chain and only the vault transaction's creator may call it.
   4. `on_report`: forwarder state owner == pinned forwarder program and authority == PDA `["forwarder", forwarder_state, guard_program_id]`, signed; metadata names the configured `workflow_owner` (a payload field is not proof of origin; live approval stays disabled until provenance on the deployed Solana path is verified); review Pending; payload v2 exact length and ranges; `issued_at <= now + 60`; `expires_at > now` and `<= issued_at + max_review_lifetime`; arrives by `created_at + review_deadline_secs`; `tx_hash` and `policy_hash` match. A second report on a decided review fails.
   5. `guarded_execute`: check the instructions sysvar address, then reject if instruction 0 is `AdvanceNonceAccount`; re-derive the Review and bind it to multisig, vault transaction and proposal; APPROVED and unexpired; recompute `tx_hash`; recompute `destination_hash` from the passed destination account and its live data (`DestinationChanged`); refuse a message that references the executor PDA.
   6. One-way status Pending → Approved | Rejected; Approved → Executed, written **before** the Squads CPI in the same transaction. Reviews are never closed, so an executed transaction index can never be re-authorized.
   7. Owner checks on every account; re-derive seeds; `has_one` constraints. Expiry uses `Clock::get()`. Payload decoding is exact-length and range-checked.
   8. `init` only, never `init_if_needed`.
-  9. A policy or decoder change means a new guard config (new multisig); old approvals carry the old `policy_hash` and only bind to the old config. Upgrade authority is protected.
+  9. A policy change is voted (rule 3); `guarded_execute` refuses an approval whose `policy_hash` is not the current one, and refuses any message that invokes the guard program (the marker is never executable). A decoder change still means a new guard config. Upgrade authority is protected.
 - Bypass closure: no other Squads Execute members, no spending limits, clean token authorities/delegates on the vault. Bootstrap verifies this.
 
 ### Decoder and policy (`packages/decoder`)

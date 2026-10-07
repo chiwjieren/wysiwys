@@ -54,8 +54,8 @@ Wysiwys is a hackathon build on Solana devnet. One invariant holds even with eve
 
 | Gap | Today | Production fix |
 |---|---|---|
-| Policy changes | `policy_hash` is immutable per GuardConfig; a whitelist or cap change needs a new treasury | Versioned policy with treasury-approved, guarded updates |
-| Shared policy | Every UI-created treasury uses the deployment's one policy | Policy per treasury, chosen at creation |
+| Policy changes | Voted: a Squads proposal, a waiting period (`max(time lock, 300 s)`), then `apply_policy_change`; old approvals stop working | CRE review of the change itself; encrypted policy store |
+| Shared policy | Every UI-created treasury starts with the deployment's policy, then votes its own changes | Policy chosen at creation |
 | Policy custody | Policy JSON and its salt live in one place | Backed-up, access-controlled policy store with an approval workflow |
 | Limits | Per-payment cap only | On-chain cumulative counters (daily budgets) |
 | Payment types | One SOL transfer or legacy SPL `TransferChecked` per payment | Batches, ATA creation, Token-2022, lookup tables |
