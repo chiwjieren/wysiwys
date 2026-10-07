@@ -5,6 +5,12 @@ import type { CreRunner } from "./cre";
 import { SettlementError, toWire, type Settlement } from "./settlement";
 import type { Store } from "./store";
 import type { ModeSwitch, ReviewMode } from "./mode";
+import { PublicKey } from "@solana/web3.js";
+import { parsePolicy, PolicyFormatError, policyHash } from "@wysiwys/shared";
+import decoderPkg from "../../../packages/decoder/package.json" with { type: "json" };
+
+/** Policy hashes commit to the decoder version (same string as scripts/policy-hash.ts and the workflow). */
+const DECODER_VERSION = `${decoderPkg.name}@${decoderPkg.version}`;
 
 type Deps = {
   programId: string;
@@ -87,11 +93,58 @@ export function createStatusServer(d: Deps): Server {
     res.end(JSON.stringify(body));
   };
 
+  /**
+   * A policy document: validated as Policy v1 and stored by hash for the multisig, so members can read what
+   * they vote on. Either the treasury's current document (hash match) or a proposal whose version is higher
+   * than the current one when that is known.
+   */
+  async function storePolicy(input: unknown): Promise<[number, unknown]> {
+    const body = (input ?? {}) as Record<string, unknown>;
+    let multisig: string;
+    try {
+      multisig = new PublicKey(String(body.multisig ?? "")).toBase58();
+    } catch {
+      throw new HttpError(400, "invalid multisig");
+    }
+    let doc;
+    try {
+      doc = parsePolicy(body.document);
+    } catch (e) {
+      throw new HttpError(400, e instanceof PolicyFormatError ? e.message : "invalid policy document");
+    }
+    const current = await d.settlement!.currentPolicyHash(multisig);
+    if (!current) throw new HttpError(404, "multisig has no guard config");
+    const hash = Buffer.from(policyHash(doc as unknown as Record<string, unknown>, DECODER_VERSION)).toString("hex");
+    const now = Math.floor(Date.now() / 1000);
+    // The treasury's current document: its hash proves it, so store it for members to read and diff.
+    if (hash === current) {
+      d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: now });
+      return [200, { hash, currentPolicyHash: current, currentVersionKnown: true, current: true }];
+    }
+    const currentDoc = d.store.getPolicy(multisig, current);
+    const currentVersion = currentDoc ? (JSON.parse(currentDoc) as { version: number }).version : null;
+    if (currentVersion !== null && doc.version <= currentVersion) {
+      throw new HttpError(409, `version must be greater than ${currentVersion}`);
+    }
+    d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: now });
+    return [200, { hash, currentPolicyHash: current, currentVersionKnown: currentVersion !== null, current: false }];
+  }
+
   async function settlementRoute(req: IncomingMessage, url: URL): Promise<[number, unknown]> {
     const s = d.settlement!;
     if (!d.settlementToken) throw new HttpError(503, "settlement is not configured");
     if (!tokenMatches(req.headers.authorization, d.settlementToken)) throw new HttpError(401, "unauthorized");
     if (!allow(req.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "too many requests");
+
+    const policy = url.pathname.match(/^\/frontend\/policies\/([^/]+)\/([0-9a-f]{64})$/);
+    if (req.method === "GET" && policy) {
+      const document = d.store.getPolicy(decodeURIComponent(policy[1]!), policy[2]!);
+      return document ? [200, { document: JSON.parse(document) }] : [404, { error: "unknown policy document" }];
+    }
+    if (req.method === "POST" && url.pathname === "/frontend/policies") return storePolicy(await readJson(req));
+    if (req.method === "POST" && url.pathname === "/frontend/policy-apply") {
+      return [200, { guardInstruction: toWire(await s.applyPolicyChange(await readJson(req))) }];
+    }
 
     const groups = url.pathname.match(/^\/frontend\/groups\/([^/]+)$/);
     if (req.method === "GET" && groups && groups[1] !== "prepare") {

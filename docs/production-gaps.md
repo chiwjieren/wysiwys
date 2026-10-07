@@ -43,8 +43,8 @@ The invariant that holds today, even with every gap below: money moves only when
 
 | # | Gap | Today | Risk | Production fix | Severity |
 |---|---|---|---|---|---|
-| 21 | Policy changes | `policy_hash` is immutable per GuardConfig | Any whitelist or cap change needs a new treasury | Versioned policy with treasury-approved, guarded updates | Medium |
-| 22 | Shared policy | Every UI-created treasury uses the deployment's policy (one whitelisted wallet) | Not per-organization | Policy per treasury, chosen at creation | Medium |
+| 21 | Policy changes | Closed on devnet (7 Oct): members vote a policy change in Squads; the guard applies it after a waiting period (`max(time lock, 300 s)`), and approvals under the old policy stop working. The workflow keeps a registry of documents keyed by hash | Signers who reach the threshold can still loosen the policy after the wait (members can cancel during it); the operator must upload the new document to the workflow | CRE review of policy changes (screen added addresses); encrypted policy store read by the TEE | Medium |
+| 22 | Shared policy | Every UI-created treasury starts with the deployment's policy; each can then vote its own (the registry serves every document by hash) | The first policy is shared | Policy chosen at creation | Low |
 | 23 | Policy custody | Policy JSON and its salt live in one place | Losing the salt makes the hash unreproducible; one author | Backed-up, access-controlled policy store; approval workflow for edits | Medium |
 
 ## Operations

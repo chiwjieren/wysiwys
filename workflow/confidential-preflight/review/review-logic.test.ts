@@ -1,21 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 import fixtures from './fixtures/devnet-e2e.json'
 import deployment from '../../../deployments/devnet.json'
-import { ACTION_KIND, ReviewReason, VERDICT, decodeReportPayload, destinationHash, txHash } from '../../../packages/shared/src/index'
+import { ACTION_KIND, ReviewReason, VERDICT, decodeReportPayload, destinationHash, parsePolicy, txHash, type PolicyV1 } from '../../../packages/shared/src/index'
 import { base64ToBytes, buildPayload, decide, parseGuardConfig, parseReview, planReview, type AccountSnapshot } from './review-logic'
 
 const snap = (a: { address: string; owner: string; data: string } | null): AccountSnapshot | null =>
 	a ? { address: a.address, owner: a.owner, data: base64ToBytes(a.data) } : null
-const policy = {
+const SYSTEM = '11111111111111111111111111111111'
+const TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+// A complete Policy v1 document (same keys as the deployed policy), synthetic salt.
+const policy = parsePolicy({
 	version: 1,
 	salt: '00'.repeat(16),
+	allowedPrograms: [SYSTEM, TOKEN],
+	allowedInstructions: ['system:transfer', 'spl-token:transferChecked'],
 	allowedMints: [{ mint: deployment.mint, decimals: 6 }],
 	maxAmountPerPayment: '100000000000',
 	destinationWhitelist: [deployment.recipients.whitelisted.wallet],
-}
-const scenario = (name: keyof typeof fixtures.scenarios) => {
+	screening: { provider: 'scorechain', blockOn: ['SANCTIONED'] },
+})
+const scenario = (name: keyof typeof fixtures.scenarios, p: PolicyV1 = policy) => {
 	const s = fixtures.scenarios[name]
-	return decide(snap(s.vaultTransaction)!, fixtures.vault, policy, snap(s.destination))
+	return decide(snap(s.vaultTransaction)!, fixtures.vault, p, snap(s.destination))
 }
 
 describe('parseReview / parseGuardConfig (real devnet accounts)', () => {
@@ -63,6 +69,20 @@ describe('decide (real devnet stored transactions)', () => {
 		expect(Buffer.from(d.destinationHash).toString('hex')).toBe(
 			Buffer.from(destinationHash(ACTION_KIND.SPL, pk(dest.address), pk(deployment.recipients.whitelisted.wallet), pk(deployment.mint))).toString('hex'),
 		)
+	})
+
+	test('a payment whose program is not in allowedPrograms is rejected as an unknown program', () => {
+		const systemOnly = parsePolicy({ ...policy, allowedPrograms: [SYSTEM], allowedInstructions: ['system:transfer'], allowedMints: [] })
+		const d = scenario('clean', systemOnly)
+		expect(d.verdict).toBe(VERDICT.REJECT)
+		expect(d.reason).toBe(ReviewReason.UNKNOWN_PROGRAM)
+	})
+
+	test('a payment whose instruction is not in allowedInstructions is rejected as unexpected', () => {
+		const noTokenTransfer = parsePolicy({ ...policy, allowedInstructions: ['system:transfer'] })
+		const d = scenario('clean', noTokenTransfer)
+		expect(d.verdict).toBe(VERDICT.REJECT)
+		expect(d.reason).toBe(ReviewReason.UNEXPECTED_INSTRUCTION)
 	})
 
 	test('lookalike: rejects a destination owner that is not whitelisted', () => {

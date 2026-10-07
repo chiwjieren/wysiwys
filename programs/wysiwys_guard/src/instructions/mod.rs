@@ -9,3 +9,5 @@ pub use on_report::*;
 pub use request_review::*;
 pub mod guarded_config_execute;
 pub use guarded_config_execute::*;
+pub mod apply_policy_change;
+pub use apply_policy_change::*;

@@ -1,6 +1,9 @@
 import { PublicKey } from '@solana/web3.js'
 import { decodeVaultTransaction, type DecodedAction } from '../../../packages/decoder/src/index'
-import { ACTION_KIND, ReviewReason, VERDICT, destinationHash, encodeReportPayload } from '../../../packages/shared/src/index'
+import {
+	ACTION_KIND, ReviewReason, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID, VERDICT, destinationHash, encodeReportPayload,
+	parsePolicy, PolicyFormatError, policyHash, type PolicyInstruction, type PolicyV1,
+} from '../../../packages/shared/src/index'
 import idl from '../../../packages/shared/idl/wysiwys_guard.json'
 
 // Pure, deterministic review decision (no clocks, network or randomness), shared by the CRE
@@ -8,18 +11,17 @@ import idl from '../../../packages/shared/idl/wysiwys_guard.json'
 // reviewer in scripts/lib/local-review.ts.
 
 export type AccountSnapshot = { address: string; owner: string; data: Uint8Array }
-export type Policy = {
-	version: number
-	salt: string
-	allowedMints: { mint: string; decimals: number }[]
-	maxAmountPerPayment: string
-	destinationWhitelist: string[]
-	[k: string]: unknown
-}
+/** Policy v1, validated by parsePolicy (packages/shared). Every field is enforced here or in the workflow. */
+export type Policy = PolicyV1
 /** wallet: the approved recipient wallet, screened before the report is written (approvals only). */
 export type Decision = { verdict: 1 | 2; reason: number; actionKind: 0 | 1 | 2; destinationHash: Uint8Array; summary: string; wallet?: string }
 
 export const SQUADS_PROGRAM = 'SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf'
+/** Decoded payment kinds a policy can allow, with their policy instruction name and program. */
+const ALLOWED_PAYMENTS: Partial<Record<DecodedAction['kind'], { instruction: PolicyInstruction; program: string }>> = {
+	'system.transfer': { instruction: 'system:transfer', program: SYSTEM_PROGRAM_ID },
+	'token.transferChecked': { instruction: 'spl-token:transferChecked', program: TOKEN_PROGRAM_ID },
+}
 export const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 const ZERO32 = new Uint8Array(32)
 const STATUSES = ['pending', 'approved', 'rejected', 'executed'] as const
@@ -119,6 +121,13 @@ export function planReview(vaultTx: AccountSnapshot, vault: string, policy: Poli
 	if (actions.some((a) => NONCE_KINDS.has(a.kind))) return decided(reject(ReviewReason.DURABLE_NONCE_DETECTED, 'durable nonce operation in the payment'))
 	if (actions.length !== 1) return decided(reject(ReviewReason.UNEXPECTED_INSTRUCTION, `expected one payment, found ${actions.length} instructions`))
 	const a = actions[0]!
+	// Program allowlist, then instruction allowlist (policy layers), before any parameter check.
+	const allowed = ALLOWED_PAYMENTS[a.kind]
+	if (allowed) {
+		const program = a.kind === 'token.transferChecked' ? a.programId : allowed.program
+		if (!policy.allowedPrograms.includes(program)) return decided(reject(ReviewReason.UNKNOWN_PROGRAM, 'payment program is not allowed by the policy'))
+		if (!policy.allowedInstructions.includes(allowed.instruction)) return decided(reject(ReviewReason.UNEXPECTED_INSTRUCTION, 'payment instruction is not allowed by the policy'))
+	}
 	const cap = BigInt(policy.maxAmountPerPayment)
 	if (a.kind === 'system.transfer') {
 		if (a.source !== vault) return decided(reject(ReviewReason.UNEXPECTED_INSTRUCTION, 'transfer is not from the vault'))
@@ -143,6 +152,36 @@ export function planReview(vaultTx: AccountSnapshot, vault: string, policy: Poli
 		return { kind: 'needsDestination', destination: a.destinationTokenAccount, action: a }
 	}
 	return decided(reject(ReviewReason.UNEXPECTED_INSTRUCTION, `${a.kind} is not an allowed payment`))
+}
+
+const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+
+/**
+ * The policy document whose hash the treasury's GuardConfig committed to. The POLICY_DOCUMENT secret holds
+ * one document or an array of them (a registry), so treasuries still on an older policy keep working after
+ * another treasury votes a change. Every entry must be a valid Policy v1 with a distinct hash; no match is
+ * POLICY_STALE. Both fail closed (no report); messages name the entry, never its contents.
+ */
+export function selectPolicy(secret: unknown, guardPolicyHash: Uint8Array, decoderVersion: string): Policy {
+	const entries = Array.isArray(secret) ? secret : [secret]
+	if (!entries.length) throw new Error('POLICY_INVALID: the policy registry is empty')
+	const wanted = hex(guardPolicyHash)
+	const seen = new Set<string>()
+	let match: Policy | undefined
+	entries.forEach((entry, i) => {
+		let doc: Policy
+		try {
+			doc = parsePolicy(entry)
+		} catch (e) {
+			throw new Error(`POLICY_INVALID: registry[${i}]: ${e instanceof PolicyFormatError ? e.message : 'not a policy document'}`)
+		}
+		const hash = hex(policyHash(doc as unknown as Record<string, unknown>, decoderVersion))
+		if (seen.has(hash)) throw new Error(`POLICY_INVALID: registry[${i}] duplicates another document`)
+		seen.add(hash)
+		if (hash === wanted) match = doc
+	})
+	if (!match) throw new Error('POLICY_STALE: no policy document matches the guard config')
+	return match
 }
 
 /** Finish an SPL decision with the destination token account (null when it does not exist). */

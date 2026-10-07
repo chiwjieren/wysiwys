@@ -31,3 +31,11 @@ pub struct ConfigExecuted {
     pub multisig: Pubkey,
     pub tx_index: u64,
 }
+
+#[event]
+pub struct PolicyChanged {
+    pub multisig: Pubkey,
+    pub tx_index: u64,
+    pub old_policy_hash: [u8; 32],
+    pub new_policy_hash: [u8; 32],
+}

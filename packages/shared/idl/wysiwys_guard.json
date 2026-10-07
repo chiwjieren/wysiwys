@@ -8,6 +8,70 @@
   },
   "instructions": [
     {
+      "name": "apply_policy_change",
+      "discriminator": [
+        158,
+        163,
+        169,
+        243,
+        87,
+        29,
+        221,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "multisig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "multisig",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "proposal"
+        },
+        {
+          "name": "vault_transaction"
+        },
+        {
+          "name": "policy_change",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "guarded_config_execute",
       "discriminator": [
         65,
@@ -456,6 +520,19 @@
       ]
     },
     {
+      "name": "PolicyChange",
+      "discriminator": [
+        121,
+        80,
+        129,
+        15,
+        25,
+        25,
+        218,
+        165
+      ]
+    },
+    {
       "name": "Review",
       "discriminator": [
         124,
@@ -507,6 +584,19 @@
         45,
         29,
         164
+      ]
+    },
+    {
+      "name": "PolicyChanged",
+      "discriminator": [
+        248,
+        184,
+        113,
+        45,
+        123,
+        255,
+        43,
+        248
       ]
     },
     {
@@ -638,6 +728,36 @@
       "code": 6022,
       "name": "ConfigActionNotAllowed",
       "msg": "Config change not allowed: only adding or removing voters, threshold and time lock"
+    },
+    {
+      "code": 6023,
+      "name": "PolicyChangeNotApproved",
+      "msg": "Policy change proposal is not approved"
+    },
+    {
+      "code": 6024,
+      "name": "PolicyChangeTooEarly",
+      "msg": "Policy change waiting period has not passed"
+    },
+    {
+      "code": 6025,
+      "name": "PolicyChangeStale",
+      "msg": "Policy change proposal is stale"
+    },
+    {
+      "code": 6026,
+      "name": "PolicyChangeOutdated",
+      "msg": "Policy change was written against a policy that is no longer current"
+    },
+    {
+      "code": 6027,
+      "name": "InvalidPolicyChange",
+      "msg": "Not a policy change transaction: exactly one marker instruction to the guard is allowed"
+    },
+    {
+      "code": 6028,
+      "name": "GuardInMessage",
+      "msg": "Vault transaction must not invoke the guard program"
     }
   ],
   "types": [
@@ -785,6 +905,90 @@
           {
             "name": "executor_bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PolicyChange",
+      "docs": [
+        "One applied policy change, keyed by the Squads transaction index that proposed it. Created once by",
+        "apply_policy_change (init), so the same approved proposal can never be applied twice."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "multisig",
+            "type": "pubkey"
+          },
+          {
+            "name": "tx_index",
+            "type": "u64"
+          },
+          {
+            "name": "old_policy_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_policy_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "approved_at",
+            "type": "i64"
+          },
+          {
+            "name": "applied_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PolicyChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "multisig",
+            "type": "pubkey"
+          },
+          {
+            "name": "tx_index",
+            "type": "u64"
+          },
+          {
+            "name": "old_policy_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_policy_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

@@ -286,6 +286,136 @@ pub fn check_executable(status: ReviewStatus, expires_at: i64, now: i64) -> Resu
     Ok(())
 }
 
+/// A proposed policy change, from the marker instruction data.
+pub struct PolicyChangeMarker {
+    pub new_policy_hash: [u8; 32],
+    pub expected_policy_hash: [u8; 32],
+}
+
+/// The marker, or None unless exactly 72 bytes with the marker discriminator and two different hashes.
+pub fn parse_policy_change_marker(data: &[u8]) -> Option<PolicyChangeMarker> {
+    if data.len() != POLICY_CHANGE_MARKER_LEN || data[..8] != POLICY_CHANGE_MARKER_DISCRIMINATOR {
+        return None;
+    }
+    let new_policy_hash: [u8; 32] = data[8..40].try_into().ok()?;
+    let expected_policy_hash: [u8; 32] = data[40..72].try_into().ok()?;
+    if new_policy_hash == expected_policy_hash {
+        return None;
+    }
+    Some(PolicyChangeMarker { new_policy_hash, expected_policy_hash })
+}
+
+/// Bounds-checked cursor over a Squads VaultTransaction; any overrun is an invalid policy change.
+struct Cursor<'a> {
+    d: &'a [u8],
+    off: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+        let end = self.off.checked_add(n).ok_or_else(|| error!(GuardError::InvalidPolicyChange))?;
+        let s = self.d.get(self.off..end).ok_or_else(|| error!(GuardError::InvalidPolicyChange))?;
+        self.off = end;
+        Ok(s)
+    }
+    fn u8(&mut self) -> Result<u8> {
+        Ok(self.take(1)?[0])
+    }
+    fn vec_len(&mut self) -> Result<usize> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()) as usize)
+    }
+    fn pubkey(&mut self) -> Result<Pubkey> {
+        Ok(Pubkey::new_from_array(self.take(32)?.try_into().unwrap()))
+    }
+}
+
+/// A policy change proposal's Squads VaultTransaction: no ephemeral signers, account keys exactly
+/// [vault, guard], one instruction to the guard with no accounts whose data is the marker, no address
+/// lookup tables. Layout (pinned Squads IDL): header (83 bytes), ephemeral_signer_bumps, then the message
+/// (3 signer counts, account_keys, instructions { program_id_index, account_indexes, data }, lookups).
+pub fn parse_policy_change_transaction(data: &[u8], guard: &Pubkey, vault: &Pubkey) -> Result<PolicyChangeMarker> {
+    let invalid = || error!(GuardError::InvalidPolicyChange);
+    if data.len() < 83 || data[..8] != VAULT_TRANSACTION_DISCRIMINATOR {
+        return Err(invalid());
+    }
+    let mut c = Cursor { d: data, off: 83 };
+    if c.vec_len()? != 0 {
+        return Err(invalid());
+    }
+    c.take(3)?; // num_signers, num_writable_signers, num_writable_non_signers
+    if c.vec_len()? != 2 || c.pubkey()? != *vault || c.pubkey()? != *guard {
+        return Err(invalid());
+    }
+    if c.vec_len()? != 1 || c.u8()? != 1 || c.vec_len()? != 0 {
+        return Err(invalid());
+    }
+    let len = c.vec_len()?;
+    let marker = parse_policy_change_marker(c.take(len)?).ok_or_else(invalid)?;
+    if c.vec_len()? != 0 {
+        return Err(invalid());
+    }
+    Ok(marker)
+}
+
+/// Whether a Squads VaultTransaction's stored message lists `key` among its account keys.
+pub fn message_has_account_key(data: &[u8], key: &Pubkey) -> Result<bool> {
+    require!(data.len() >= 83 && data[..8] == VAULT_TRANSACTION_DISCRIMINATOR, GuardError::NotSquadsAccount);
+    let mut c = Cursor { d: data, off: 83 };
+    let scan = |c: &mut Cursor| -> Result<bool> {
+        let ephemeral = c.vec_len()?;
+        c.take(ephemeral)?;
+        c.take(3)?;
+        let n = c.vec_len()?;
+        for _ in 0..n {
+            if c.pubkey()? == *key {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    scan(&mut c).map_err(|_| not_squads())
+}
+
+/// Approval time of a Squads Proposal, or None for any status other than Approved. The status follows
+/// multisig (8..40) and transaction_index (40..48); every variant but Executing carries a timestamp.
+pub fn proposal_approved_at(data: &[u8]) -> Result<Option<i64>> {
+    require!(data.len() >= 49 && data[..8] == PROPOSAL_DISCRIMINATOR, GuardError::NotSquadsAccount);
+    match data[48] {
+        PROPOSAL_STATUS_APPROVED => {
+            // timestamp, bump, then approved, rejected and cancelled member lists must all be present.
+            let mut c = Cursor { d: data, off: 49 };
+            let parse = |c: &mut Cursor| -> Result<i64> {
+                let ts = i64::from_le_bytes(c.take(8)?.try_into().unwrap());
+                c.take(1)?;
+                for _ in 0..3 {
+                    let n = c.vec_len()?;
+                    c.take(n.checked_mul(32).ok_or_else(not_squads)?)?;
+                }
+                Ok(ts)
+            };
+            parse(&mut c).map(Some).map_err(|_| not_squads())
+        }
+        0..=6 => Ok(None),
+        _ => err!(GuardError::NotSquadsAccount),
+    }
+}
+
+pub struct MultisigTiming {
+    pub time_lock: u32,
+    pub stale_transaction_index: u64,
+}
+
+/// Squads Multisig time_lock (74..78) and stale_transaction_index (86..94).
+pub fn parse_multisig_timing(data: &[u8]) -> Result<MultisigTiming> {
+    require!(data.len() >= 96 && data[..8] == MULTISIG_DISCRIMINATOR, GuardError::NotSquadsAccount);
+    Ok(MultisigTiming { time_lock: read_u32(data, 74)?, stale_transaction_index: read_u64(data, 86)? })
+}
+
+/// A policy change applies no earlier than the longer of the Squads time lock and POLICY_CHANGE_MIN_DELAY.
+pub fn policy_change_ready_at(approved_at: i64, time_lock: u32) -> i64 {
+    approved_at.saturating_add((time_lock as i64).max(POLICY_CHANGE_MIN_DELAY))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -914,5 +1044,190 @@ mod tests {
     #[test]
     fn approval_expires_at_expires_at() {
         assert_eq!(code_of(check_executable(ReviewStatus::Approved, 1_000, 1_000)), code(GuardError::Expired));
+    }
+}
+
+#[cfg(test)]
+mod policy_change_tests {
+    use super::*;
+    use anchor_lang::error::Error;
+
+    fn code_of<T>(r: Result<T>) -> u32 {
+        match r {
+            Err(Error::AnchorError(e)) => e.error_code_number,
+            Err(e) => panic!("unexpected error {e:?}"),
+            Ok(_) => panic!("expected an error"),
+        }
+    }
+    fn code(e: GuardError) -> u32 {
+        e as u32 + 6000
+    }
+    fn key(n: u8) -> Pubkey {
+        Pubkey::new_from_array([n; 32])
+    }
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    }
+    /// Value of `"name": "<hex>"` in the shared fixture (packages/shared/fixtures/policy-change-marker.json).
+    fn fixture_hex(name: &str) -> Vec<u8> {
+        let json = include_str!("../../../packages/shared/fixtures/policy-change-marker.json");
+        let start = json.find(&format!("\"{name}\": \"")).unwrap() + name.len() + 5;
+        let end = start + json[start..].find('"').unwrap();
+        unhex(&json[start..end])
+    }
+    fn marker() -> Vec<u8> {
+        fixture_hex("markerHex")
+    }
+
+    const GUARD: Pubkey = crate::ID;
+    fn vault() -> Pubkey {
+        key(5)
+    }
+
+    /// Squads VaultTransaction bytes with the given message parts.
+    fn policy_tx(ephemeral: &[u8], keys: &[Pubkey], ixs: &[(u8, Vec<u8>, Vec<u8>)], lookups: u32) -> Vec<u8> {
+        let mut d = VAULT_TRANSACTION_DISCRIMINATOR.to_vec();
+        d.extend_from_slice(key(1).as_ref()); // multisig
+        d.extend_from_slice(key(9).as_ref()); // creator
+        d.extend_from_slice(&7u64.to_le_bytes()); // index
+        d.extend_from_slice(&[255, 0, 254]); // bump, vault_index, vault_bump
+        d.extend_from_slice(&(ephemeral.len() as u32).to_le_bytes());
+        d.extend_from_slice(ephemeral);
+        d.extend_from_slice(&[1, 1, 0]); // num_signers, num_writable_signers, num_writable_non_signers
+        d.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+        for k in keys {
+            d.extend_from_slice(k.as_ref());
+        }
+        d.extend_from_slice(&(ixs.len() as u32).to_le_bytes());
+        for (program, accounts, data) in ixs {
+            d.push(*program);
+            d.extend_from_slice(&(accounts.len() as u32).to_le_bytes());
+            d.extend_from_slice(accounts);
+            d.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            d.extend_from_slice(data);
+        }
+        d.extend_from_slice(&lookups.to_le_bytes());
+        for _ in 0..lookups {
+            d.extend_from_slice(key(3).as_ref());
+            d.extend_from_slice(&0u32.to_le_bytes());
+            d.extend_from_slice(&0u32.to_le_bytes());
+        }
+        d
+    }
+    fn good_tx() -> Vec<u8> {
+        policy_tx(&[], &[vault(), GUARD], &[(1, vec![], marker())], 0)
+    }
+
+    #[test]
+    fn marker_discriminator_matches_the_shared_fixture() {
+        assert_eq!(POLICY_CHANGE_MARKER_DISCRIMINATOR.to_vec(), fixture_hex("discriminatorHex"));
+    }
+
+    #[test]
+    fn parses_the_shared_marker_fixture() {
+        let m = parse_policy_change_marker(&marker()).unwrap();
+        assert_eq!(m.new_policy_hash.to_vec(), fixture_hex("newPolicyHashHex"));
+        assert_eq!(m.expected_policy_hash.to_vec(), fixture_hex("expectedPolicyHashHex"));
+    }
+
+    #[test]
+    fn marker_needs_exact_length_discriminator_and_distinct_hashes() {
+        let m = marker();
+        assert!(parse_policy_change_marker(&m[..71]).is_none());
+        assert!(parse_policy_change_marker(&[m.clone(), vec![0]].concat()).is_none());
+        let mut wrong = m.clone();
+        wrong[0] ^= 1;
+        assert!(parse_policy_change_marker(&wrong).is_none());
+        let mut equal = m.clone();
+        let new_hash = m[8..40].to_vec();
+        equal[40..72].copy_from_slice(&new_hash);
+        assert!(parse_policy_change_marker(&equal).is_none());
+    }
+
+    #[test]
+    fn accepts_a_single_marker_instruction_to_the_guard() {
+        let m = parse_policy_change_transaction(&good_tx(), &GUARD, &vault()).unwrap();
+        assert_eq!(m.new_policy_hash.to_vec(), fixture_hex("newPolicyHashHex"));
+    }
+
+    #[test]
+    fn refuses_every_other_transaction_shape() {
+        let bad = [
+            policy_tx(&[], &[vault(), GUARD], &[(1, vec![], marker()), (1, vec![], marker())], 0), // two instructions
+            policy_tx(&[], &[vault(), key(4)], &[(1, vec![], marker())], 0),                      // another program
+            policy_tx(&[], &[vault(), GUARD, key(4)], &[(1, vec![2], marker())], 0),              // extra account
+            policy_tx(&[], &[vault(), GUARD], &[(1, vec![0], marker())], 0),                      // instruction accounts
+            policy_tx(&[], &[key(6), GUARD], &[(1, vec![], marker())], 0),                        // not the vault
+            policy_tx(&[], &[vault(), GUARD], &[(1, vec![], marker())], 1),                       // lookup table
+            policy_tx(&[3], &[vault(), GUARD], &[(1, vec![], marker())], 0),                      // ephemeral signer
+            policy_tx(&[], &[vault(), GUARD], &[(1, vec![], marker()[..71].to_vec())], 0),        // bad marker
+            policy_tx(&[], &[vault(), GUARD], &[(0, vec![], marker())], 0),                       // program index is the vault
+            policy_tx(&[], &[vault(), GUARD], &[], 0),                                            // no instruction
+        ];
+        for (i, tx) in bad.iter().enumerate() {
+            assert_eq!(code_of(parse_policy_change_transaction(tx, &GUARD, &vault())), code(GuardError::InvalidPolicyChange), "case {i}");
+        }
+        let truncated = &good_tx()[..good_tx().len() - 3];
+        assert_eq!(code_of(parse_policy_change_transaction(truncated, &GUARD, &vault())), code(GuardError::InvalidPolicyChange));
+    }
+
+    fn proposal_with_status(tag: u8, timestamp: Option<i64>) -> Vec<u8> {
+        let mut d = PROPOSAL_DISCRIMINATOR.to_vec();
+        d.extend_from_slice(key(1).as_ref());
+        d.extend_from_slice(&7u64.to_le_bytes());
+        d.push(tag);
+        if let Some(ts) = timestamp {
+            d.extend_from_slice(&ts.to_le_bytes());
+        }
+        d.push(255);
+        for _ in 0..3 {
+            d.extend_from_slice(&0u32.to_le_bytes());
+        }
+        d
+    }
+
+    #[test]
+    fn only_an_approved_proposal_has_an_approval_time() {
+        assert_eq!(proposal_approved_at(&proposal_with_status(3, Some(1_700_000_123))).unwrap(), Some(1_700_000_123));
+        for (tag, ts) in [(0, Some(1)), (1, Some(1)), (2, Some(1)), (4, None), (5, Some(1)), (6, Some(1))] {
+            assert_eq!(proposal_approved_at(&proposal_with_status(tag, ts)).unwrap(), None, "status {tag}");
+        }
+        assert_eq!(code_of(proposal_approved_at(&proposal_with_status(7, Some(1)))), code(GuardError::NotSquadsAccount));
+        assert_eq!(code_of(proposal_approved_at(&proposal_with_status(3, None))), code(GuardError::NotSquadsAccount));
+        let mut wrong = proposal_with_status(3, Some(1));
+        wrong[0] ^= 1;
+        assert_eq!(code_of(proposal_approved_at(&wrong)), code(GuardError::NotSquadsAccount));
+    }
+
+    #[test]
+    fn reads_time_lock_and_stale_index_from_the_multisig() {
+        let mut d = MULTISIG_DISCRIMINATOR.to_vec();
+        d.extend_from_slice(key(7).as_ref()); // create_key
+        d.extend_from_slice(Pubkey::default().as_ref()); // config_authority
+        d.extend_from_slice(&3u16.to_le_bytes()); // threshold
+        d.extend_from_slice(&86_400u32.to_le_bytes()); // time_lock
+        d.extend_from_slice(&12u64.to_le_bytes()); // transaction_index
+        d.extend_from_slice(&9u64.to_le_bytes()); // stale_transaction_index
+        d.push(0); // rent_collector None
+        d.push(255);
+        d.extend_from_slice(&0u32.to_le_bytes());
+        let t = parse_multisig_timing(&d).unwrap();
+        assert_eq!((t.time_lock, t.stale_transaction_index), (86_400, 9));
+        assert_eq!(code_of(parse_multisig_timing(&d[..90])), code(GuardError::NotSquadsAccount));
+    }
+
+    #[test]
+    fn finds_a_key_among_the_stored_message_account_keys() {
+        let tx = good_tx();
+        assert!(message_has_account_key(&tx, &GUARD).unwrap());
+        assert!(message_has_account_key(&tx, &vault()).unwrap());
+        assert!(!message_has_account_key(&tx, &key(42)).unwrap());
+        assert_eq!(code_of(message_has_account_key(&tx[..90], &GUARD)), code(GuardError::NotSquadsAccount));
+    }
+
+    #[test]
+    fn ready_after_the_longer_of_time_lock_and_minimum_delay() {
+        assert_eq!(policy_change_ready_at(1_000, 0), 1_000 + POLICY_CHANGE_MIN_DELAY);
+        assert_eq!(policy_change_ready_at(1_000, (POLICY_CHANGE_MIN_DELAY + 50) as u32), 1_000 + POLICY_CHANGE_MIN_DELAY + 50);
     }
 }

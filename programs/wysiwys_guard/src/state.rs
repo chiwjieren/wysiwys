@@ -46,3 +46,17 @@ pub struct Review {
     pub created_at: i64,
     pub bump: u8,
 }
+
+/// One applied policy change, keyed by the Squads transaction index that proposed it. Created once by
+/// apply_policy_change (init), so the same approved proposal can never be applied twice.
+#[account]
+#[derive(InitSpace)]
+pub struct PolicyChange {
+    pub multisig: Pubkey,
+    pub tx_index: u64,
+    pub old_policy_hash: [u8; 32],
+    pub new_policy_hash: [u8; 32],
+    pub approved_at: i64,
+    pub applied_at: i64,
+    pub bump: u8,
+}

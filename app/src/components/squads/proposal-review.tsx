@@ -43,7 +43,14 @@ import {
   ReviewBadge,
 } from "./treasury-ui";
 import { proposalProgress } from "@/lib/squads/progress";
+import { policyProgress, readPolicyChange } from "@/lib/squads/policy";
+import { policyChangePda, type PolicyV1 } from "@wysiwys/shared";
 import { ProgressTracker } from "./progress-tracker";
+import {
+  PolicyApplyPanel,
+  PolicyChangePanel,
+  type PolicyDocs,
+} from "./policy-change-view";
 
 const PROGRAM_NAMES: Record<string, string> = {
   "11111111111111111111111111111111": "System program",
@@ -53,7 +60,17 @@ const PROGRAM_NAMES: Record<string, string> = {
 const LIVE_MS = 5000;
 const SETTLED_MS = 30000;
 export function LiveProposal({ id }: { id: string }) {
-  const { config, snapshot, account, error, busy, vote, execute } = useSquad();
+  const {
+    config,
+    snapshot,
+    account,
+    error,
+    busy,
+    vote,
+    execute,
+    policyRequest,
+    applyPolicyChange,
+  } = useSquad();
   const { names } = useMemberNames(config?.multisig);
   const [record, setRecord] = useState<ProposalRecord | null>();
   const [readError, setReadError] = useState("");
@@ -63,6 +80,11 @@ export function LiveProposal({ id }: { id: string }) {
   const guarded = isGuarded(config);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [refreshFailed, setRefreshFailed] = useState(false);
+  // Policy change proposals: applied on chain (PolicyChange record exists) and the member-only documents.
+  const [policyApplied, setPolicyApplied] = useState(false);
+  const [policyDocs, setPolicyDocs] = useState<PolicyDocs>();
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyError, setPolicyError] = useState("");
   // The snapshot refreshes in the background; reading it through a ref keeps those refreshes from
   // restarting (and blanking) this page.
   const snapshotRef = useRef(snapshot);
@@ -78,6 +100,9 @@ export function LiveProposal({ id }: { id: string }) {
     setReadError("");
     setUpdatedAt(null);
     setRefreshFailed(false);
+    setPolicyApplied(false);
+    setPolicyDocs(undefined);
+    setPolicyError("");
   }, [config?.multisig, id]);
   useEffect(() => {
     let cancelled = false;
@@ -116,8 +141,26 @@ export function LiveProposal({ id }: { id: string }) {
           } catch {
             onChainReview = undefined;
           }
+        const change =
+          result?.kind === "vault" && isGuarded(config)
+            ? readPolicyChange(
+                result.transaction.message,
+                new PublicKey(config.guardProgram!),
+              )
+            : null;
+        const applied = change
+          ? !!(await rpc.getAccountInfo(
+              policyChangePda(
+                new PublicKey(config.guardProgram!),
+                new PublicKey(config.multisig),
+                BigInt(id),
+              ),
+              "finalized",
+            ))
+          : false;
         const status = result?.proposal.status.__kind;
         settled =
+          applied ||
           !result ||
           result.kind === "archived" ||
           status === "Executed" ||
@@ -129,6 +172,7 @@ export function LiveProposal({ id }: { id: string }) {
           setDecoded(preview);
           setRecord(result);
           setReview(onChainReview);
+          setPolicyApplied(applied);
           setReadError("");
           setRefreshFailed(false);
           setUpdatedAt(Date.now());
@@ -143,7 +187,8 @@ export function LiveProposal({ id }: { id: string }) {
             );
         }
       }
-      if (!cancelled) timer = setTimeout(() => void load(), settled ? SETTLED_MS : LIVE_MS);
+      if (!cancelled)
+        timer = setTimeout(() => void load(), settled ? SETTLED_MS : LIVE_MS);
     }
     void load();
     return () => {
@@ -164,9 +209,65 @@ export function LiveProposal({ id }: { id: string }) {
       : undefined;
   const configLines = configActions?.lines.map((l) => l.text) ?? [];
   const flags = configActions?.lines.map((l) => l.reason) ?? [];
-  const supported = configActions
-    ? configActions.supported
-    : !!decoded?.supported;
+  const policyChange =
+    record?.kind === "vault" && guarded
+      ? readPolicyChange(
+          record.transaction.message,
+          new PublicKey(config!.guardProgram!),
+        )
+      : null;
+  const approvedAt =
+    record?.proposal.status.__kind === "Approved"
+      ? Number(
+          (
+            record.proposal.status as { timestamp: { toString(): string } }
+          ).timestamp.toString(),
+        )
+      : null;
+  const policySteps =
+    policyChange && record
+      ? policyProgress({
+          proposalStatus: record.proposal.status.__kind,
+          approvals: record.proposal.approved.length,
+          threshold: snapshot?.squad.threshold ?? null,
+          approvedAt,
+          timeLock: snapshot?.squad.timeLock ?? 0,
+          applied: policyApplied,
+          nowSeconds: Date.now() / 1000,
+        })
+      : null;
+  // The approval names the policy the member reviewed (the provider checks the hash is in these lines).
+  const policyVoteLines = policyChange
+    ? [`Policy change to ${policyChange.newPolicyHash}`]
+    : [];
+  async function loadPolicyDocs() {
+    if (!policyChange || !config) return;
+    setPolicyLoading(true);
+    setPolicyError("");
+    try {
+      const r = await policyRequest<{
+        document: PolicyV1 | null;
+        baseDocument: PolicyV1 | null;
+      }>({
+        action: "read",
+        multisig: config.multisig,
+        hash: policyChange.newPolicyHash,
+        base: policyChange.expectedPolicyHash,
+      });
+      setPolicyDocs({ current: r.baseDocument, next: r.document });
+    } catch (e) {
+      setPolicyError(
+        e instanceof Error ? e.message : "The policy could not be loaded.",
+      );
+    } finally {
+      setPolicyLoading(false);
+    }
+  }
+  const supported = policyChange
+    ? true
+    : configActions
+      ? configActions.supported
+      : !!decoded?.supported;
   const lines =
     record?.kind === "vault"
       ? (decoded?.lines ?? [])
@@ -235,11 +336,13 @@ export function LiveProposal({ id }: { id: string }) {
       <PageHeader
         title={`Proposal #${id}`}
         description={
-          record?.kind === "config"
-            ? "Review a proposed change to your group."
-            : record?.kind === "batch"
-              ? "Review a batch of treasury transactions."
-              : "Understand the payment before you approve."
+          policyChange
+            ? "Review a proposed change to the payment policy."
+            : record?.kind === "config"
+              ? "Review a proposed change to your group."
+              : record?.kind === "batch"
+                ? "Review a batch of treasury transactions."
+                : "Understand the payment before you approve."
         }
       >
         <Button variant="secondary" asChild>
@@ -279,15 +382,18 @@ export function LiveProposal({ id }: { id: string }) {
       ) : null}
       {record && (
         <ProgressTracker
-          steps={proposalProgress({
-            kind: record.kind,
-            guarded,
-            proposalStatus: record.proposal.status.__kind,
-            approvals: record.proposal.approved.length,
-            threshold: snapshot?.squad.threshold ?? null,
-            review,
-            nowSeconds: Date.now() / 1000,
-          })}
+          steps={
+            policySteps ??
+            proposalProgress({
+              kind: record.kind,
+              guarded,
+              proposalStatus: record.proposal.status.__kind,
+              approvals: record.proposal.approved.length,
+              threshold: snapshot?.squad.threshold ?? null,
+              review,
+              nowSeconds: Date.now() / 1000,
+            })
+          }
           updatedAt={updatedAt}
         />
       )}
@@ -299,118 +405,137 @@ export function LiveProposal({ id }: { id: string }) {
       {record && (
         <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[2.08fr_1fr]">
           <div className="min-w-0 space-y-5">
-            {guarded &&
-              (record.kind === "vault" || record.kind === "archived") && (
-                <Panel className="gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2>On-chain review</h2>
-                    <ReviewBadge review={review} />
-                  </div>
-                  {review === undefined ? (
-                    <p className="text-muted-foreground">
-                      The guard Review account could not be read. Refresh to try
-                      again.
-                    </p>
-                  ) : review === null ? (
-                    <p className="text-muted-foreground">
-                      No review requested. The guard has no Review account for
-                      this proposal, so it cannot be executed.
-                    </p>
-                  ) : review.status === "Pending" ? (
-                    <p>
-                      Review requested. Waiting for the Chainlink workflow to
-                      record a verdict on-chain.
-                    </p>
-                  ) : (
-                    <>
-                      <p className="font-medium">
-                        {reviewReasonText(review.reason)}
+            {policyChange ? (
+              <PolicyChangePanel
+                change={policyChange}
+                docs={policyDocs}
+                loading={policyLoading}
+                error={policyError}
+                token={config?.token}
+                onLoad={() => void loadPolicyDocs()}
+              />
+            ) : (
+              <>
+                {guarded &&
+                  (record.kind === "vault" || record.kind === "archived") && (
+                    <Panel className="gap-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h2>On-chain review</h2>
+                        <ReviewBadge review={review} />
+                      </div>
+                      {review === undefined ? (
+                        <p className="text-muted-foreground">
+                          The guard Review account could not be read. Refresh to
+                          try again.
+                        </p>
+                      ) : review === null ? (
+                        <p className="text-muted-foreground">
+                          No review requested. The guard has no Review account
+                          for this proposal, so it cannot be executed.
+                        </p>
+                      ) : review.status === "Pending" ? (
+                        <p>
+                          Review requested. Waiting for the Chainlink workflow
+                          to record a verdict on-chain.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="font-medium">
+                            {reviewReasonText(review.reason)}
+                          </p>
+                          {review.expiresAt > 0 &&
+                            review.status === "Approved" && (
+                              <p className="caption">
+                                {review.expiresAt < Date.now() / 1000
+                                  ? "Verdict expired "
+                                  : "Verdict valid until "}
+                                {new Date(
+                                  review.expiresAt * 1000,
+                                ).toLocaleString()}
+                              </p>
+                            )}
+                        </>
+                      )}
+                      <p className="caption">
+                        Recorded by the guard program from the Chainlink CRE
+                        report. This is the authoritative verdict.{" "}
+                        <Explorer address={reviewAddress} />
                       </p>
-                      {review.expiresAt > 0 && review.status === "Approved" && (
-                        <p className="caption">
-                          {review.expiresAt < Date.now() / 1000
-                            ? "Verdict expired "
-                            : "Verdict valid until "}
-                          {new Date(review.expiresAt * 1000).toLocaleString()}
+                    </Panel>
+                  )}
+                <div
+                  className={`rounded-xl p-6 ${supported || record.kind === "archived" ? "bg-success-bg" : "bg-danger-bg"}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <AssetIcon
+                      src={figmaAssets.review.imgIconShield2}
+                      size={24}
+                    />
+                    <h2>
+                      {record.kind === "archived"
+                        ? "Payment executed"
+                        : configActions?.refused
+                          ? GUARD_REFUSES
+                          : supported
+                            ? guarded && record.kind !== "config"
+                              ? "Transaction decoded (preview)"
+                              : "Transaction decoded"
+                            : "Unable to fully decode"}
+                    </h2>
+                  </div>
+                  <p className="mt-3">
+                    {record.kind === "archived"
+                      ? "This proposal has completed. Its stored payment details have been cleared by Squads."
+                      : supported
+                        ? "Read the exact stored actions below before signing your approval."
+                        : record.kind === "batch"
+                          ? "Batch approval is unavailable until every payment can be fully decoded."
+                          : configActions?.refused
+                            ? "This proposal includes a change the guard does not execute. Reject it and propose a supported change."
+                            : decoded?.reason ||
+                              "This configuration action is not supported by the preview."}
+                  </p>
+                  <p className="caption mt-3">
+                    {standard
+                      ? "Decoded from the stored Squads transaction."
+                      : record.kind === "config"
+                        ? "Decoded from the stored Squads config transaction. The guard checks every action on-chain."
+                        : "Local decoder preview. It never overrides the on-chain review verdict."}
+                  </p>
+                </div>
+                <Panel className="gap-5">
+                  <h2>
+                    {record.kind === "vault"
+                      ? "Decoded payment"
+                      : record.kind === "batch"
+                        ? "Transaction batch"
+                        : record.kind === "archived"
+                          ? "Completed payment"
+                          : "Proposed settings change"}
+                  </h2>
+                  {configActions?.headline && (
+                    <p className="break-words font-medium">
+                      {configActions.headline.text}
+                    </p>
+                  )}
+                  {lines.map((line, i) => (
+                    <div key={i}>
+                      <p className="[overflow-wrap:anywhere]">{line}</p>
+                      {flags[i] && (
+                        <p className="text-xs font-medium text-destructive">
+                          {flags[i]}
                         </p>
                       )}
-                    </>
-                  )}
-                  <p className="caption">
-                    Recorded by the guard program from the Chainlink CRE report.
-                    This is the authoritative verdict.{" "}
-                    <Explorer address={reviewAddress} />
-                  </p>
-                </Panel>
-              )}
-            <div
-              className={`rounded-xl p-6 ${supported || record.kind === "archived" ? "bg-success-bg" : "bg-danger-bg"}`}
-            >
-              <div className="flex items-center gap-3">
-                <AssetIcon src={figmaAssets.review.imgIconShield2} size={24} />
-                <h2>
-                  {record.kind === "archived"
-                    ? "Payment executed"
-                    : configActions?.refused
-                      ? GUARD_REFUSES
-                      : supported
-                        ? guarded && record.kind !== "config"
-                          ? "Transaction decoded (preview)"
-                          : "Transaction decoded"
-                        : "Unable to fully decode"}
-                </h2>
-              </div>
-              <p className="mt-3">
-                {record.kind === "archived"
-                  ? "This proposal has completed. Its stored payment details have been cleared by Squads."
-                  : supported
-                    ? "Read the exact stored actions below before signing your approval."
-                    : record.kind === "batch"
-                      ? "Batch approval is unavailable until every payment can be fully decoded."
-                      : configActions?.refused
-                        ? "This proposal includes a change the guard does not execute. Reject it and propose a supported change."
-                        : decoded?.reason ||
-                          "This configuration action is not supported by the preview."}
-              </p>
-              <p className="caption mt-3">
-                {standard
-                  ? "Decoded from the stored Squads transaction."
-                  : record.kind === "config"
-                    ? "Decoded from the stored Squads config transaction. The guard checks every action on-chain."
-                    : "Local decoder preview. It never overrides the on-chain review verdict."}
-              </p>
-            </div>
-            <Panel className="gap-5">
-              <h2>
-                {record.kind === "vault"
-                  ? "Decoded payment"
-                  : record.kind === "batch"
-                    ? "Transaction batch"
-                    : record.kind === "archived"
-                      ? "Completed payment"
-                      : "Proposed settings change"}
-              </h2>
-              {configActions?.headline && (
-                <p className="break-words font-medium">
-                  {configActions.headline.text}
-                </p>
-              )}
-              {lines.map((line, i) => (
-                <div key={i}>
-                  <p className="[overflow-wrap:anywhere]">{line}</p>
-                  {flags[i] && (
-                    <p className="text-xs font-medium text-destructive">
-                      {flags[i]}
+                    </div>
+                  ))}
+                  {!lines.length && (
+                    <p className="text-muted-foreground">
+                      No readable actions available.
                     </p>
                   )}
-                </div>
-              ))}
-              {!lines.length && (
-                <p className="text-muted-foreground">
-                  No readable actions available.
-                </p>
-              )}
-            </Panel>
+                </Panel>
+              </>
+            )}
             <Panel className="gap-5">
               <h2>Instruction breakdown</h2>
               {lines.map((line, i) => (
@@ -548,7 +673,13 @@ export function LiveProposal({ id }: { id: string }) {
               </p>
               <Button
                 disabled={!enabled || !permissions.approve || !supported}
-                onClick={() => void vote(BigInt(id), "approve", lines)}
+                onClick={() =>
+                  void vote(
+                    BigInt(id),
+                    "approve",
+                    policyChange ? policyVoteLines : lines,
+                  )
+                }
               >
                 Approve proposal
               </Button>
@@ -572,84 +703,94 @@ export function LiveProposal({ id }: { id: string }) {
                 <p className="caption">Connect with a member wallet to vote.</p>
               )}
             </Panel>
-            <Panel className="gap-4">
-              <h2>
-                {standard
-                  ? "Execution"
-                  : record.kind === "config"
-                    ? "Guard check"
-                    : "Guard review"}
-              </h2>
-              <div>
-                {standard ? (
-                  <StatusBadge>
-                    {record.proposal.status.__kind === "Executed"
-                      ? "Executed"
-                      : record.proposal.status.__kind === "Approved"
-                        ? "Approved by group"
-                        : "Awaiting approvals"}
-                  </StatusBadge>
-                ) : record.kind === "vault" || record.kind === "archived" ? (
-                  <ReviewBadge review={review} />
-                ) : record.kind === "config" ? (
-                  <StatusBadge>
-                    {record.proposal.status.__kind === "Executed"
-                      ? "Executed"
-                      : configActions?.refused
-                        ? "Refused by the guard"
-                        : "Checked on-chain"}
-                  </StatusBadge>
-                ) : (
-                  <StatusBadge>Not applicable</StatusBadge>
-                )}
-              </div>
-              <p className="text-muted-foreground">
-                {standard
-                  ? "An authorized executor can apply this proposal after the required member approvals and any timelock."
-                  : record.kind === "vault"
-                    ? "Execution needs the Squads approvals and an unexpired Approved review. The guard enforces both on-chain."
-                    : record.kind === "archived"
-                      ? "This payment has been executed."
-                      : record.kind === "config"
-                        ? "Membership changes are checked on-chain by the guard: voters only, no spending limits."
-                        : "This transaction type cannot be executed through the guard."}
-              </p>
-              {(standard ||
-                record.kind === "vault" ||
-                record.kind === "config") && (
-                <Button
-                  disabled={
-                    !enabled ||
-                    !supported ||
-                    (standard
-                      ? !!executionIssue
-                      : !config?.settlementEnabled ||
-                        record.proposal.status.__kind !== "Approved" ||
-                        !(guardedConfig ? configGate.enabled : gate.enabled))
-                  }
-                  onClick={() => void execute(BigInt(id), lines)}
-                >
+            {policyChange && policySteps ? (
+              <PolicyApplyPanel
+                step={policySteps[3]!}
+                enabled={
+                  !!account && !busy && policySteps[3]!.state === "active"
+                }
+                onApply={() => void applyPolicyChange(BigInt(id))}
+              />
+            ) : (
+              <Panel className="gap-4">
+                <h2>
                   {standard
-                    ? record.kind === "config"
-                      ? "Apply approved changes"
-                      : "Execute payment"
-                    : "Execute through guard"}
-                </Button>
-              )}
-              {standard && executionIssue && (
-                <p className="caption">{executionIssue}</p>
-              )}
-              {!standard && record.kind === "vault" && gate.reason && (
-                <p className="caption">{gate.reason}</p>
-              )}
-              {guardedConfig && configGate.reason && (
-                <p className="caption">{configGate.reason}</p>
-              )}
-              <p className="caption">
-                Proposal account{" "}
-                <Explorer address={record.address.toBase58()} />
-              </p>
-            </Panel>
+                    ? "Execution"
+                    : record.kind === "config"
+                      ? "Guard check"
+                      : "Guard review"}
+                </h2>
+                <div>
+                  {standard ? (
+                    <StatusBadge>
+                      {record.proposal.status.__kind === "Executed"
+                        ? "Executed"
+                        : record.proposal.status.__kind === "Approved"
+                          ? "Approved by group"
+                          : "Awaiting approvals"}
+                    </StatusBadge>
+                  ) : record.kind === "vault" || record.kind === "archived" ? (
+                    <ReviewBadge review={review} />
+                  ) : record.kind === "config" ? (
+                    <StatusBadge>
+                      {record.proposal.status.__kind === "Executed"
+                        ? "Executed"
+                        : configActions?.refused
+                          ? "Refused by the guard"
+                          : "Checked on-chain"}
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge>Not applicable</StatusBadge>
+                  )}
+                </div>
+                <p className="text-muted-foreground">
+                  {standard
+                    ? "An authorized executor can apply this proposal after the required member approvals and any timelock."
+                    : record.kind === "vault"
+                      ? "Execution needs the Squads approvals and an unexpired Approved review. The guard enforces both on-chain."
+                      : record.kind === "archived"
+                        ? "This payment has been executed."
+                        : record.kind === "config"
+                          ? "Membership changes are checked on-chain by the guard: voters only, no spending limits."
+                          : "This transaction type cannot be executed through the guard."}
+                </p>
+                {(standard ||
+                  record.kind === "vault" ||
+                  record.kind === "config") && (
+                  <Button
+                    disabled={
+                      !enabled ||
+                      !supported ||
+                      (standard
+                        ? !!executionIssue
+                        : !config?.settlementEnabled ||
+                          record.proposal.status.__kind !== "Approved" ||
+                          !(guardedConfig ? configGate.enabled : gate.enabled))
+                    }
+                    onClick={() => void execute(BigInt(id), lines)}
+                  >
+                    {standard
+                      ? record.kind === "config"
+                        ? "Apply approved changes"
+                        : "Execute payment"
+                      : "Execute through guard"}
+                  </Button>
+                )}
+                {standard && executionIssue && (
+                  <p className="caption">{executionIssue}</p>
+                )}
+                {!standard && record.kind === "vault" && gate.reason && (
+                  <p className="caption">{gate.reason}</p>
+                )}
+                {guardedConfig && configGate.reason && (
+                  <p className="caption">{configGate.reason}</p>
+                )}
+                <p className="caption">
+                  Proposal account{" "}
+                  <Explorer address={record.address.toBase58()} />
+                </p>
+              </Panel>
+            )}
           </div>
         </div>
       )}

@@ -26,6 +26,7 @@
     "@wallet-standard/app": "^1.1.1",
     "@wallet-standard/base": "^1.1.1",
     "@wallet-standard/features": "^1.1.1",
+    "@wysiwys/shared": "*",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

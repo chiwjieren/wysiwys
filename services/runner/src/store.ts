@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { GuardEvent } from "./events";
+import type { GuardEvent, ReviewEvent } from "./events";
 
 // History of guard events for the activity feed. The chain is the source of truth; this DB never is.
 
@@ -52,12 +52,19 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE TABLE IF NOT EXISTS cursor (id INTEGER PRIMARY KEY CHECK (id = 1), last_signature TEXT);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS policies (
+  hash TEXT NOT NULL,
+  multisig TEXT NOT NULL,
+  document TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (hash, multisig)
+);
 `;
 
 // node:sqlite returns null-prototype rows; callers get plain objects.
 const plain = <T>(row: unknown): T => ({ ...(row as object) }) as T;
 
-function statusOf(ev: GuardEvent): ReviewStatus {
+function statusOf(ev: ReviewEvent): ReviewStatus {
   if (ev.name === "ReviewRequested") return "pending";
   if (ev.name === "Executed") return "executed";
   return ev.verdict === 1 ? "approved" : "rejected";
@@ -94,10 +101,16 @@ export function openStore(path: string) {
     const now = meta.blockTime ?? Math.floor(Date.now() / 1000);
     db.exec("BEGIN");
     try {
-      const res = insertEvent.run(meta.signature, meta.idx, meta.slot, ev.name, ev.review, JSON.stringify(ev), meta.blockTime);
+      // Policy changes have no review; they are keyed for the activity feed only.
+      const key = ev.name === "PolicyChanged" ? `policy_change:${ev.multisig}:${ev.txIndex}` : ev.review;
+      const res = insertEvent.run(meta.signature, meta.idx, meta.slot, ev.name, key, JSON.stringify(ev), meta.blockTime);
       if (res.changes === 0) {
         db.exec("ROLLBACK");
         return false;
+      }
+      if (ev.name === "PolicyChanged") {
+        db.exec("COMMIT");
+        return true;
       }
       const status = statusOf(ev);
       const reason = ev.name === "DecisionRecorded" ? ev.reason : null;
@@ -135,6 +148,8 @@ export function openStore(path: string) {
   const selectReviews = db.prepare("SELECT * FROM reviews ORDER BY updated_at DESC, rowid DESC LIMIT ?");
   const selectSetting = db.prepare("SELECT value FROM settings WHERE key = ?");
   const upsertSetting = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  const insertPolicy = db.prepare("INSERT OR IGNORE INTO policies (hash, multisig, document, created_at) VALUES (?, ?, ?, ?)");
+  const selectPolicy = db.prepare("SELECT document FROM policies WHERE hash = ? AND multisig = ?");
   const requeuePending = db.prepare(
     "UPDATE reviews SET trigger_status = 'none', trigger_attempts = 0, trigger_error = NULL WHERE status = 'pending' AND updated_at >= ?",
   );
@@ -150,6 +165,10 @@ export function openStore(path: string) {
       void updateTrigger.run(ok ? "sent" : "failed", ok ? null : (error ?? "unknown error"), review),
     getCursor: () => ((selectCursor.get() as { last_signature: string } | undefined)?.last_signature ?? null),
     setCursor: (signature: string) => void upsertCursor.run(signature),
+    /** Proposed policy documents (private), served only to the app server for members of the multisig. */
+    putPolicy: (p: { hash: string; multisig: string; document: string; createdAt: number }) =>
+      void insertPolicy.run(p.hash, p.multisig, p.document, p.createdAt),
+    getPolicy: (multisig: string, hash: string) => ((selectPolicy.get(hash, multisig) as { document: string } | undefined)?.document ?? null),
     getSetting: (key: string) => ((selectSetting.get(key) as { value: string } | undefined)?.value ?? null),
     setSetting: (key: string, value: string) => void upsertSetting.run(key, value),
     /** Makes pending reviews requested at or after `since` (unix seconds) eligible for triggering again. */

@@ -1,0 +1,7 @@
+{
+  "description": "Policy change marker (packages/shared/src/policy-change.ts): discriminator || new_policy_hash || expected_policy_hash. Shared with the guard's Rust tests.",
+  "discriminatorHex": "eec001d46cf195b5",
+  "newPolicyHashHex": "b9e96914b4f69ecef9b53cc327b1da78b38f2eb7289a4c1cd344e4ee931414cb",
+  "expectedPolicyHashHex": "e132e5a943c5012393c611dff4513ac88f104392e1b536a6bc11eaeab568ab6b",
+  "markerHex": "eec001d46cf195b5b9e96914b4f69ecef9b53cc327b1da78b38f2eb7289a4c1cd344e4ee931414cbe132e5a943c5012393c611dff4513ac88f104392e1b536a6bc11eaeab568ab6b"
+}

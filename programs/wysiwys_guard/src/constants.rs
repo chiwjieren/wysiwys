@@ -6,6 +6,7 @@ pub const CONFIG_SEED: &[u8] = b"config";
 pub const REVIEW_SEED: &[u8] = b"review";
 pub const EXECUTOR_SEED: &[u8] = b"executor";
 pub const FORWARDER_SEED: &[u8] = b"forwarder";
+pub const POLICY_CHANGE_SEED: &[u8] = b"policy_change";
 
 // Anchor discriminators of Squads v4 accounts and instructions (sha256 of "account:<Name>" / "global:<name>").
 pub const VAULT_TRANSACTION_DISCRIMINATOR: [u8; 8] = [168, 250, 162, 100, 81, 14, 162, 207];
@@ -55,3 +56,17 @@ pub const REVIEW_VERSION: u8 = 2;
 // Keystone metadata passed to on_report: workflow_cid 32 | workflow_name 10 | workflow_owner 20 | report_id 2.
 pub const REPORT_METADATA_LEN: usize = 64;
 pub const WORKFLOW_OWNER_OFFSET: usize = 42;
+
+// Voted policy changes. A Squads vault transaction whose only instruction is this marker (never
+// executed) proposes the change; apply_policy_change applies it. See packages/shared/src/policy-change.ts.
+/// sha256("global:policy_change_marker")[..8]; marker = discriminator || new_policy_hash || expected_policy_hash.
+pub const POLICY_CHANGE_MARKER_DISCRIMINATOR: [u8; 8] = [238, 192, 1, 212, 108, 241, 149, 181];
+pub const POLICY_CHANGE_MARKER_LEN: usize = 72;
+/// Squads ProposalStatus variant index of Approved (Draft, Active, Rejected, Approved, Executing, Executed, Cancelled).
+pub const PROPOSAL_STATUS_APPROVED: u8 = 3;
+/// Minimum wait between a policy change's approval and its application, so members can cancel it.
+/// Devnet: 5 minutes. Local tests build with `--features short-policy-delay`.
+#[cfg(not(feature = "short-policy-delay"))]
+pub const POLICY_CHANGE_MIN_DELAY: i64 = 300;
+#[cfg(feature = "short-policy-delay")]
+pub const POLICY_CHANGE_MIN_DELAY: i64 = 2;

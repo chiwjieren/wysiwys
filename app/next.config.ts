@@ -4,6 +4,8 @@ import path from "node:path";
 const config: NextConfig = {
   distDir: process.env.WYSIWYS_NEXT_DIST || ".next",
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // Workspace package shipped as TypeScript source (policy format, marker, hashes).
+  transpilePackages: ["@wysiwys/shared"],
   // The app is a root npm workspace, so `next` is hoisted to the repo root
   // node_modules. Turbopack must resolve from there; output stays in app/.
   turbopack: { root: path.resolve("..") },

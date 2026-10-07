@@ -58,6 +58,8 @@ import {
 import { describeConfigActions, GUARD_REFUSES } from "./config-actions";
 import { isGuarded, readReviews, type Review } from "./review";
 import { assertDevnet } from "./network";
+import { buildPolicyChangeInstruction, readPolicyChange } from "./policy";
+import type { PolicyV1 } from "@wysiwys/shared";
 import {
   buildGuardedPaymentInstruction,
   buildPaymentInstructions,
@@ -114,8 +116,16 @@ type ContextValue = {
   ) => Promise<void>;
   execute: (index: bigint, reviewed?: readonly string[]) => Promise<void>;
   proposePayment: (input: PaymentInput) => Promise<string | undefined>;
+  // Voted policy changes on guarded treasuries (member-only, wallet-signed).
+  policyRequest: <T = Record<string, unknown>>(
+    body: Record<string, unknown>,
+  ) => Promise<T>;
+  proposePolicyChange: (document: PolicyV1) => Promise<string | undefined>;
+  applyPolicyChange: (index: bigint) => Promise<void>;
 };
 const Context = createContext<ContextValue | null>(null);
+const hexBytes = (hex: string) =>
+  Uint8Array.from(hex.match(/../g)!.map((b) => parseInt(b, 16)));
 export function SquadProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ContextValue["mode"]>("loading");
   const [config, setConfig] = useState<SquadConfig>();
@@ -414,7 +424,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
     return succeeded;
   }
   async function prepare(
-    action: "propose" | "execute" | "configExecute",
+    action: "propose" | "execute" | "configExecute" | "policyApply",
     index: bigint,
     member: PublicKey,
   ): Promise<{ guardInstruction: WireInstruction }> {
@@ -464,7 +474,20 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         throw new Error(
           "This settings change cannot be approved: it includes an action that cannot be executed.",
         );
-      if (action === "approve" && record.kind === "vault") {
+      const policyChange =
+        record.kind === "vault" && config!.guardProgram
+          ? readPolicyChange(
+              record.transaction.message,
+              new PublicKey(config!.guardProgram),
+            )
+          : null;
+      if (action === "approve" && policyChange) {
+        // The approval names the policy the member reviewed (its hash), like a payment's decoded lines.
+        if (
+          !reviewed?.some((line) => line.includes(policyChange.newPolicyHash))
+        )
+          throw new Error("Review the policy change before approving.");
+      } else if (action === "approve" && record.kind === "vault") {
         const vault = sqds.getVaultPda({
           multisigPda: new PublicKey(config!.multisig),
           index: config!.vaultIndex,
@@ -660,6 +683,85 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       setCursor(undefined);
       return id;
     }
+  }
+  /** Wallet-signed call to the member-only policy route. */
+  async function policyRequest<T = Record<string, unknown>>(
+    payload: Record<string, unknown>,
+  ): Promise<T> {
+    const body = JSON.stringify(payload);
+    const response = await fetch("/api/policy", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await auth.authorizeRequest("/api/policy", body)),
+      },
+      body,
+    });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.error || "The policy service is unavailable.");
+    return result as T;
+  }
+  /**
+   * Stores the proposed document with the runner, then proposes a Squads vault transaction whose only
+   * instruction is the guard's policy change marker (never executed; applied after the vote and wait).
+   */
+  async function proposePolicyChange(document: PolicyV1) {
+    let id: string | undefined;
+    const success = await run("propose policy change", async (rpc, key) => {
+      if (!config!.guardProgram) throw new Error("This treasury has no guard.");
+      const squad = await readMultisig(rpc, config!);
+      const member = squad.members.find((m) => m.key.equals(key));
+      if (!member || !(member.permissions.mask & 1))
+        throw new Error("Your wallet cannot propose changes.");
+      const submitted = await policyRequest<{
+        hash: string;
+        currentPolicyHash: string;
+        current: boolean;
+      }>({
+        action: "submit",
+        multisig: config!.multisig,
+        document,
+      });
+      if (submitted.current)
+        throw new Error("This is already the current policy.");
+      const multisig = new PublicKey(config!.multisig);
+      const vault = sqds.getVaultPda({
+        multisigPda: multisig,
+        index: config!.vaultIndex,
+      })[0];
+      const index = BigInt(squad.transactionIndex.toString()) + 1n;
+      const message = new TransactionMessage({
+        payerKey: vault,
+        recentBlockhash: (await rpc.getLatestBlockhash("finalized")).blockhash,
+        instructions: [
+          buildPolicyChangeInstruction(
+            new PublicKey(config!.guardProgram),
+            hexBytes(submitted.hash),
+            hexBytes(submitted.currentPolicyHash),
+          ),
+        ],
+      });
+      id = index.toString();
+      return buildPaymentProposal({
+        multisig,
+        member: key,
+        index,
+        vaultIndex: config!.vaultIndex,
+        message,
+      });
+    });
+    if (success) {
+      setCursor(undefined);
+      return id;
+    }
+  }
+  /** apply_policy_change (runner-built, checked like the other guard instructions) once voted and waited. */
+  async function applyPolicyChange(index: bigint) {
+    await run("apply policy change", async (_rpc, key) => {
+      const prepared = await prepare("policyApply", index, key);
+      return [fromWire(prepared.guardInstruction)];
+    });
   }
   useEffect(() => {
     let cancelled = false;
@@ -1060,6 +1162,9 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         vote,
         execute,
         proposePayment,
+        policyRequest,
+        proposePolicyChange,
+        applyPolicyChange,
       }}
     >
       {children}

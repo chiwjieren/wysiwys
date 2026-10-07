@@ -61,6 +61,11 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
         ctx.remaining_accounts.iter().all(|acc| *acc.key != executor_key),
         GuardError::ExecutorInMessage
     );
+    // A policy change marker is applied by apply_policy_change, never executed as a payment.
+    require!(
+        !logic::message_has_account_key(&ctx.accounts.vault_transaction.try_borrow_data()?, &crate::ID)?,
+        GuardError::GuardInMessage
+    );
     let now = Clock::get()?.unix_timestamp;
 
     let (review_key, tx_index) = {
@@ -76,6 +81,8 @@ pub fn handle_guarded_execute<'info>(ctx: Context<'info, GuardedExecute<'info>>)
         require_keys_eq!(review.proposal, proposal_key, GuardError::ReviewMismatch);
         logic::check_executable(review.status, review.expires_at, now)?;
         require!(current_hash == review.tx_hash, GuardError::HashMismatch);
+        // An approval only holds under the policy it was given for (policies change by vote).
+        require!(review.policy_hash == ctx.accounts.config.policy_hash, GuardError::PolicyMismatch);
         let dest = &ctx.accounts.destination;
         logic::check_destination(review.action_kind, &review.destination_hash, &dest.key(), dest.owner, &dest.try_borrow_data()?)?;
 

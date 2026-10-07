@@ -120,6 +120,12 @@ test("error codes follow the Rust enum order", () => {
   assert.equal(GuardErrorCode.ReviewDeadlinePassed, 6020);
   assert.equal(GuardErrorCode.InvalidConfig, 6021);
   assert.equal(GuardErrorCode.ConfigActionNotAllowed, 6022);
+  assert.equal(GuardErrorCode.PolicyChangeNotApproved, 6023);
+  assert.equal(GuardErrorCode.PolicyChangeTooEarly, 6024);
+  assert.equal(GuardErrorCode.PolicyChangeStale, 6025);
+  assert.equal(GuardErrorCode.PolicyChangeOutdated, 6026);
+  assert.equal(GuardErrorCode.InvalidPolicyChange, 6027);
+  assert.equal(GuardErrorCode.GuardInMessage, 6028);
   assert.equal("IntentMismatch" in GuardErrorCode, false);
 });
 

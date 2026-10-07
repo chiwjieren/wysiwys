@@ -18,6 +18,8 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-debug = []
 custom-heap = []
 custom-panic = []
+# Local tests only: shortens the policy change waiting period (constants.rs). Never for devnet builds.
+short-policy-delay = []
 
 [dependencies]
 anchor-lang = "1.2.0"

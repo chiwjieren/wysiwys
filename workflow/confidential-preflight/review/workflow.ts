@@ -18,8 +18,8 @@ import {
 } from '@chainlink/cre-sdk'
 import { PublicKey } from '@solana/web3.js'
 import { z } from 'zod'
-import { ReviewReason, VERDICT, policyHash, txHash } from '../../../packages/shared/src/index'
-import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
+import { ReviewReason, VERDICT, txHash } from '../../../packages/shared/src/index'
+import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, selectPolicy, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
 import { normalizeSnapshot, selectQuorum, type SnapshotAccount } from './rpc-quorum'
 
 // Wysiwys review workflow. HTTP trigger with identifiers only -> 2-of-3 RPC reads of the Review, the
@@ -185,6 +185,15 @@ export function onReviewDon(runtime: Runtime<Config>, payload: HTTPPayload): str
 
 type ReviewHost = Pick<Runtime<Config>, 'config' | 'getSecret' | 'log'>
 
+/** The POLICY_DOCUMENT secret as JSON (one document or a registry array); never echoed. */
+function parseSecretJson(secret: string): unknown {
+	try {
+		return JSON.parse(secret)
+	} catch {
+		throw new Error('POLICY_INVALID: the policy secret is not valid JSON')
+	}
+}
+
 function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPayload, screen: (wallet: string) => ScreeningResult): string {
 	const config = configSchema.parse(runtime.config)
 	const req = requestSchema.parse(JSON.parse(new TextDecoder().decode(payload.input)))
@@ -211,10 +220,8 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 		throw new Error('guard config names another forwarder')
 	}
 
-	// Private policy (decrypted inside the enclave in TEE execution); its commitment must equal the guard's.
-	const policy = JSON.parse(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value) as Policy
-	const commitment = policyHash(policy, config.decoderVersion)
-	if (!commitment.every((b, i) => b === guard.policyHash[i])) throw new Error('POLICY_STALE: policy document does not match the guard config')
+	// Private policy (decrypted inside the enclave in TEE execution): the registry entry the guard committed to.
+	const policy = selectPolicy(parseSecretJson(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value), guard.policyHash, config.decoderVersion)
 
 	let decision: Decision
 	const recomputed = txHash(new PublicKey(vaultTxPda).toBytes(), vaultTxAcc.data)
@@ -224,7 +231,8 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 		const plan = planReview(vaultTxAcc, vault, policy)
 		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination], context)[0] ?? null, policy)
 	}
-	if (decision.verdict === VERDICT.APPROVE && config.screening && screen(decision.wallet!) === 'SANCTIONED') {
+	// Screening is part of the policy; the workflow config can only switch it off (local runs).
+	if (decision.verdict === VERDICT.APPROVE && config.screening && policy.screening && screen(decision.wallet!) === 'SANCTIONED') {
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.SCREENING_REJECTED, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'recipient failed sanctions screening' }
 	}
 

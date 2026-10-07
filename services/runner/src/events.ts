@@ -15,7 +15,10 @@ export type DecisionRecorded = {
   expiresAt: string;
 };
 export type Executed = { name: "Executed"; review: string; multisig: string; txIndex: string };
-export type GuardEvent = ReviewRequested | DecisionRecorded | Executed;
+/** A voted policy change applied by the guard (no review involved). */
+export type PolicyChanged = { name: "PolicyChanged"; multisig: string; txIndex: string; oldPolicyHash: string; newPolicyHash: string };
+export type ReviewEvent = ReviewRequested | DecisionRecorded | Executed;
+export type GuardEvent = ReviewEvent | PolicyChanged;
 
 const { BorshCoder, EventParser } = anchor;
 
@@ -48,6 +51,15 @@ function toGuardEvent(name: string, d: any): GuardEvent | null {
     case "executed":
     case "Executed":
       return { name: "Executed", review: d.review.toBase58(), multisig: d.multisig.toBase58(), txIndex: d.tx_index.toString() };
+    case "policyChanged":
+    case "PolicyChanged":
+      return {
+        name: "PolicyChanged",
+        multisig: d.multisig.toBase58(),
+        txIndex: d.tx_index.toString(),
+        oldPolicyHash: hex(d.old_policy_hash),
+        newPolicyHash: hex(d.new_policy_hash),
+      };
     default:
       return null;
   }

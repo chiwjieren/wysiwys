@@ -6,6 +6,7 @@ export const SEEDS = {
   review: "review",
   executor: "executor",
   forwarder: "forwarder",
+  policyChange: "policy_change",
 } as const;
 
 export function txIndexSeed(txIndex: bigint): Uint8Array {
@@ -39,6 +40,12 @@ const GUARD_ERRORS = [
   "ReviewDeadlinePassed",
   "InvalidConfig",
   "ConfigActionNotAllowed",
+  "PolicyChangeNotApproved",
+  "PolicyChangeTooEarly",
+  "PolicyChangeStale",
+  "PolicyChangeOutdated",
+  "InvalidPolicyChange",
+  "GuardInMessage",
 ] as const;
 
 export type GuardErrorName = (typeof GUARD_ERRORS)[number];
