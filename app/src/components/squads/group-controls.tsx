@@ -168,21 +168,23 @@ export function CreateGroupButton({
                   </span>
                   <span className="caption">Joins automatically</span>
                 </div>
-                {members.map((value, i) => (
-                  <div key={i} className="space-y-1">
+                {members.map((member, i) => (
+                  <div key={member.id} className="space-y-1">
                     <div className="flex items-center gap-2">
                       <Input
                         aria-label={`Member ${i + 2} wallet address`}
                         aria-invalid={!!checked.errors[i]}
+                        id={`${inputPrefix}-member-${member.id}`}
+                        ref={i === members.length - 1 ? memberInput : undefined}
                         className="font-mono text-xs"
-                        value={value}
+                        value={member.address}
                         placeholder={`Member ${i + 2} wallet address`}
                         spellCheck={false}
                         autoComplete="off"
                         onChange={(e) =>
                           setMembers(
                             members.map((m, j) =>
-                              j === i ? e.target.value : m,
+                              j === i ? { ...m, address: e.target.value } : m,
                             ),
                           )
                         }
@@ -210,7 +212,12 @@ export function CreateGroupButton({
                   type="button"
                   variant="secondary"
                   disabled={members.length >= maxInvites}
-                  onClick={() => setMembers([...members, ""])}
+                  onClick={() =>
+                    setMembers([
+                      ...members,
+                      { id: nextMemberId.current++, address: "" },
+                    ])
+                  }
                 >
                   <Plus className="size-4" /> Add member
                 </Button>
