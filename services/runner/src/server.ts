@@ -13,7 +13,7 @@ type Deps = {
   settlement?: Settlement;
   /** Bearer token the app's server must send. Null with settlement present means fail closed (503). */
   settlementToken?: string | null;
-  /** Runs the CRE review simulation; absent means POST /review is not served (404). */
+  /** Runs one review (CRE simulation, or a live re-trigger in gateway mode); absent means POST /review is not served (404). */
   review?: Pick<CreRunner, "run">;
   /** Bearer token for POST /review. Null with review present means fail closed (503). */
   reviewToken?: string | null;

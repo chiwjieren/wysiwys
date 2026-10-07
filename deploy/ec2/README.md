@@ -92,6 +92,13 @@ sudo systemctl restart wysiwys-runner
 journalctl -u wysiwys-runner -n 20 --no-pager | grep -E "review path|trigger:"
 ```
 
+Re-trigger a live review whose DON run failed (only while it is still pending and inside the 15-minute review deadline; after that, propose the payment again):
+
+```bash
+curl -s -X POST localhost:8787/review -H "authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
+  -d '{"multisig":"<multisig>","txIndex":"<n>"}' | jq '{ok, log}'    # ok true only once the decision is on chain
+```
+
 A redeploy of the live workflow changes its ID: update `CRE_WORKFLOW_ID` and restart. Re-running `scripts/bootstrap-devnet.ts` rewrites `guard` from the default (simulator) test treasury; restore the live values afterwards.
 
 ## SQLite

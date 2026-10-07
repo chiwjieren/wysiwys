@@ -15,6 +15,7 @@ import { openStore } from "./store";
 import { HttpTrigger, LogTrigger } from "./trigger";
 import { GatewayTrigger } from "./gateway";
 import { guardForwarderReader, PathFilteredTrigger } from "./path-filter";
+import { LiveReviewRunner } from "./live-review";
 
 // Secrets (RPC key, trigger token) come from the root .env locally and from SSM on EC2.
 try {
@@ -54,9 +55,20 @@ const servedForwarder = gateway
   : creRunner
     ? cfg.forwarders?.simulator.program
     : undefined;
+const forwarderOf = guardForwarderReader(connection, programId);
 const trigger = servedForwarder
-  ? new PathFilteredTrigger(baseTrigger, guardForwarderReader(connection, programId), servedForwarder)
+  ? new PathFilteredTrigger(baseTrigger, forwarderOf, servedForwarder)
   : baseTrigger;
+// POST /review: re-trigger the live workflow in gateway mode, else run the simulation.
+const reviewRunner =
+  gateway && cfg.forwarders
+    ? new LiveReviewRunner({
+        trigger: gateway,
+        forwarderOf,
+        liveForwarder: cfg.forwarders.live.program,
+        isDecided: createReviewVerifier(connection, programId),
+      })
+    : creRunner;
 const listener = new Listener({
   connection,
   programId,
@@ -79,7 +91,7 @@ const server = createStatusServer({
     token: cfg.token,
   }),
   settlementToken: cfg.settlementToken,
-  review: creRunner ?? undefined,
+  review: reviewRunner ?? undefined,
   reviewToken: cfg.reviewToken,
 });
 
