@@ -549,3 +549,18 @@ export function validateMemberInputs(
   });
   return { invitees, errors, valid: errors.every((e) => e === null) };
 }
+
+/**
+ * Treasury opened when the app loads: an explicit `?group=` link, else the one used last. Never the
+ * deployment's own treasury by default: that is the scripts' test treasury (signed by script keys),
+ * opened only from an explicit link.
+ */
+export function initialTreasury(o: {
+  link: string | null;
+  remembered: string | null;
+  deploymentTreasury: string | null | undefined;
+}): string | null {
+  if (o.link) return o.link;
+  if (o.remembered && o.remembered !== o.deploymentTreasury) return o.remembered;
+  return null;
+}

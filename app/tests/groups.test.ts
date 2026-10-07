@@ -13,6 +13,7 @@ import {
   memberRole,
   standardGroupConfig,
   standardGroupsEnabled,
+  initialTreasury,
 } from "../src/lib/squads/groups";
 
 test("group creation derives SDK multisig and vault, sets threshold and never grants humans Execute", () => {
@@ -168,4 +169,17 @@ test("member roles label humans and the guard executor from on-chain permissions
     memberRole(executor.toBase58(), 7, executor.toBase58()),
     "Initiate + Vote + Execute",
   );
+});
+
+test("on load the app opens a linked or last-used treasury, never the deployment's test treasury by default", () => {
+  const test = Keypair.generate().publicKey.toBase58();
+  const mine = Keypair.generate().publicKey.toBase58();
+  const link = Keypair.generate().publicKey.toBase58();
+  assert.equal(initialTreasury({ link: null, remembered: null, deploymentTreasury: test }), null);
+  assert.equal(initialTreasury({ link: null, remembered: mine, deploymentTreasury: test }), mine);
+  assert.equal(initialTreasury({ link, remembered: mine, deploymentTreasury: test }), link);
+  // A stale "last used" pointing at the test treasury no longer reopens it.
+  assert.equal(initialTreasury({ link: null, remembered: test, deploymentTreasury: test }), null);
+  // An explicit link still opens it.
+  assert.equal(initialTreasury({ link: test, remembered: null, deploymentTreasury: test }), test);
 });

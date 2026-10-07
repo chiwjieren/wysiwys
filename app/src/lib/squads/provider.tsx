@@ -14,6 +14,7 @@ import {
   buildMemberEdit,
   buildMemberInvitation,
   buildMemberRemoval,
+  initialTreasury,
   validateInitializeGuard,
 } from "./groups";
 import { useWalletConnection } from "@/lib/auth/provider";
@@ -199,9 +200,11 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           /* Public local labels are optional. */
         }
         setGroups(saved);
-        const requested =
-          new URL(window.location.href).searchParams.get("group") ||
-          localStorage.getItem("wysiwys.activeGroup");
+        const requested = initialTreasury({
+          link: new URL(window.location.href).searchParams.get("group"),
+          remembered: localStorage.getItem("wysiwys.activeGroup"),
+          deploymentTreasury: loaded?.multisig,
+        });
         if (requested) {
           const address = new PublicKey(requested).toBase58();
           const groupResponse =
@@ -223,10 +226,6 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           setGroupName(
             saved.find((g) => g.address === address)?.name || "Shared group",
           );
-          setMode("live");
-        } else if (loaded) {
-          setConfig(loaded);
-          setGroupName("Treasury");
           setMode("live");
         } else setMode("unconfigured");
       })
