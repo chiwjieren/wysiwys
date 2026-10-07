@@ -19,7 +19,14 @@ export type RunnerStatus =
         rejected: number;
         executed: number;
       };
+      /** Which review path the runner serves; absent on runners without the switch. */
+      reviewPath?: RunnerReviewPath;
     };
+export type RunnerReviewMode = "live" | "simulator";
+export type RunnerReviewPath = {
+  mode: RunnerReviewMode;
+  available: RunnerReviewMode[];
+};
 export type RunnerReviewStatus =
   "pending" | "approved" | "rejected" | "executed";
 export type RunnerReview = {
