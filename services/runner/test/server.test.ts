@@ -170,7 +170,7 @@ function fakeSettlement(calls: string[]): Settlement {
     destinationOf: async () => ({ kind: "spl", destination: "x" }),
     guardedConfigExecute: async (input: any) => (calls.push(`config:${input.txIndex}`), ix),
     prepareGuardedGroup: async (input: any) => {
-      calls.push(`prepareGroup:${input.multisig}`);
+      calls.push(`prepareGroup:${input.multisig}${input.multisig === "NewMs1" ? `:${input.policyHash ?? "default"}` : ""}`);
       if (input.multisig === "Exists") throw new SettlementError(409, "guard config already exists for this multisig");
       return { multisig: input.multisig, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: false as const, instruction: ix };
     },
@@ -481,6 +481,40 @@ test("GET /cre/policies/:hash serves a stored document to the workflow with its 
     const ok = await get(hashOf(doc), "Bearer cre-token");
     assert.equal(ok.status, 200);
     assert.deepEqual(((await ok.json()) as any).document, doc);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/policies/register stores a creator's policy by hash before the treasury exists", async () => {
+  const s = await serveSettlement("t");
+  try {
+    const doc = policyDoc(1);
+    const res = await s.post("/frontend/policies/register", { document: doc });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { hash: hashOf(doc) });
+    assert.deepEqual(JSON.parse(s.store.getPolicyDocument(hashOf(doc))!), doc);
+    const bad = await s.post("/frontend/policies/register", { document: { ...doc, extra: 1 } });
+    assert.equal(bad.status, 400);
+    assert.equal((await s.post("/frontend/policies/register", { document: doc }, null)).status, 401);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/groups/prepare passes a chosen policy hash only when its document is stored", async () => {
+  const s = await serveSettlement("t");
+  try {
+    const group = { multisig: "NewMs1", creator: "C1", createKey: "K1" };
+    const doc = policyDoc(1);
+    const unknown = await s.post("/frontend/groups/prepare", { ...group, policyHash: hashOf(doc) });
+    assert.equal(unknown.status, 409);
+    assert.match(((await unknown.json()) as any).error, /policy document is not stored/);
+    assert.equal((await s.post("/frontend/groups/prepare", { ...group, policyHash: "xyz" })).status, 400);
+    s.store.putPolicy({ hash: hashOf(doc), multisig: "registered", document: JSON.stringify(doc), createdAt: 1 });
+    assert.equal((await s.post("/frontend/groups/prepare", { ...group, policyHash: hashOf(doc) })).status, 200);
+    assert.equal((await s.post("/frontend/groups/prepare", group)).status, 200, "without a hash the deployment policy is used");
+    assert.deepEqual(s.calls.filter((c) => c.startsWith("prepareGroup")), [`prepareGroup:NewMs1:${hashOf(doc)}`, "prepareGroup:NewMs1:default"]);
   } finally {
     s.close();
   }
