@@ -10,7 +10,7 @@ Votes and review may arrive in either order. A CRE verdict is neither a Squads v
 
 Built for the TOKEN2049 Origins Hackathon (Singapore, 6 to 8 Oct 2026). Tracks: Main, Solana, Chainlink (Best Workflow with CRE). Submission needs a public repo, a live devnet URL and a deck with an embedded demo video.
 
-Architecture reference: `docs/plans/architecture.md` and `docs/plans/architecture_diagram.png`. Sections marked **PROPOSED** there are project-owned contracts, not Chainlink or Squads APIs; freeze them in `packages/shared` before building against them.
+Architecture reference: `docs/plans/architecture.md` and `docs/plans/architecture_diagram.svg` (the PNG is historical). Sections marked **PROPOSED** there are project-owned contracts, not Chainlink or Squads APIs; freeze them in `packages/shared` before building against them.
 
 ## End-to-end flow
 
@@ -74,8 +74,10 @@ npx tsx scripts/e2e-devnet.ts [scenario]   # clean, lookalike, drift, overCap, o
 npm test --workspace=packages/decoder
 
 # CRE workflow
+cd workflow/confidential-preflight && cre workflow simulate review --target local-simulation --non-interactive \
+  --trigger-index 0 --http-payload '{"multisig":"...","txIndex":"..."}'   # real reads, no report generation or submission
 cd workflow/confidential-preflight && cre workflow simulate review --target staging-settings --non-interactive \
-  --trigger-index 0 [--broadcast] --http-payload '{"multisig":"...","txIndex":"..."}'   # review workflow; see its README
+  --trigger-index 0 --broadcast --http-payload '{"multisig":"...","txIndex":"..."}'   # report mode needs a real devnet write; see its README
 npx tsx scripts/propose-devnet.ts <scenario> / scripts/finish-devnet.ts <txIndex>   # pending review / vote + execute
 
 # Runner (event adapter)

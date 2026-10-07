@@ -15,18 +15,31 @@ const runner = (o: Partial<ConstructorParameters<typeof CreRunner>[0]> = {}) =>
     target: "staging-settings",
     broadcast: true,
     timeoutMs: 5_000,
+    verifyReview: async () => true,
     ...o,
   });
 
-const req = { multisig: "Boz5Dukxrwi5MGRam8bGimokhZwFRLHFdVeEsjaTLgPH", txIndex: "7" };
+const req = {
+  multisig: "Boz5Dukxrwi5MGRam8bGimokhZwFRLHFdVeEsjaTLgPH",
+  txIndex: "7",
+};
 
 test("runs cre workflow simulate non-interactively with the identifiers as the HTTP payload", async () => {
   const r = await runner().run(req);
   assert.equal(r.ok, true);
   const args = JSON.parse(r.log.find((l) => l.startsWith("ARGS "))!.slice(5));
   assert.deepEqual(args, [
-    "workflow", "simulate", "review", "--target", "staging-settings", "--non-interactive", "--trigger-index", "0",
-    "--http-payload", JSON.stringify(req), "--broadcast",
+    "workflow",
+    "simulate",
+    "review",
+    "--target",
+    "staging-settings",
+    "--non-interactive",
+    "--trigger-index",
+    "0",
+    "--http-payload",
+    JSON.stringify(req),
+    "--broadcast",
   ]);
   assert.ok(r.log.some((l) => l === `CWD ${here}`));
 });
@@ -70,12 +83,92 @@ test("identical concurrent requests share one run; different ones run one at a t
 });
 
 test("rejects identifiers that are not a base58 key and a u64", async () => {
-  await assert.rejects(runner().run({ multisig: "not a key; rm -rf /", txIndex: "1" }), /invalid/);
-  await assert.rejects(runner().run({ ...req, txIndex: "1 --broadcast" }), /invalid/);
+  await assert.rejects(
+    runner().run({ multisig: "not a key; rm -rf /", txIndex: "1" }),
+    /invalid/,
+  );
+  await assert.rejects(
+    runner().run({ ...req, txIndex: "1 --broadcast" }),
+    /invalid/,
+  );
 });
 
 test("trigger adapter throws on a failed run so the listener retries", async () => {
   const t = runner().asTrigger();
   await t.send({ review: "R", ...req });
-  await assert.rejects(t.send({ review: "R", ...req, txIndex: "13" }), /simulation failed/);
+  await assert.rejects(
+    t.send({ review: "R", ...req, txIndex: "13" }),
+    /simulation failed/,
+  );
+});
+
+test("CLI success with an unrecorded report stays retryable", async () => {
+  const c = runner({ verifyReview: async () => false });
+  assert.equal((await c.run(req)).ok, false);
+  await assert.rejects(
+    c.asTrigger().send({ review: "R", ...req }),
+    /simulation failed/,
+  );
+});
+
+test("broadcast requires an on-chain verifier, including on RPC failure", async () => {
+  assert.equal((await runner({ verifyReview: undefined }).run(req)).ok, false);
+  assert.equal(
+    (
+      await runner({
+        verifyReview: async () => {
+          throw new Error("RPC unavailable");
+        },
+      }).run(req)
+    ).ok,
+    false,
+  );
+});
+
+test("listener never acknowledges a dry run as report delivery", async () => {
+  const c = runner({ broadcast: false });
+  assert.equal((await c.run(req)).ok, true);
+  await assert.rejects(
+    c.asTrigger().send({ review: "R", ...req }),
+    /broadcast/,
+  );
+});
+
+test("finalized state verification is bound to the validated identifiers", async () => {
+  const seen: unknown[] = [];
+  const c = runner({
+    verifyReview: async (r) => {
+      seen.push(r);
+      return true;
+    },
+  });
+  assert.equal((await c.run(req)).ok, true);
+  assert.deepEqual(seen, [req]);
+});
+
+test("rejects transaction indices outside the u64 range", async () => {
+  await assert.rejects(
+    runner().run({ ...req, txIndex: "18446744073709551616" }),
+    /invalid/,
+  );
+});
+
+test("a hung finalized-state verifier shares the run timeout", async () => {
+  const r = await runner({
+    timeoutMs: 500,
+    verifyReview: () => new Promise(() => {}),
+  }).run(req);
+  assert.equal(r.ok, false);
+  assert.equal(r.timedOut, true);
+});
+
+test("normalizes an index before spawning and chain verification", async () => {
+  const seen: unknown[] = [];
+  await runner({
+    verifyReview: async (r) => {
+      seen.push(r);
+      return true;
+    },
+  }).run({ ...req, txIndex: "007" });
+  assert.deepEqual(seen, [req]);
 });

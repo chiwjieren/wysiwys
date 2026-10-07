@@ -1,0 +1,162 @@
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { cre, SolanaTxStatus, SolanaReceiverContractExecutionStatus, type TeeRuntime, type HTTPPayload } from '@chainlink/cre-sdk'
+import fixtures from './fixtures/devnet-e2e.json'
+import staging from './config.staging.json'
+import { policyHash } from '../../../packages/shared/src/index'
+import { base64ToBytes } from './review-logic'
+import { onReview, configSchema, type Config } from './workflow'
+
+// Public devnet fixture bytes, synthetic policy and dummy credentials. These tests invoke the actual
+// handler and RPC callbacks; capability I/O is mocked, not the decoder or policy evaluation.
+const ENDPOINTS = ['https://test.solana-devnet.quiknode.pro/test', 'https://devnet.helius-rpc.com/?api-key=test', 'https://solana-devnet.g.alchemy.com/v2/test']
+const IDS = ['QUICKNODE_SOLANA_DEVNET_RPC_URL', 'HELIUS_SOLANA_DEVNET_RPC_URL', 'ALCHEMY_SOLANA_DEVNET_RPC_URL']
+const NOW = 1_800_000_000
+const policy = {
+  version: 1, salt: '00'.repeat(16), allowedMints: [{ mint: '', decimals: 6 }],
+  maxAmountPerPayment: '100000000000', destinationWhitelist: [] as string[],
+}
+// The destination fixture only stores owner/data; decode its public token-account fields.
+import { PublicKey } from '@solana/web3.js'
+const destData = base64ToBytes(fixtures.scenarios.clean.destination!.data)
+policy.allowedMints[0]!.mint = new PublicKey(destData.slice(0, 32)).toBase58()
+policy.destinationWhitelist = [new PublicKey(destData.slice(32, 64)).toBase58()]
+
+const mocks: Array<{ mockRestore(): void }> = []
+afterEach(() => { for (const m of mocks.splice(0)) m.mockRestore() })
+
+function harness(options: {
+  mode?: 'report' | 'local-simulation'; endpoints?: string[]; sanctioned?: boolean;
+  rpcEnvelopeError?: boolean;
+  screeningStatus?: number; screeningBody?: unknown; staleDestination?: boolean; noQuorum?: boolean;
+  wrongGenesis?: number[]; policyMismatch?: boolean; changedTx?: boolean;
+  txStatus?: number; receiverStatus?: number | null; signature?: Uint8Array; error?: string;
+  expired?: boolean; decided?: boolean;
+} = {}) {
+  const config = configSchema.parse(staging)
+  const local = { mode: 'local-simulation', chainSelector: staging.chainSelector, guardProgram: staging.guardProgram,
+    decoderVersion: staging.decoderVersion, approvalSeconds: staging.approvalSeconds, maxSlotLag: staging.maxSlotLag,
+    screening: staging.screening, authorizedKeys: staging.authorizedKeys }
+  const runtimeConfig = options.mode === 'local-simulation' ? configSchema.parse(local) : config
+  const endpoints = options.endpoints ?? ENDPOINTS
+  const secrets = Object.fromEntries(IDS.map((id, i) => [id, endpoints[i]!]))
+  const calls: Array<{ provider: number; method: string; params: any[] }> = []
+  const s = fixtures.scenarios.clean
+  const review = base64ToBytes(s.review.data)
+  review[145] = options.decided ? 1 : 0
+  new DataView(review.buffer).setBigInt64(229, BigInt(NOW - (options.expired ? 1000 : 30)), true)
+  const guard = base64ToBytes(fixtures.config.data)
+  guard.set(policyHash(policy, staging.decoderVersion), 104)
+  if (options.policyMismatch) guard[104] ^= 1
+  const tx = base64ToBytes(s.vaultTransaction.data)
+  if (options.changedTx) tx[tx.length - 1] ^= 1
+  const accounts = new Map([
+    [s.review.address, { owner: s.review.owner, data: Buffer.from(review).toString('base64') }],
+    [fixtures.config.address, { owner: fixtures.config.owner, data: Buffer.from(guard).toString('base64') }],
+    [s.vaultTransaction.address, { owner: s.vaultTransaction.owner, data: Buffer.from(tx).toString('base64') }],
+    [s.destination!.address, s.destination!],
+  ])
+  const request = spyOn(cre.capabilities.HTTPClient.prototype, 'sendRequest').mockImplementation((_runtime: any, input: any) => {
+    if (input.method === 'GET') return { result: () => ({ statusCode: options.screeningStatus ?? 200,
+      body: new TextEncoder().encode(JSON.stringify(options.screeningBody ?? { isSanctioned: options.sanctioned ?? false })) }) } as any
+    const provider = endpoints.indexOf(input.url)
+    const { method, params } = JSON.parse(Buffer.from(input.body, 'base64').toString())
+    calls.push({ provider, method, params })
+    let result: unknown
+    if (method === 'getGenesisHash') result = options.wrongGenesis?.includes(provider) ? 'wrong-chain' : 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
+    else if (method === 'getSlot') result = 1000 + provider
+    else result = { context: { slot: options.staleDestination && params[0].length === 1 ? 1 : 1010 },
+      value: params[0].map((a: string) => {
+        const account = accounts.get(a)
+        return account ? { owner: account.owner, data: [options.noQuorum ? Buffer.from([provider]).toString('base64') : account.data, 'base64'] } : null
+      }) }
+    return { result: () => ({ statusCode: 200, body: new TextEncoder().encode(JSON.stringify({ jsonrpc: '2.0', id: 1, result,
+      ...(options.rpcEnvelopeError ? { error: { code: -32000, message: 'unavailable' } } : {}) })) }) } as any
+  })
+  const write = spyOn(cre.capabilities.SolanaClient.prototype, 'writeReport').mockImplementation(() => ({ result: () => ({
+    txStatus: options.txStatus ?? SolanaTxStatus.SUCCESS,
+    receiverContractExecutionStatus: options.receiverStatus === null ? undefined : options.receiverStatus ?? SolanaReceiverContractExecutionStatus.SUCCESS,
+    txSignature: options.signature ?? new Uint8Array(64).fill(1), errorMessage: options.error ?? '',
+  }) }) as any)
+  mocks.push(request, write)
+  let reports = 0
+  const don = {
+    config: runtimeConfig, log: () => {}, now: () => new Date(NOW * 1000),
+    getSecret: ({ id }: { id: string }) => {
+      if (!(id in secrets)) throw new Error('private secret crossed into DON')
+      return { result: () => ({ value: secrets[id]! }) }
+    },
+    runInNodeMode: (callback: (...args: any[]) => any) => (...args: any[]) => ({ result: () => callback(don, ...args) }),
+    report: () => { reports++; return { result: () => ({}) } },
+  }
+  const tee = { config: runtimeConfig, log: () => {}, usingTheDons: () => don,
+    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? JSON.stringify(policy) : 'dummy-test-api-key' }) }) }
+  return { run: () => JSON.parse(onReview(tee as unknown as TeeRuntime<Config>, {
+    input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })),
+  } as HTTPPayload)), calls, request, write, reports: () => reports }
+}
+
+describe('complete confidential review handler', () => {
+  test('approves, screens once inside TEE and checks report delivery', () => {
+    const h = harness(); const result = h.run()
+    expect(result.verdict).toBe('approve'); expect(result.txSignature).toBeTruthy()
+    expect(h.request.mock.calls.filter(([, r]: any) => r.method === 'GET')).toHaveLength(1)
+    expect(h.calls.length).toBe(12); expect(h.write).toHaveBeenCalledTimes(1)
+  })
+  test('pins both account reads to the same positive minimum context slot', () => {
+    const h = harness(); h.run()
+    const reads = h.calls.filter(c => c.method === 'getMultipleAccounts')
+    expect(reads).toHaveLength(6)
+    const floor = reads[0]!.params[1].minContextSlot
+    expect(floor).toBeGreaterThan(0)
+    expect(reads.every(c => c.params[1].minContextSlot === floor)).toBe(true)
+  })
+  test('a wrong-chain provider is excluded from both account reads', () => {
+    const h = harness({ wrongGenesis: [2] }); h.run()
+    expect(h.calls.some(c => c.method === 'getMultipleAccounts' && c.provider === 2)).toBe(false)
+  })
+  test('duplicate provider configuration cannot supply quorum', () => {
+    const h = harness({ endpoints: [ENDPOINTS[0]!, ENDPOINTS[0]!, ENDPOINTS[2]!] })
+    expect(h.run).toThrow('RPC_PROVIDER_CONFIGURATION'); expect(h.write).not.toHaveBeenCalled()
+  })
+  test('JSON-RPC errors cannot count as healthy providers even when result is also present', () => {
+    const h = harness({ rpcEnvelopeError: true }); expect(h.run).toThrow('RPC_NO_QUORUM')
+    expect(h.calls.filter(c => c.method === 'getMultipleAccounts')).toHaveLength(0)
+  })
+  for (const options of [{ noQuorum: true }, { staleDestination: true }, { wrongGenesis: [1, 2] },
+    { policyMismatch: true }, { screeningStatus: 503 }, { screeningBody: {} }, { expired: true }, { rpcEnvelopeError: true }]) {
+    test(`fails closed without a report: ${JSON.stringify(options)}`, () => {
+      const h = harness(options); expect(h.run).toThrow(); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+    })
+  }
+  test('sanctions match produces a reject report', () => {
+    const h = harness({ sanctioned: true }); expect(h.run().reason).toBe(12); expect(h.write).toHaveBeenCalledTimes(1)
+  })
+  test('a changed transaction produces a reject and never calls screening', () => {
+    const h = harness({ changedTx: true }); expect(h.run().reason).toBe(2)
+    expect(h.request.mock.calls.filter(([, r]: any) => r.method === 'GET')).toHaveLength(0)
+  })
+  for (const options of [{ txStatus: SolanaTxStatus.FATAL }, { txStatus: SolanaTxStatus.ABORTED },
+    { receiverStatus: SolanaReceiverContractExecutionStatus.REVERTED }, { receiverStatus: null },
+    { signature: new Uint8Array(0) }, { signature: new Uint8Array(32) }, { signature: new Uint8Array(64) }, { error: 'failed' }]) {
+    test(`does not return success on unsuccessful delivery: ${JSON.stringify(options)}`, () => {
+      const h = harness(options); expect(h.run).toThrow('REPORT_DELIVERY_FAILED')
+    })
+  }
+  test('local simulation evaluates the real handler path but cannot generate or send a report', () => {
+    const h = harness({ mode: 'local-simulation' }); const result = h.run()
+    expect(result.mode).toBe('local-simulation'); expect(result.verdict).toBe('approve')
+    expect(h.calls.length).toBe(12); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+  })
+  test('decided reviews are idempotently skipped', () => {
+    const h = harness({ decided: true }); expect(h.run().skipped).toContain('approved'); expect(h.write).not.toHaveBeenCalled()
+  })
+  test('local replay labels decided or expired chain reviews and still cannot submit a report', () => {
+    const h = harness({ mode: 'local-simulation', decided: true, expired: true }); const result = h.run()
+    expect(result.reviewStatus).toBe('approved'); expect(result.withinDeadline).toBe(false)
+    expect(result.reportSubmitted).toBe(false); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+  })
+  test('local config rejects report fields and unknown modes', () => {
+    expect(() => configSchema.parse({ ...staging, mode: 'local-simulation' })).toThrow()
+    expect(() => configSchema.parse({ ...staging, mode: 'unknown' })).toThrow()
+  })
+})

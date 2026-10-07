@@ -54,7 +54,61 @@ Use these responsibility boundaries within the repository's existing layout:
 | Confidential policy module | Private policy loading, destination whitelist and other deterministic checks |
 | Deployment/configuration | Network/program identities, protected authorities, secrets and environment separation |
 
-## Architecture diagram
+## Current MVP architecture
+
+The current diagram is [architecture_diagram.svg](architecture_diagram.svg), with a [PNG export](architecture_diagram_current.png). The original [PNG](architecture_diagram.png) and the conceptual diagram below remain historical design references.
+
+The entire `onReview` callback is registered with `handlerInTee`. It uses `runtime.usingTheDons()` for public chain observations and report submission. The decoder, policy document and Scorechain sanctions call execute within the confidential handler. Public account facts enter that handler; only the derived bound report leaves it. RPC credentials are operational DON inputs, not private policy data. Source code and exported logs are not confidential.
+
+```mermaid
+flowchart TB
+  APP[App: Squads transaction and request_review] --> EVENT[Finalized Guard event]
+  EVENT --> RUNNER[Listener / authenticated runner: identifiers only]
+  RUNNER --> TRIGGER[CRE HTTP trigger]
+  subgraph TEE[Confidential handler: onReview registered with handlerInTee]
+    ENTRY[Derive account addresses] --> CHECK[Verify tx_hash and decode every instruction]
+    CHECK --> POLICY[Private policy commitment, whitelist, mint and payment cap]
+    POLICY --> SCREEN[Scorechain sanctions screening inside handler]
+    SCREEN --> RESULT[Minimal bound verdict]
+    RESULT --> LOCAL[local-simulation: return only, no report]
+  end
+  TRIGGER --> ENTRY
+  subgraph DON[DON runtime through usingTheDons]
+    HEALTH[Node callbacks: Devnet genesis and finalized slots] --> CONTEXT[CRE aggregation: median slot floor and identical eligible sources]
+    CONTEXT --> READ[Node callbacks: QuickNode, Helius, Alchemy; same floor on both reads]
+    READ --> QUORUM[Application source agreement: two of three exact contents]
+    QUORUM --> AGREE[CRE identical aggregation of node outputs]
+    REPORT[DON report and SolanaClient.writeReport]
+  end
+  ENTRY --> HEALTH
+  AGREE --> CHECK
+  POLICY -->|destination discovery| READ
+  AGREE --> POLICY
+  RESULT -->|report mode: derived payload only| REPORT
+  REPORT --> FORWARDER[Devnet demo mock forwarder; live forwarder is a separate trust setup]
+  FORWARDER --> REVIEW[Guard on_report: validate and record Review]
+  REVIEW --> CONFIRM[Runner rereads finalized decided Review before acknowledging delivery]
+  REVIEW --> EXEC[Guarded execute: hash, destination, expiry and unused status]
+  HUMANS[Separate human Squads votes: demo three of three] --> EXEC
+  EXEC --> PAY[Executor PDA signs Squads CPI; consume Review and pay atomically]
+```
+
+### Consensus and execution boundaries
+
+- Three provider domains are required in their configured positions. Duplicate URLs, aliases belonging to the wrong provider, non-HTTPS URLs and malformed URLs fail before reads. This validates configuration; it does not prove independent upstream infrastructure or honest API data.
+- Each node health-checks providers. CRE aggregates the numeric slot floor by median and the eligible-provider set identically. Both initial and destination reads use that shared context. Failed or wrong-chain sources stay excluded. Account contents are normalized, compared two of three, then aggregated identically by CRE. No default observation substitutes for failed consensus.
+- The slot floor is a lower bound, not an atomic snapshot or a fixed-slot query. Guard execution still rechecks mutable destination facts.
+- Provider agreement, deployed DON consensus and human Squads votes are three different mechanisms. The number of drawn operators does not configure Chainlink network membership or prove a BFT fault bound. The same upstream providers remain shared source fault domains across nodes.
+- Local simulation uses the local simulator and simulated confidential execution. It proves neither production multi-node BFT nor hardware enclave attestation. Live confidential deployment requires separate private-beta access; local development and simulation do not.
+- A genuine deployed confidential result is attested through Chainlink's runtime. This repo does not implement a custom enclave-attestation service or put private policy in persistent Nitro storage. `POLICY_DOCUMENT` is obtained through `TeeRuntime.getSecret` at use time.
+- Report mode requires successful Solana transaction and receiver execution statuses, no returned error and a valid signature. The runner additionally verifies a finalized, guard-owned, correctly identified decided Review. CLI success alone never acknowledges listener delivery. Missing finalized state or RPC failure stays retryable; a dry run cannot acknowledge a trigger.
+- `local-simulation` evaluates real chain data without generating or submitting a report. It can replay decided/expired reviews, labels their existing status/deadline, and cannot revive them or change chain state.
+
+References: [CRE mental model](https://smartcontractkit.github.io/cre-bootcamp-2026/day-1/02-mental-model.html), [Confidential Workflows](https://docs.chain.link/cre/concepts/confidential-workflows), [HTTP Client](https://docs.chain.link/cre/reference/sdk/http-client-ts), [Solana Client](https://docs.chain.link/cre/reference/sdk/solana-client-ts). Implementation signatures and enums follow the pinned SDK 1.23.0; current web examples can differ from that version.
+
+## Historical conceptual diagram
+
+This diagram shows the earlier proposed data flow, not the current SDK call graph. In particular, its separate decoder box and generic attestation box are superseded by the current handler and runtime boundaries above. The proposed generation/pause/admin fields below remain outside the frozen MVP.
 
 ```mermaid
 flowchart TB
@@ -126,9 +180,9 @@ flowchart TB
 ## Seven-stage explanation
 
 1. **Propose payment:** the Next.js app uses the Squads SDK to create a VaultTransaction and Proposal. Recipient, mint and integer amount must be reflected in the stored message. Browser previews and memos cannot authorize payment.
-2. **Request review:** Guard validates the expected multisig, vault, Squads account owners and derivations; computes the transaction binding; creates a current PENDING review; emits `ReviewRequested`. New requests supersede old generations; consumed transactions cannot regain authorization.
+2. **Request review:** Guard validates the expected multisig, vault, Squads account owners and derivations; computes the transaction binding; creates a PENDING review; emits `ReviewRequested`. The frozen MVP has one permanent Review per Squads transaction index. A rejected or expired Review requires a new Squads transaction.
 3. **Fetch and agree:** an authorized adapter observes the finalized event and sends an authenticated HTTP trigger. CRE re-reads the on-chain request and payment. Every illustrated node independently reads all three RPC providers, validates their responses, and returns a matching observation. CRE aggregates node outputs through its deployed consensus mechanisms. Native Solana event-trigger availability must be verified before replacing the adapter.
-4. **Decode and evaluate:** decode every stored instruction with a pinned decoder. Pass the exact payment, destination facts and binding into confidential policy execution. Inside the TEE, fetch/decrypt the active private policy and evaluate its address whitelist and other rules.
+4. **Decode and evaluate:** inside the confidential handler, verify the stored transaction hash and decode every instruction with the pinned decoder. Obtain destination facts through DON-agreed reads. Fetch/decrypt the private policy and evaluate its whitelist, mint and per-payment rules, followed by Scorechain sanctions screening for an otherwise approved recipient.
 5. **Store the verdict:** after the confidential result and attestation checks, the DON signs the bound report. The on-chain Keystone Forwarder verifies signatures and calls Guard `on_report` by CPI. Guard authenticates the delivery and intended workflow, rejects stale/mismatched reports, and records APPROVED or REJECTED. [Solana Write capability](https://docs.chain.link/cre/capabilities/solana-write).
 6. **Human approval:** three treasury signers approve through Squads in the example configuration. They have Propose/Vote permissions; the Guard-derived executor PDA is the sole Execute member.
 7. **Execute:** Guard checks every gate and the current transaction, revalidates mutable destination facts, consumes the review, and invokes Squads with the executor PDA signer. Squads checks approval/timelock and authorizes the vault transfer. Consumption and payout are one atomic transaction; failure rolls both back.

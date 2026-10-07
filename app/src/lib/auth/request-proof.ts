@@ -9,7 +9,10 @@ type RequestProof = {
 // Only legacy Guard preparation needs an off-chain proof. Connecting a wallet does not sign a message.
 export async function requestMessage(input: RequestProof) {
   const hash = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input.body)),
+    await crypto.subtle.digest(
+      "SHA-256",
+      new Uint8Array(new TextEncoder().encode(input.body)),
+    ),
   );
   const digest = Array.from(hash, (byte) =>
     byte.toString(16).padStart(2, "0"),

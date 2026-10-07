@@ -10,12 +10,15 @@ import { Listener } from "./listener";
 import { createStatusServer } from "./server";
 import { createSettlement } from "./settlement";
 import { CreRunner } from "./cre";
+import { createReviewVerifier } from "./delivery";
 import { openStore } from "./store";
 import { HttpTrigger, LogTrigger } from "./trigger";
 
 // Secrets (RPC key, trigger token) come from the root .env locally and from SSM on EC2.
 try {
-  process.loadEnvFile(resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env"));
+  process.loadEnvFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env"),
+  );
 } catch {
   // No .env: use the process environment.
 }
@@ -25,18 +28,29 @@ const programId = new PublicKey(cfg.programId);
 mkdirSync(dirname(cfg.dbPath), { recursive: true });
 const store = openStore(cfg.dbPath);
 // In-process CRE simulation when configured; else a remote HTTP trigger; else log only.
-const creRunner = cfg.cre ? new CreRunner(cfg.cre) : null;
+const connection = new Connection(cfg.rpcUrl, {
+  commitment: "finalized",
+  wsEndpoint: cfg.wsUrl ?? undefined,
+});
+const creRunner = cfg.cre
+  ? new CreRunner({
+      ...cfg.cre,
+      verifyReview: createReviewVerifier(connection, programId),
+    })
+  : null;
 const trigger = creRunner
   ? creRunner.asTrigger()
   : cfg.triggerUrl
     ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined)
     : new LogTrigger();
-const connection = new Connection(cfg.rpcUrl, { commitment: "finalized", wsEndpoint: cfg.wsUrl ?? undefined });
 const listener = new Listener({
   connection,
   programId,
   store,
-  parse: createEventParser({ ...(idl as Idl), address: cfg.programId }, programId),
+  parse: createEventParser(
+    { ...(idl as Idl), address: cfg.programId },
+    programId,
+  ),
   trigger,
   backfillIntervalMs: cfg.backfillIntervalMs,
 });
@@ -44,20 +58,33 @@ const server = createStatusServer({
   programId: cfg.programId,
   store,
   health: () => listener.health(),
-  settlement: createSettlement({ connection, programId, guardSetup: cfg.guardSetup, token: cfg.token }),
+  settlement: createSettlement({
+    connection,
+    programId,
+    guardSetup: cfg.guardSetup,
+    token: cfg.token,
+  }),
   settlementToken: cfg.settlementToken,
   review: creRunner ?? undefined,
   reviewToken: cfg.reviewToken,
 });
 
-const ws = cfg.wsUrl ? new URL(cfg.wsUrl).host : `${new URL(cfg.rpcUrl).host} (derived)`;
-console.log(`[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`);
+const ws = cfg.wsUrl
+  ? new URL(cfg.wsUrl).host
+  : `${new URL(cfg.rpcUrl).host} (derived)`;
+console.log(
+  `[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`,
+);
 console.log(
   `[runner] trigger: ${cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
 );
-console.log(`[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`);
+console.log(
+  `[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`,
+);
 await listener.start();
-server.listen(cfg.port, () => console.log(`[runner] status on http://localhost:${cfg.port}/status`));
+server.listen(cfg.port, () =>
+  console.log(`[runner] status on http://localhost:${cfg.port}/status`),
+);
 
 const shutdown = async () => {
   server.close();

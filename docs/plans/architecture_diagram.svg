@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Wysiwys: current CRE confidential review architecture</title>
+  <desc id="desc">The confidential handler delegates public chain reads to DON callbacks, verifies and decodes account data, evaluates private policy and sanctions screening, and exports only a bound report. Source agreement, CRE consensus and human votes are distinct. The runner confirms finalized guard state. Local simulation stops before report generation.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10" fill="#52647e"/></marker>
+    <style>
+      text { font-family: Inter, Segoe UI, Arial, sans-serif; fill: #18283f; }
+      .title { font-size: 32px; font-weight: 700; }
+      .heading { font-size: 23px; font-weight: 700; }
+      .body { font-size: 19px; }
+      .small { font-size: 17px; fill: #4b5d76; }
+      .label { font-size: 16px; fill: #4b5d76; }
+      .box { fill: #fff; stroke: #a4b5ca; stroke-width: 1.5; rx: 12; }
+      .path { fill: none; stroke: #52647e; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1600" height="1120" fill="#f8fafc"/>
+  <text x="60" y="58" class="title">Wysiwys: confidential review, guarded payout</text>
+  <text x="60" y="89" class="small">Current frozen MVP | 117-byte report v2 | Solana devnet demo | 7 October 2026</text>
+
+  <rect x="60" y="120" width="1470" height="76" class="box"/>
+  <text x="88" y="152" class="heading">App / Squads → Guard request_review → finalized event → listener / runner → CRE HTTP trigger</text>
+  <text x="88" y="179" class="small">The trigger supplies multisig and transaction index only. Chain accounts supply authoritative payment facts.</text>
+
+  <rect x="60" y="240" width="680" height="480" rx="18" fill="#f3edfc" stroke="#a48bc4" stroke-width="2"/>
+  <text x="90" y="276" class="heading">Confidential handler: onReview</text>
+  <text x="90" y="303" class="small">handlerInTee registration; live enclave or local simulation</text>
+
+  <rect x="100" y="328" width="600" height="70" class="box"/>
+  <text x="125" y="357" class="heading">1. Derive Guard / Squads account addresses</text>
+  <text x="125" y="384" class="small">Public read requests cross through usingTheDons()</text>
+
+  <rect x="100" y="450" width="600" height="136" class="box"/>
+  <text x="125" y="480" class="heading">3. Verify, decode and evaluate inside the handler</text>
+  <text x="125" y="508" class="body">Verify tx_hash; decode every stored instruction</text>
+  <text x="125" y="535" class="body">Private policy: commitment, whitelist, mint, payment cap</text>
+  <text x="125" y="562" class="body">Scorechain sanctions call with TeeRuntime secret</text>
+
+  <rect x="100" y="622" width="600" height="68" class="box"/>
+  <text x="125" y="651" class="heading">4. Release a minimal, bound verdict</text>
+  <text x="125" y="678" class="small">Private policy and API credential stay in the handler</text>
+
+  <rect x="810" y="240" width="720" height="480" rx="18" fill="#eaf2ff" stroke="#88a7d5" stroke-width="2"/>
+  <text x="840" y="276" class="heading">DON runtime: usingTheDons()</text>
+  <text x="840" y="303" class="small">Public chain observations and derived report delivery</text>
+
+  <rect x="850" y="328" width="640" height="160" class="box"/>
+  <text x="875" y="358" class="heading">2. Node callbacks fetch finalized Solana state</text>
+  <text x="875" y="387" class="body">Sources: QuickNode + Helius + Alchemy</text>
+  <text x="875" y="414" class="body">Devnet health checks; shared floor and eligible sources</text>
+  <text x="875" y="441" class="body">Application: two-of-three identical account contents</text>
+  <text x="875" y="468" class="small">CRE: median slot floor, identical eligibility and account outputs</text>
+
+  <rect x="850" y="570" width="640" height="120" class="box"/>
+  <text x="875" y="600" class="heading">5. DON report → SolanaClient.writeReport</text>
+  <text x="875" y="628" class="body">Require successful transaction and receiver execution</text>
+  <text x="875" y="655" class="body">Require no error and a valid 64-byte signature</text>
+  <text x="875" y="681" class="small">Only the derived bound payload crosses into report generation</text>
+
+  <path d="M400 196 V216 H80 V363 H100" class="path"/>
+  <path d="M700 362 H850" class="path"/>
+  <path d="M850 467 H770 V425 H400 V450" class="path"/>
+  <text x="465" y="418" class="label">agreed account data</text>
+  <path d="M700 532 H805 V506 H1160 V488" class="path"/>
+  <text x="839" y="532" class="label">destination follow-up uses the same read context</text>
+  <path d="M400 586 V622" class="path"/>
+  <path d="M700 650 H850" class="path"/>
+
+  <rect x="60" y="753" width="680" height="86" rx="12" fill="#fff5df" stroke="#d7af60" stroke-width="1.5"/>
+  <text x="88" y="785" class="heading">local-simulation exits here</text>
+  <text x="88" y="812" class="body">Real reads and policy evaluation; no report generated or sent</text>
+  <path d="M400 690 V753" class="path"/>
+  <text x="440" y="742" class="label">diagnostic result only</text>
+
+  <rect x="810" y="753" width="720" height="86" class="box"/>
+  <text x="838" y="785" class="heading">6. Forwarder → Guard on_report → decided Review</text>
+  <text x="838" y="812" class="body">Runner confirms finalized guard state before acknowledging</text>
+  <path d="M1170 690 V753" class="path"/>
+
+  <rect x="60" y="885" width="1470" height="91" rx="12" fill="#e6f5ee" stroke="#79af98" stroke-width="1.5"/>
+  <text x="88" y="919" class="heading">7. Human Squads votes AND approved, unexpired, unused Guard Review → guarded_execute</text>
+  <text x="88" y="950" class="body">Recheck transaction and live destination → executor PDA signs Squads CPI → consume Review and pay atomically</text>
+  <path d="M1170 839 V885" class="path"/>
+
+  <text x="60" y="1013" class="heading">Three distinct trust mechanisms</text>
+  <text x="60" y="1043" class="body">Provider agreement is application logic. Deployed DON consensus is CRE-managed. Human votes are Squads approvals.</text>
+  <text x="60" y="1071" class="small">Three providers do not configure DON membership or prove API truth. Local simulation does not prove real DON BFT or enclave attestation.</text>
+  <text x="60" y="1098" class="small">Devnet demo uses the simulator mock forwarder, which does not verify DON signatures. Live confidential execution requires separate access.</text>
+</svg>

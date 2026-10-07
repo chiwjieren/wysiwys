@@ -4,6 +4,8 @@ Wysiwys means "what you see is what you sign". This plan covers the Chainlink in
 
 ## Verification order
 
+Current hardening plan: [2026-10-07-cre-delivery-hardening.md](2026-10-07-cre-delivery-hardening.md). The current review workflow and report v2 are already integrated; older prerequisite notes below describe the initial setup. The current architecture diagram is [architecture_diagram.svg](architecture_diagram.svg).
+
 1. Verify the official project-local Chainlink skill, CRE CLI, authentication and TypeScript toolchain.
 2. Generate an isolated official hello-world TypeScript workflow under workflow/cre and prove a non-broadcast simulation. Do not proceed if compilation or execution fails.
 3. Generate the official confidential workflow template and prove simulation with dummy data only. This proves the API path, not hardware isolation or enclave attestation.

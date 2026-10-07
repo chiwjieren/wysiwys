@@ -1,4 +1,12 @@
 # Wysiwys review workflow: simulation only (the guard config points at the CRE simulator's mock forwarder).
+local-simulation:
+  user-workflow:
+    workflow-name: "wysiwys-review-local"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.local.json"
+    secrets-path: "../review-secrets.yaml"
 staging-settings:
   user-workflow:
     workflow-name: "wysiwys-review"

@@ -1,7 +1,12 @@
 import {
 	bytesToBase64,
 	calculateAccountsHash,
+	ConsensusAggregationByFields,
 	consensusIdenticalAggregation,
+	identical,
+	median,
+	SolanaTxStatus,
+	SolanaReceiverContractExecutionStatus,
 	cre,
 	encodeForwarderReport,
 	prepareSolanaReportRequest,
@@ -24,23 +29,24 @@ import { normalizeSnapshot, selectQuorum, type SnapshotAccount } from './rpc-quo
 // the guard's on_report. Contract: docs/specs/guard-cre-interface.md.
 
 const address = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)
-export const configSchema = z
-	.object({
+const commonConfig = {
 		chainSelector: z.string().regex(/^\d+$/),
 		guardProgram: address,
-		forwarderProgram: address,
-		forwarderState: address,
 		decoderVersion: z.string().min(1),
 		approvalSeconds: z.number().int().positive(),
 		maxSlotLag: z.number().int().nonnegative().max(128),
-		computeLimit: z.number().int().positive().max(300_000),
 		screening: z.boolean(),
 		authorizedKeys: z.array(z.string()),
-	})
-	.strict()
+}
+export const configSchema = z.union([
+	z.object({ ...commonConfig, mode: z.literal('report').default('report'),
+		forwarderProgram: address, forwarderState: address, computeLimit: z.number().int().positive().max(300_000) }).strict(),
+	z.object({ ...commonConfig, mode: z.literal('local-simulation') }).strict(),
+])
 export type Config = z.infer<typeof configSchema>
 
-const requestSchema = z.object({ multisig: address, txIndex: z.string().regex(/^\d{1,20}$/) }).strict()
+const requestSchema = z.object({ multisig: address, txIndex: z.string().regex(/^\d{1,20}$/)
+	.refine(s => BigInt(s) > 0n && BigInt(s) <= 18446744073709551615n, 'txIndex must be a positive u64') }).strict()
 const RPC_SECRETS = ['QUICKNODE_SOLANA_DEVNET_RPC_URL', 'HELIUS_SOLANA_DEVNET_RPC_URL', 'ALCHEMY_SOLANA_DEVNET_RPC_URL'] as const
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
 const PROVIDERS = ['quicknode', 'helius', 'alchemy'] as const
@@ -65,48 +71,55 @@ function rpc(node: NodeRuntime<Config>, endpoint: string, method: string, params
 		})
 		.result()
 	if (response.statusCode !== 200) throw new Error(`HTTP ${response.statusCode}`)
-	return JSON.parse(new TextDecoder().decode(response.body))
+	const parsed: unknown = JSON.parse(new TextDecoder().decode(response.body))
+	if (!parsed || typeof parsed !== 'object' || 'error' in parsed || !('result' in parsed) ||
+		(parsed as { jsonrpc?: unknown }).jsonrpc !== '2.0' || (parsed as { id?: unknown }).id !== 1) {
+		throw new Error('invalid JSON-RPC response')
+	}
+	return parsed
 }
 
-/**
- * Per node: agreed account contents from 2 of 3 providers at finalized. With healthCheck, each provider
- * must also be on devnet and the read is pinned to a minimum context slot (9 HTTP calls); without it,
- * only the account read (3 calls), for follow-up reads in the same run. CRE allows 15 calls per run.
- */
-function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses: string[], healthCheck: boolean): string {
-	if (!healthCheck) {
-		const observations = endpoints.map((endpoint, i) => {
-			try {
-				return normalizeSnapshot(rpc(node, endpoint, 'getMultipleAccounts', [addresses, { commitment: 'finalized', encoding: 'base64' }]), addresses, 0)
-			} catch (e) {
-				node.log(`provider ${PROVIDERS[i]}: account read failed (${e instanceof Error ? e.message : 'error'})`)
-				return null
-			}
-		})
-		return selectQuorum(observations)
-	}
+/** Require the three configured source domains, not three URLs to a single provider. No URL secrets in errors. */
+function validateProviders(endpoints: string[]) {
+	const hosts = endpoints.map(url => /^https:\/\/([a-z0-9.-]+)(?::443)?(?:[/?][^\s#]*)?$/i.exec(url)?.[1]?.toLowerCase())
+	if (hosts.length !== 3 || !hosts[0]?.endsWith('.quiknode.pro') || hosts[1] !== 'devnet.helius-rpc.com' ||
+		hosts[2] !== 'solana-devnet.g.alchemy.com' || new Set(hosts).size !== 3) throw new Error('RPC_PROVIDER_CONFIGURATION')
+}
+
+type ReadContext = { minContextSlot: number; eligible: string }
+
+/** Health observations vary by node; CRE aggregates the floor by median and eligibility identically. */
+function readHealth(node: NodeRuntime<Config>, endpoints: string[]): ReadContext {
 	const slots = endpoints.map((endpoint, i) => {
 		try {
 			const genesis = (rpc(node, endpoint, 'getGenesisHash', []) as { result?: unknown }).result
 			if (genesis !== DEVNET_GENESIS) throw new Error('not devnet')
 			const slot = (rpc(node, endpoint, 'getSlot', [{ commitment: 'finalized' }]) as { result?: unknown }).result
-			if (typeof slot !== 'number' || !Number.isSafeInteger(slot)) throw new Error('bad slot')
+			if (typeof slot !== 'number' || !Number.isSafeInteger(slot) || slot < 0) throw new Error('bad slot')
 			return slot
 		} catch (e) {
-			node.log(`provider ${PROVIDERS[i]}: health check failed (${e instanceof Error ? e.message : 'error'})`)
+			node.log(`provider ${PROVIDERS[i]}: health check failed`)
 			return null
 		}
 	})
 	const valid = slots.filter((s): s is number => s !== null).sort((a, b) => a - b)
 	if (valid.length < 2) throw new Error('RPC_NO_QUORUM')
 	const floor = Math.max(0, valid[Math.floor((valid.length - 1) / 2)]! - node.config.maxSlotLag)
+	return { minContextSlot: floor, eligible: slots.map(s => s === null ? '0' : '1').join('') }
+}
+
+/** Both reads reuse the DON-agreed floor and eligible-provider set; at most 13 HTTP calls total. */
+function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses: string[], context: ReadContext): string {
+	const floor = context.minContextSlot
+	if (!Number.isSafeInteger(floor) || floor < 0 || !/^[01]{3}$/.test(context.eligible) ||
+		context.eligible.split('').filter(v => v === '1').length < 2) throw new Error('RPC_NO_QUORUM')
 	const observations = endpoints.map((endpoint, i) => {
-		if (slots[i] === null) return null
+		if (context.eligible[i] !== '1') return null
 		try {
 			const raw = rpc(node, endpoint, 'getMultipleAccounts', [addresses, { commitment: 'finalized', encoding: 'base64', minContextSlot: floor }])
 			return normalizeSnapshot(raw, addresses, floor)
 		} catch (e) {
-			node.log(`provider ${PROVIDERS[i]}: account read failed (${e instanceof Error ? e.message : 'error'})`)
+			node.log(`provider ${PROVIDERS[i]}: account read failed`)
 			return null
 		}
 	})
@@ -115,8 +128,8 @@ function readAccounts(node: NodeRuntime<Config>, endpoints: string[], addresses:
 	return selectQuorum(observations)
 }
 
-function readAgreed(don: Runtime<Config>, endpoints: string[], addresses: string[], healthCheck = true): Array<AccountSnapshot | null> {
-	const agreed = don.runInNodeMode(readAccounts, consensusIdenticalAggregation<string>())(endpoints, addresses, healthCheck).result()
+function readAgreed(don: Runtime<Config>, endpoints: string[], addresses: string[], context: ReadContext): Array<AccountSnapshot | null> {
+	const agreed = don.runInNodeMode(readAccounts, consensusIdenticalAggregation<string>())(endpoints, addresses, context).result()
 	return (JSON.parse(agreed) as SnapshotAccount[]).map((a) => (a ? { address: a.address, owner: a.owner, data: base64ToBytes(a.data) } : null))
 }
 
@@ -151,13 +164,18 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 	// Chain reads and the write run on the DON; RPC credentials are operational, not confidential.
 	const don = runtime.usingTheDons()
 	const endpoints = RPC_SECRETS.map((id) => don.getSecret({ id }).result().value)
-	const [reviewAcc, vaultTxAcc, configAcc] = readAgreed(don, endpoints, [reviewPda, vaultTxPda, configPda])
+	validateProviders(endpoints)
+	const context = don.runInNodeMode(readHealth, ConsensusAggregationByFields<ReadContext>({
+		minContextSlot: median, eligible: identical,
+	}))(endpoints).result()
+	const [reviewAcc, vaultTxAcc, configAcc] = readAgreed(don, endpoints, [reviewPda, vaultTxPda, configPda], context)
 	if (!reviewAcc || !vaultTxAcc || !configAcc) throw new Error('review, stored transaction or guard config not found')
 	const review = parseReview(reviewAcc, config.guardProgram)
 	const guard = parseGuardConfig(configAcc, config.guardProgram)
 	if (review.multisig !== req.multisig || guard.multisig !== req.multisig) throw new Error('accounts belong to another multisig')
-	if (review.status !== 'pending') return JSON.stringify({ review: reviewPda, skipped: `review is already ${review.status}` })
-	if (guard.forwarderProgram !== config.forwarderProgram || guard.forwarderState !== config.forwarderState) {
+	if (review.txIndex !== txIndex || review.vaultTransaction !== vaultTxPda) throw new Error('review identifiers do not match')
+	if (review.status !== 'pending' && config.mode === 'report') return JSON.stringify({ review: reviewPda, skipped: `review is already ${review.status}` })
+	if (config.mode === 'report' && (guard.forwarderProgram !== config.forwarderProgram || guard.forwarderState !== config.forwarderState)) {
 		throw new Error('guard config names another forwarder')
 	}
 
@@ -172,14 +190,21 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.TX_HASH_MISMATCH, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'stored transaction changed since review was requested' }
 	} else {
 		const plan = planReview(vaultTxAcc, vault, policy)
-		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination], false)[0] ?? null, policy)
+		decision = plan.kind === 'decided' ? plan.decision : decideDestination(plan.action, readAgreed(don, endpoints, [plan.destination], context)[0] ?? null, policy)
 	}
 	if (decision.verdict === VERDICT.APPROVE && config.screening && screen(runtime, decision.wallet!) === 'SANCTIONED') {
 		decision = { verdict: VERDICT.REJECT, reason: ReviewReason.SCREENING_REJECTED, actionKind: 0, destinationHash: new Uint8Array(32), summary: 'recipient failed sanctions screening' }
 	}
 
 	const issuedAt = BigInt(Math.floor(don.now().getTime() / 1000))
-	if (issuedAt > review.createdAt + guard.reviewDeadlineSecs) throw new Error('review deadline passed; the guard would refuse this report')
+	const withinDeadline = issuedAt <= review.createdAt + guard.reviewDeadlineSecs
+	if (config.mode === 'local-simulation') {
+		runtime.log('Wysiwys local-simulation: review evaluated; no report generated or submitted')
+		return JSON.stringify({ mode: 'local-simulation', review: reviewPda,
+			verdict: decision.verdict === VERDICT.APPROVE ? 'approve' : 'reject', reason: decision.reason,
+			reviewStatus: review.status, withinDeadline, reportSubmitted: false })
+	}
+	if (!withinDeadline) throw new Error('review deadline passed; the guard would refuse this report')
 	const approval = BigInt(config.approvalSeconds) < guard.maxReviewLifetime ? BigInt(config.approvalSeconds) : guard.maxReviewLifetime
 	const reportPayload = buildPayload(decision, review.txHash, guard.policyHash, issuedAt, approval)
 
@@ -204,7 +229,11 @@ export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): str
 		})
 		.result()
 
-	const signature = write.txSignature?.length ? bs58(write.txSignature) : null
+	if (write.txStatus !== SolanaTxStatus.SUCCESS || write.receiverContractExecutionStatus !== SolanaReceiverContractExecutionStatus.SUCCESS ||
+		write.errorMessage || write.txSignature?.length !== 64 || !write.txSignature.some(b => b !== 0)) {
+		throw new Error('REPORT_DELIVERY_FAILED: successful transaction, receiver execution and signature required')
+	}
+	const signature = bs58(write.txSignature)
 	return JSON.stringify({
 		review: reviewPda,
 		verdict: decision.verdict === VERDICT.APPROVE ? 'approve' : 'reject',
