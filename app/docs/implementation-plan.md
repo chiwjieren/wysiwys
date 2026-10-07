@@ -1,5 +1,7 @@
 # Wysiwys frontend implementation plan
 
+The user authorized a full UI redesign on the `ui` branch. See [Treasury workspace redesign](ui-workspace-redesign.md) for the current visual direction and checks; the geometry and styling constraints below are historical.
+
 Historical reference: Privy was replaced by direct Wallet Standard connection. See [current app workflow](../README.md).
 Historical plan. The current frontend requirements and verification are tracked in [Privy and live Squads implementation](privy-live-plan.md). Production mock screens and Wallet Standard session handling have been replaced by live states and Privy authentication.
 

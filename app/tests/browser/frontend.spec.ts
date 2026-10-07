@@ -38,12 +38,16 @@ test("new users can create or open a group without setup notices or fabricated d
     page.getByText("No deployment is configured.", { exact: false }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Create group", exact: true }),
+    page.getByRole("button", { name: "Create treasury", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Create group", exact: true }).click();
-  await expect(page.getByRole("dialog").getByLabel("Group name")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Create treasury", exact: true })
+    .click();
   await expect(
-    page.getByRole("dialog").getByLabel("Member wallet addresses"),
+    page.getByRole("dialog").getByLabel("Treasury name"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByLabel("Member 2 wallet address"),
   ).toBeVisible();
   await expect(
     page.getByRole("dialog").getByLabel("Required approvals"),
@@ -105,7 +109,7 @@ test("server rejects anonymous submissions and settlement preparation", async ({
 });
 
 // Layout fixtures are isolated to browser tests. Product pages never use fabricated treasury data.
-test("Figma pages retain their content and geometry with no treasury", async ({
+test("workspace pages retain their content and responsive layout with no treasury", async ({
   page,
 }) => {
   await page.route("**/api/squads/config", (route) =>
@@ -128,13 +132,13 @@ test("Figma pages retain their content and geometry with no treasury", async ({
       page.getByRole("heading", { name: "Create your first group" }),
     ).toHaveCount(0);
     const geometry = await page.locator("#main-content").boundingBox();
-    expect(geometry?.x).toBe(240);
+    expect(geometry?.x).toBe(248);
     const heading = await page
       .getByRole("heading", { name: title, exact: true })
       .boundingBox();
-    expect(heading?.x).toBe(280);
+    expect(heading?.x).toBe(288);
     const sidebar = await page.locator("[data-shell-sidebar]").boundingBox();
-    expect(sidebar?.width).toBe(240);
+    expect(sidebar?.width).toBe(248);
     for (const img of await page.locator('img[src^="/figma/"]').all()) {
       await expect(img).toBeVisible();
       expect(

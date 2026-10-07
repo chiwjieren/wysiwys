@@ -2,6 +2,8 @@
 
 Next.js web app: dashboard, transactions, review (verdict + summary + claim vs decoded reality), members, settings and /status. Propose, request review, vote and guarded execute.
 
+The `ui` branch refreshes the full treasury workspace: navigation, onboarding, balance cards, transaction filters, members, preferences, forms and payment reviews. Full decoded recipient addresses remain visible, rejected destinations are marked using the on-chain verdict, and mobile dialogs stay inside the viewport. See [UI redesign plan](docs/ui-workspace-redesign.md). Screenshots use isolated browser fixtures; the product never substitutes those for chain data.
+
 ## Run
 
 ```bash

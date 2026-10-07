@@ -2,6 +2,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { ShieldCheck, ScanLine, AlertTriangle } from "lucide-react";
+import { ReviewReason } from "@wysiwys/shared";
+import { CopyButton } from "@/components/dialogs";
+import { paymentFields } from "@/lib/squads/review-presentation";
+import { useWalletConnection } from "@/lib/auth/provider";
 import { Button } from "@/components/ui/button";
 import {
   Panel,
@@ -74,6 +79,7 @@ export function LiveProposal({ id }: { id: string }) {
     policyRequest,
     applyPolicyChange,
   } = useSquad();
+  const auth = useWalletConnection();
   const { names } = useMemberNames(config?.multisig);
   const [record, setRecord] = useState<ProposalRecord | null>();
   const [readError, setReadError] = useState("");
@@ -342,6 +348,12 @@ export function LiveProposal({ id }: { id: string }) {
           BigInt(/^\d{1,20}$/.test(id) ? id : "0"),
         ).toBase58()
       : "";
+  const fields = record?.kind === "vault" ? paymentFields(decoded) : null;
+  const rejected = guarded && review?.status === "Rejected";
+  const wrongRecipient =
+    rejected &&
+    review.reason === ReviewReason.DESTINATION_NOT_WHITELISTED &&
+    fields;
   return (
     <div className="page-stack">
       <PageHeader
@@ -429,9 +441,16 @@ export function LiveProposal({ id }: { id: string }) {
               <>
                 {guarded &&
                   (record.kind === "vault" || record.kind === "archived") && (
-                    <Panel className="gap-4">
+                    <Panel
+                      className={`gap-4 border-l-[3px] ${rejected ? "border-l-destructive bg-danger-bg/20" : "border-l-primary"}`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h2>On-chain review</h2>
+                        <h2 className="flex items-center gap-2">
+                          <ShieldCheck
+                            className={`size-5 ${rejected ? "text-destructive" : "text-primary"}`}
+                          />
+                          On-chain review
+                        </h2>
                         <ReviewBadge review={review} />
                       </div>
                       {review === undefined ? (
@@ -472,16 +491,29 @@ export function LiveProposal({ id }: { id: string }) {
                         report. This is the authoritative verdict.{" "}
                         <Explorer address={reviewAddress} />
                       </p>
+                      {wrongRecipient && (
+                        <div className="space-y-3 rounded-xl border border-destructive/25 bg-danger-bg/40 p-4">
+                          <p className="flex items-center gap-2 font-medium text-destructive">
+                            <AlertTriangle className="size-4" />
+                            Recipient is not approved
+                          </p>
+                          <p className="break-all font-mono text-xs leading-5">
+                            {fields.recipient}
+                          </p>
+                          <p className="caption">
+                            The Guard rejected this recipient wallet. Member
+                            votes cannot override the verdict. Check the
+                            destination and propose a new payment.
+                          </p>
+                        </div>
+                      )}
                     </Panel>
                   )}
                 <div
-                  className={`rounded-xl p-6 ${supported || record.kind === "archived" ? "bg-success-bg" : "bg-danger-bg"}`}
+                  className={`rounded-2xl border p-5 sm:p-6 ${supported || record.kind === "archived" ? "bg-card" : "border-destructive/30 bg-danger-bg/40"}`}
                 >
                   <div className="flex items-center gap-3">
-                    <AssetIcon
-                      src={figmaAssets.review.imgIconShield2}
-                      size={24}
-                    />
+                    <ScanLine className="size-5 text-muted-foreground" />
                     <h2>
                       {record.kind === "archived"
                         ? "Payment executed"
@@ -529,16 +561,74 @@ export function LiveProposal({ id }: { id: string }) {
                       {configActions.headline.text}
                     </p>
                   )}
-                  {lines.map((line, i) => (
-                    <div key={i}>
-                      <p className="[overflow-wrap:anywhere]">{line}</p>
-                      {flags[i] && (
-                        <p className="text-xs font-medium text-destructive">
-                          {flags[i]}
+                  {fields && (
+                    <div className="space-y-5">
+                      <div>
+                        <p className="eyebrow">Treasury payment</p>
+                        <p className="mt-2 text-[36px] leading-tight font-semibold tracking-[-0.04em]">
+                          {fields.amount}
                         </p>
-                      )}
+                      </div>
+                      <div
+                        className={`rounded-xl border p-4 ${wrongRecipient ? "border-destructive/30 bg-danger-bg/30" : "bg-background/40"}`}
+                      >
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className="eyebrow">Recipient wallet</p>
+                          <CopyButton
+                            value={fields.recipient}
+                            label="Copy recipient"
+                            className="h-8 px-3 text-xs"
+                          />
+                        </div>
+                        <p className="break-all font-mono text-sm leading-6">
+                          {fields.recipient}
+                        </p>
+                        {wrongRecipient && (
+                          <p className="mt-3 text-xs text-destructive">
+                            Not approved by the Guard policy
+                          </p>
+                        )}
+                      </div>
+                      <dl className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <dt className="caption">From</dt>
+                          <dd className="mt-1 break-all text-xs">
+                            {fields.source}
+                          </dd>
+                        </div>
+                        {fields.mint && (
+                          <div>
+                            <dt className="caption">Token mint</dt>
+                            <dd className="mt-1 break-all font-mono text-xs">
+                              {fields.mint}
+                            </dd>
+                          </div>
+                        )}
+                        {fields.destinationAccount && (
+                          <div className="sm:col-span-2">
+                            <dt className="caption">
+                              Destination token account
+                            </dt>
+                            <dd className="mt-1 break-all font-mono text-xs">
+                              {fields.destinationAccount}
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
                     </div>
-                  ))}
+                  )}
+                  {lines.map((line, i) =>
+                    fields && line.startsWith("Send ") ? null : (
+                      <div key={i}>
+                        <p className="[overflow-wrap:anywhere]">{line}</p>
+                        {flags[i] && (
+                          <p className="text-xs font-medium text-destructive">
+                            {flags[i]}
+                          </p>
+                        )}
+                      </div>
+                    ),
+                  )}
                   {!lines.length && (
                     <p className="text-muted-foreground">
                       No readable actions available.
@@ -582,7 +672,7 @@ export function LiveProposal({ id }: { id: string }) {
                   >
                     ›
                   </span>
-                  Technical details
+                  <span>Technical details</span>
                 </summary>
                 <dl className="mt-4 space-y-4">
                   <div className="space-y-1">
@@ -655,13 +745,33 @@ export function LiveProposal({ id }: { id: string }) {
               </details>
             </Panel>
           </div>
-          <div className="min-w-0 space-y-5">
+          <div className="min-w-0 space-y-5 xl:sticky xl:top-6">
             <Panel className="gap-4">
               <h2>Member approvals</h2>
               <p className="font-medium">
                 Approved: {record.proposal.approved.length} /{" "}
                 {snapshot?.squad.threshold ?? "—"}
               </p>
+              {snapshot && (
+                <div
+                  role="progressbar"
+                  aria-label="Member approvals"
+                  aria-valuemin={0}
+                  aria-valuemax={snapshot.squad.threshold}
+                  aria-valuenow={Math.min(
+                    record.proposal.approved.length,
+                    snapshot.squad.threshold,
+                  )}
+                  className="h-1.5 overflow-hidden rounded-full bg-secondary"
+                >
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{
+                      width: `${Math.min(100, (record.proposal.approved.length / snapshot.squad.threshold) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
               <div>
                 <ProposalStatus status={record.proposal.status.__kind} />
               </div>
@@ -713,10 +823,12 @@ export function LiveProposal({ id }: { id: string }) {
                 {permissions.approve ? "Your approval is needed" : "Your vote"}
               </h2>
               <p className="text-muted-foreground">
-                Approve only after checking every decoded action and
-                destination.
+                {rejected
+                  ? "The Guard rejected this payment. Your vote cannot override its verdict."
+                  : "Approve only after checking every decoded action and destination."}
               </p>
               <Button
+                variant={rejected ? "secondary" : "default"}
                 disabled={!enabled || !permissions.approve || !supported}
                 onClick={() =>
                   void vote(
@@ -729,7 +841,7 @@ export function LiveProposal({ id }: { id: string }) {
                 Approve proposal
               </Button>
               <Button
-                variant="secondary"
+                variant={rejected ? "default" : "secondary"}
                 disabled={!enabled || !permissions.reject}
                 onClick={() => void vote(BigInt(id), "reject")}
               >
@@ -745,7 +857,18 @@ export function LiveProposal({ id }: { id: string }) {
                 </Button>
               )}
               {!account && (
-                <p className="caption">Connect with a member wallet to vote.</p>
+                <>
+                  <p className="caption">
+                    Connect with a member wallet to vote.
+                  </p>
+                  <Button
+                    variant="outline"
+                    disabled={!auth.ready || !!busy}
+                    onClick={auth.connect}
+                  >
+                    Connect wallet to vote
+                  </Button>
+                </>
               )}
             </Panel>
             {policyChange && policySteps ? (

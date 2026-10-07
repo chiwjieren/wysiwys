@@ -2,6 +2,16 @@
 import { isPolicyChangeRecord } from "@/lib/squads/policy";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  Wallet,
+  Users,
+  Clock3,
+  Search,
+  ShieldCheck,
+  Sun,
+  Moon,
+} from "lucide-react";
+import { TreasuryWelcome } from "./treasury-welcome";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,15 +55,24 @@ function Metric({
   label,
   value,
   detail,
+  icon: Icon = Wallet,
+  featured = false,
 }: {
   label: string;
   value: string;
   detail: string;
+  icon?: typeof Wallet;
+  featured?: boolean;
 }) {
   return (
-    <Panel className="min-h-[154px] justify-between gap-3">
-      <p className="text-muted-foreground">{label}</p>
-      <p className="text-[36px] leading-[44px] font-semibold tracking-tight">
+    <Panel
+      className={`min-h-[174px] justify-between gap-3 ${featured ? "workspace-hero border-primary/25" : ""}`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <Icon className="size-[18px] text-muted-foreground" />
+      </div>
+      <p className="text-[34px] leading-[44px] font-semibold tracking-[-0.04em]">
         {value}
       </p>
       <p className="caption">{detail}</p>
@@ -95,94 +114,104 @@ function Dashboard() {
             <ReceiveButton />
             <PaymentButton />
           </>
-        ) : (
+        ) : config ? (
           <>
             <GroupManage label="Open group" />
             <CreateGroupButton />
           </>
-        )}
+        ) : null}
       </PageHeader>
       <SquadFeedback />
-      <div className="grid gap-4 md:grid-cols-[1.94fr_1fr_1fr]">
-        <Metric
-          label="Treasury balance"
-          value={snapshot ? `${tokenAmount(String(snapshot.sol), 9)} SOL` : "—"}
-          detail={
-            snapshot
-              ? `${snapshot.tokens.length} token ${snapshot.tokens.length === 1 ? "asset" : "assets"} · Solana Devnet`
-              : "Open a treasury to view its balance"
-          }
-        />
-        <Metric
-          label="Needs your approval"
-          value={snapshot ? String(needs.length) : "—"}
-          detail={
-            account
-              ? "Payments awaiting your vote"
-              : "Connect to see your approvals"
-          }
-        />
-        <Metric
-          label="Approval threshold"
-          value={snapshot ? `${snapshot.squad.threshold} / ${voters}` : "—"}
-          detail="Required member approvals"
-        />
-      </div>
+      {!config && <TreasuryWelcome />}
+      {config && (
+        <div className="grid gap-4 md:grid-cols-[1.94fr_1fr_1fr]">
+          <Metric
+            featured
+            label="Treasury balance"
+            value={
+              snapshot ? `${tokenAmount(String(snapshot.sol), 9)} SOL` : "—"
+            }
+            detail={
+              snapshot
+                ? `${snapshot.tokens.length} token ${snapshot.tokens.length === 1 ? "asset" : "assets"} · Solana Devnet`
+                : "Open a treasury to view its balance"
+            }
+          />
+          <Metric
+            icon={Clock3}
+            label="Needs your approval"
+            value={snapshot ? String(needs.length) : "—"}
+            detail={
+              account
+                ? "Payments awaiting your vote"
+                : "Connect to see your approvals"
+            }
+          />
+          <Metric
+            icon={Users}
+            label="Approval threshold"
+            value={snapshot ? `${snapshot.squad.threshold} / ${voters}` : "—"}
+            detail="Required member approvals"
+          />
+        </div>
+      )}
       <Panel className="gap-5">
         <SectionTitle action={<RefreshButton />}>Holdings</SectionTitle>
-        <div className="table-scroll">
-          <table className="data-table min-w-[520px]">
-            <thead>
-              <tr>
-                <th>Asset</th>
-                <th>Balance</th>
-                <th className="text-right">Account</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot && (
+        {snapshot && (
+          <div className="table-scroll">
+            <table className="data-table min-w-[440px]">
+              <thead>
                 <tr>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <Avatar initials="S" />
-                      <div>
-                        <p className="font-medium">Solana</p>
-                        <p className="caption">SOL</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td>{tokenAmount(String(snapshot.sol), 9)}</td>
-                  <td className="text-right">
-                    <Explorer address={snapshot.vault.toBase58()} />
-                  </td>
+                  <th>Asset</th>
+                  <th>Balance</th>
+                  <th className="text-right">Account</th>
                 </tr>
-              )}
-              {snapshot?.tokens.map((t) => (
-                <tr key={t.address}>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <Avatar initials="T" />
-                      <div>
-                        <p className="font-medium">
-                          {assetLabel(config, t.mint) === "tokens"
-                            ? "SPL token"
-                            : assetLabel(config, t.mint)}
-                        </p>
-                        <p className="caption">
-                          <Explorer address={t.mint} />
-                        </p>
+              </thead>
+              <tbody>
+                {snapshot && (
+                  <tr>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar initials="S" />
+                        <div>
+                          <p className="font-medium">Solana</p>
+                          <p className="caption">SOL</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>{tokenAmount(t.amount, t.decimals)}</td>
-                  <td className="text-right">
-                    <Explorer address={t.address} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td>{tokenAmount(String(snapshot.sol), 9)}</td>
+                    <td className="text-right">
+                      <Explorer address={snapshot.vault.toBase58()} />
+                    </td>
+                  </tr>
+                )}
+                {snapshot?.tokens.map((t) => (
+                  <tr key={t.address}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar initials="T" />
+                        <div>
+                          <p className="font-medium">
+                            {assetLabel(config, t.mint) === "tokens"
+                              ? "SPL token"
+                              : assetLabel(config, t.mint)}
+                          </p>
+                          <p className="caption">
+                            <Explorer address={t.mint} />
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{tokenAmount(t.amount, t.decimals)}</td>
+                    <td className="text-right">
+                      <Explorer address={t.address} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         {!snapshot && (
           <EmptyState title="Your treasury assets belong here">
             Open or create a group to see its SOL and token balances. Funds are
@@ -190,46 +219,48 @@ function Dashboard() {
           </EmptyState>
         )}
       </Panel>
-      <ProposalTable
-        compact
-        title="Pending approvals"
-        records={pending.slice(0, 4)}
-      />
-      <Panel className="gap-4">
-        <SectionTitle>Recent activity</SectionTitle>
-        {snapshot?.records.length ? (
-          snapshot.records.slice(0, 3).map((r) => (
-            <div
-              key={r.address.toBase58()}
-              className="flex flex-wrap items-center gap-3 border-t pt-4"
-            >
-              <AssetIcon src={figmaAssets.dashboard.imgIconClock} />
-              <p className="flex-1">
-                Proposal #{r.proposal.transactionIndex.toString()} ·{" "}
-                {isPolicyChangeRecord(r, config?.guardProgram)
-                  ? "Policy change"
-                  : r.kind === "vault"
-                    ? "Payment"
-                    : r.kind === "batch"
-                      ? "Batch"
-                      : "Group settings"}
-              </p>
-              <span className="caption">{r.proposal.status.__kind}</span>
-              <Link
-                className="caption hover:text-primary"
-                href={`/transactions/${r.proposal.transactionIndex.toString()}`}
+      <div className="grid items-start gap-6 xl:grid-cols-[1.8fr_1fr]">
+        <ProposalTable
+          compact
+          title="Pending approvals"
+          records={pending.slice(0, 4)}
+        />
+        <Panel className="gap-4">
+          <SectionTitle>Recent activity</SectionTitle>
+          {snapshot?.records.length ? (
+            snapshot.records.slice(0, 3).map((r) => (
+              <div
+                key={r.address.toBase58()}
+                className="flex flex-wrap items-center gap-3 border-t pt-4"
               >
-                View details →
-              </Link>
-            </div>
-          ))
-        ) : (
-          <EmptyState title="No activity yet" className="min-h-[64px] py-2">
-            New proposals and member approvals will appear here as your team
-            uses the treasury.
-          </EmptyState>
-        )}
-      </Panel>
+                <AssetIcon src={figmaAssets.dashboard.imgIconClock} />
+                <p className="flex-1">
+                  Proposal #{r.proposal.transactionIndex.toString()} ·{" "}
+                  {isPolicyChangeRecord(r, config?.guardProgram)
+                    ? "Policy change"
+                    : r.kind === "vault"
+                      ? "Payment"
+                      : r.kind === "batch"
+                        ? "Batch"
+                        : "Group settings"}
+                </p>
+                <span className="caption">{r.proposal.status.__kind}</span>
+                <Link
+                  className="caption hover:text-primary"
+                  href={`/transactions/${r.proposal.transactionIndex.toString()}`}
+                >
+                  View details →
+                </Link>
+              </div>
+            ))
+          ) : (
+            <EmptyState title="No activity yet" className="min-h-[64px] py-2">
+              New proposals and member approvals will appear here as your team
+              uses the treasury.
+            </EmptyState>
+          )}
+        </Panel>
+      </div>
       <RecentReviews />
     </div>
   );
@@ -268,31 +299,53 @@ export function SquadTransactions() {
         <PaymentButton />
       </PageHeader>
       <SquadFeedback />
-      <div className="flex flex-wrap gap-3">
-        <Input
-          className="min-w-[220px] flex-1"
-          aria-label="Search transactions"
-          placeholder="Search by proposal number or status"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {filters.map((f) => (
-          <Button
-            key={f}
-            variant="secondary"
-            aria-pressed={filter === f}
-            className={
-              filter === f
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : ""
-            }
-            onClick={() => setFilter(f)}
-          >
-            {f}
-          </Button>
-        ))}
+      <div className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative min-w-0 basis-full sm:max-w-[420px] sm:basis-auto sm:flex-1">
+            <Search
+              className="absolute top-3.5 left-3.5 size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              className="pl-10"
+              aria-label="Search transactions"
+              placeholder="Search by proposal number or status"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <RefreshButton />
+        </div>
+        <div
+          className="flex gap-1 overflow-x-auto border-t pt-3"
+          aria-label="Filter transactions"
+        >
+          {filters.map((f) => (
+            <Button
+              key={f}
+              variant="ghost"
+              aria-pressed={filter === f}
+              className={
+                filter === f
+                  ? "h-10 bg-primary/10 text-primary hover:bg-primary/15"
+                  : "h-10 text-muted-foreground"
+              }
+              onClick={() => setFilter(f)}
+            >
+              {f}
+            </Button>
+          ))}
+        </div>
       </div>
-      <ProposalTable records={records} title="Treasury transactions" />
+      <ProposalTable
+        records={records}
+        title="Treasury transactions"
+        filtered={!!search || filter !== "All transactions"}
+        onReset={() => {
+          setFilter("All transactions");
+          setSearch("");
+        }}
+      />
       {snapshot && (
         <div className="flex items-center justify-between gap-3">
           <p className="caption">
@@ -336,9 +389,11 @@ export function SquadMembers() {
         <GroupInvite />
       </PageHeader>
       <SquadFeedback />
-      <Panel>
+      <Panel className="workspace-hero border-primary/20">
         <div className="flex flex-wrap items-center gap-4">
-          <AssetIcon src={figmaAssets.members.imgIconMembers1} size={24} />
+          <span className="flex size-12 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+            <Users className="size-6" />
+          </span>
           <div className="flex-1">
             <h2>
               {snapshot
@@ -357,57 +412,59 @@ export function SquadMembers() {
       </Panel>
       <Panel className="gap-5">
         <SectionTitle>Human signers</SectionTitle>
-        <div className="table-scroll">
-          <table className="data-table min-w-[620px]">
-            <thead>
-              <tr>
-                <th className="w-[30%]">Member</th>
-                <th className="w-[32%]">Wallet address</th>
-                <th>Permissions</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {humans.map((m, i) => {
-                const address = m.key.toBase58();
-                const label = memberDisplayName(
-                  address,
-                  i,
-                  names,
-                  account?.address,
-                );
-                return (
-                  <tr className="h-20" key={address}>
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <Avatar initials={address.slice(0, 2)} size={40} />
-                        <span>{label}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <Explorer address={m.key.toBase58()} />
-                    </td>
-                    <td>
-                      <StatusBadge className="min-w-0">
-                        {memberRole(
-                          m.key.toBase58(),
-                          m.permissions.mask,
-                          config?.executor,
-                        )}
-                      </StatusBadge>
-                    </td>
-                    <td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <EditMemberButton address={address} label={label} />
-                        <RemoveMemberButton address={address} />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {!!humans.length && (
+          <div className="table-scroll">
+            <table className="data-table min-w-[620px]">
+              <thead>
+                <tr>
+                  <th className="w-[30%]">Member</th>
+                  <th className="w-[32%]">Wallet address</th>
+                  <th>Permissions</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {humans.map((m, i) => {
+                  const address = m.key.toBase58();
+                  const label = memberDisplayName(
+                    address,
+                    i,
+                    names,
+                    account?.address,
+                  );
+                  return (
+                    <tr className="h-20" key={address}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <Avatar initials={address.slice(0, 2)} size={40} />
+                          <span>{label}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <Explorer address={m.key.toBase58()} />
+                      </td>
+                      <td>
+                        <StatusBadge className="min-w-0">
+                          {memberRole(
+                            m.key.toBase58(),
+                            m.permissions.mask,
+                            config?.executor,
+                          )}
+                        </StatusBadge>
+                      </td>
+                      <td className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <EditMemberButton address={address} label={label} />
+                          <RemoveMemberButton address={address} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
         {!humans.length && (
           <EmptyState title="Bring your team into the treasury">
             Open a group to view its members, or add your team’s wallet
@@ -422,7 +479,9 @@ export function SquadMembers() {
             : "Guard executor"}
         </h2>
         <div className="flex flex-wrap items-center gap-4">
-          <AssetIcon src={figmaAssets.members.imgIconShield2} size={40} />
+          <span className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <ShieldCheck className="size-6" />
+          </span>
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold">
               {config?.executionMode === "standard"
@@ -483,16 +542,27 @@ function Preferences() {
   return (
     <Panel className="gap-5">
       <h2>Your preferences</h2>
+      <p className="caption -mt-3">
+        Make this workspace your own. Preferences stay in this browser.
+      </p>
       <div className="flex items-center justify-between gap-4">
         <p>Appearance</p>
-        <div className="flex gap-2">
+        <div className="flex gap-1 rounded-xl border bg-background p-1">
           {["dark", "light"].map((t) => (
             <Button
               key={t}
-              variant="secondary"
+              variant="ghost"
+              className={
+                theme === t ? "bg-secondary shadow-sm" : "text-muted-foreground"
+              }
               aria-pressed={theme === t}
               onClick={() => change(t)}
             >
+              {t === "dark" ? (
+                <Moon className="size-4" />
+              ) : (
+                <Sun className="size-4" />
+              )}
               {t === "dark" ? "Dark" : "Light"}
             </Button>
           ))}

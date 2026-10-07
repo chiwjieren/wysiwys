@@ -1,8 +1,18 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect, type ReactNode } from "react";
-import { Menu } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Menu,
+  ShieldCheck,
+  LayoutDashboard,
+  ArrowLeftRight,
+  Users,
+  Settings,
+  ChevronsUpDown,
+  ArrowUpRight,
+  Circle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,110 +20,130 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { AssetIcon, StatusBadge, Avatar } from "@/components/design";
-import { figmaAssets } from "@/lib/figma-assets";
+import { Avatar } from "@/components/design";
 import { SquadProvider, useSquad } from "@/lib/squads/provider";
 import { GroupManage } from "@/components/squads/group-controls";
 import { WalletButton } from "@/components/squads/wallet-button";
-
 import { cn } from "@/lib/utils";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { shortAddress } from "@/components/squads/treasury-ui";
 
 const nav = [
-  { label: "Dashboard", href: "/", icon: "imgIconDashboard" },
-  { label: "Transactions", href: "/transactions", icon: "imgIconTransactions" },
-  { label: "Members", href: "/members", icon: "imgIconMembers" },
-  { label: "Settings", href: "/settings", icon: "imgIconSettings" },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
+  { label: "Members", href: "/members", icon: Users },
+  { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
-function ShellContent({ children }: { children: ReactNode }) {
+function Workspace({ children }: { children: ReactNode }) {
   const { config, snapshot, groupName } = useSquad();
   const auth = useWalletConnection();
   useEffect(() => {
-    if (typeof window !== "undefined")
-      document.documentElement.dataset.theme =
-        localStorage.getItem("wysiwys.theme") || "dark";
+    document.documentElement.dataset.theme =
+      localStorage.getItem("wysiwys.theme") || "dark";
   }, []);
   const path = usePathname();
-  const active =
-    nav.find((n) =>
-      n.href === "/" ? path === "/" : path.startsWith(n.href),
-    ) ?? nav[0];
+  const active = nav.find((n) =>
+    n.href === "/" ? path === "/" : path.startsWith(n.href),
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
-  const scope =
-    active.label === "Dashboard"
-      ? figmaAssets.dashboard
-      : active.label === "Members"
-        ? figmaAssets.members
-        : active.label === "Settings"
-          ? figmaAssets.settings
-          : path === "/transactions"
-            ? figmaAssets.transactions
-            : figmaAssets.review;
   const navigation = (
-    <nav aria-label="Main navigation" className="flex flex-col gap-2">
-      {nav.map((item) => (
+    <nav aria-label="Main navigation" className="flex flex-col gap-1.5">
+      {nav.map(({ icon: Icon, ...item }) => (
         <Link
           key={item.href}
           href={item.href}
           onClick={() => setMobileOpen(false)}
-          aria-current={item.label === active.label ? "page" : undefined}
+          aria-current={item.label === active?.label ? "page" : undefined}
           className={cn(
-            "flex h-11 items-center gap-3 rounded-lg px-3 font-medium text-muted-foreground transition-colors hover:bg-secondary",
-            item.label === active.label && "bg-secondary text-foreground",
+            "relative flex h-12 items-center gap-3 rounded-xl px-4 font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground",
+            item.label === active?.label &&
+              "bg-primary/10 text-primary before:absolute before:inset-y-3.5 before:left-0 before:w-[3px] before:rounded-full before:bg-primary",
           )}
         >
-          <AssetIcon src={scope[item.icon]} />
+          <Icon className="size-[18px]" aria-hidden="true" />
           {item.label}
         </Link>
       ))}
     </nav>
   );
   const sidebar = (
-    <div className="flex h-full flex-col gap-6 p-5">
+    <div className="flex h-full flex-col gap-7 p-5">
       <Link
         href="/"
-        className="flex items-center gap-2.5 text-lg leading-[26px] font-semibold"
+        onClick={() => setMobileOpen(false)}
+        className="flex items-center gap-3 px-2 py-2"
       >
-        <AssetIcon src={scope.imgIconShield} size={28} />
-        Wysiwys
+        <span className="flex size-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+          <ShieldCheck className="size-6" />
+        </span>
+        <span className="text-xl font-semibold tracking-tight">
+          Wysiwys
+          <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Treasury workspace
+          </span>
+        </span>
       </Link>
-      <div className="h-2" />
       <GroupManage label="Switch treasury">
-        <div className="min-h-[122px] space-y-3 rounded-xl bg-secondary p-4">
-          <p className="font-medium leading-5">
-            {config ? groupName : "Your treasury"}
+        <div className="rounded-xl border bg-card p-4 text-left">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="eyebrow">Treasury</span>
+            <ChevronsUpDown className="size-3.5 text-muted-foreground" />
+          </div>
+          <p className="truncate font-semibold">
+            {config ? groupName : "Your workspace"}
           </p>
-          <p className="caption break-all">
+          <p className="caption mt-1">
             {config?.multisig
-              ? shortAddress(config.multisig) + " ↗"
-              : "Create or open a group"}
+              ? shortAddress(config.multisig)
+              : "Create or open a treasury"}
           </p>
-          <StatusBadge className="w-full">
-            {snapshot
-              ? `${snapshot.squad.threshold} required approvals`
-              : "No treasury selected"}
-          </StatusBadge>
+          {snapshot && (
+            <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
+              {snapshot.squad.threshold} approvals required
+            </p>
+          )}
         </div>
       </GroupManage>
-      {navigation}
-      <div className="mt-auto space-y-2 pt-6">
-        <div className="flex items-center gap-2 text-xs text-success">
-          <AssetIcon src={scope.imgIconShield1} size={16} />
-          {config?.guardProgram ? "Guarded treasury" : "Squads multisig"}
+      <div className="space-y-3">
+        <p className="eyebrow px-4">Workspace</p>
+        {navigation}
+      </div>
+      <div className="mt-auto space-y-5 pt-6">
+        <div className="space-y-2 rounded-xl border border-primary/10 bg-primary/5 p-4">
+          <div className="flex items-center gap-2 font-medium">
+            <ShieldCheck className="size-4 shrink-0 text-primary" />
+            {config?.guardProgram
+              ? "Guarded treasury"
+              : "Review before you sign"}
+          </div>
+          <p className="caption">
+            {config?.guardProgram
+              ? "Member approval and a valid Guard review are required."
+              : "Check every amount and destination before you approve."}
+          </p>
+          <Link
+            href="/status"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-1 pt-1 text-xs text-muted-foreground hover:text-primary"
+          >
+            Service status
+            <ArrowUpRight className="size-3" />
+          </Link>
         </div>
-        <p className="caption">What you see is what you sign.</p>
-        <div className="h-px bg-border" />
-        <div className="flex items-center gap-2.5 text-xs">
-          <Avatar
-            size={32}
-            initials={auth.address ? auth.address.slice(0, 2) : "W"}
-          />
-          <span>
-            {auth.address
-              ? `${shortAddress(auth.address)} · You`
-              : "Wallet not connected"}
-          </span>
+        <div className="flex items-center gap-3 border-t pt-5">
+          <Avatar size={36} initials={auth.address?.slice(0, 2) || "W"} />
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium">
+              {auth.address
+                ? shortAddress(auth.address)
+                : "Wallet not connected"}
+            </p>
+            <p className="caption">
+              {auth.address
+                ? "Your connected wallet"
+                : "Connect to propose and vote"}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -128,44 +158,57 @@ function ShellContent({ children }: { children: ReactNode }) {
       </a>
       <aside
         data-shell-sidebar
-        className="fixed inset-y-0 left-0 z-30 hidden w-[240px] border-r bg-sidebar lg:block"
+        className="fixed inset-y-0 left-0 z-30 hidden w-[248px] overflow-y-auto border-r bg-sidebar lg:block"
       >
         {sidebar}
       </aside>
-      <div className="lg:ml-[240px]">
-        <header className="flex h-[72px] items-center gap-4 px-5 sm:px-8 lg:px-10">
+      <div className="lg:ml-[248px]">
+        <header className="flex min-h-[76px] items-center gap-3 border-b bg-background px-5 sm:px-8 lg:px-10">
           <Button
             variant="ghost"
             size="icon"
             aria-label="Open navigation"
-            className="lg:hidden"
+            className="-ml-2 lg:hidden"
             onClick={() => setMobileOpen(true)}
           >
             <Menu />
           </Button>
-          <p className="caption min-w-0 truncate">
-            {groupName} &nbsp;/&nbsp; {active.label}
+          <p className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block">
+            {config ? groupName : "Your workspace"}
+            <span className="mx-3 text-muted-foreground/40">/</span>
+            <span className="text-foreground">
+              {active?.label || "Service status"}
+            </span>
           </p>
-          <div className="ml-auto flex shrink-0 items-center gap-4">
-            <StatusBadge className="hidden min-w-0 w-[72px] sm:inline-flex">
+          <div className="ml-auto flex shrink-0 items-center gap-3 sm:gap-5">
+            <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:inline-flex">
+              <Circle className="size-1.5 fill-warning text-warning" />
               Devnet
-            </StatusBadge>
-
+              <span className="hidden text-muted-foreground/60 xl:inline">
+                · Test funds only
+              </span>
+            </span>
             <WalletButton />
           </div>
         </header>
         <main
           id="main-content"
-          className="w-full max-w-[1680px] px-5 pt-6 pb-8 sm:px-8 lg:px-10"
+          className="mx-auto w-full max-w-[1520px] px-5 pt-7 pb-12 sm:px-8 sm:pt-9 lg:px-10"
         >
           {children}
         </main>
+        <footer className="flex flex-wrap justify-between gap-2 border-t px-5 py-5 text-[11px] text-muted-foreground sm:px-8 lg:px-10">
+          <span>Wysiwys · What you see is what you sign.</span>
+          <span>Solana Devnet · Test keys and funds only</span>
+        </footer>
       </div>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-        <DialogContent className="max-w-[360px] bg-sidebar">
-          <DialogTitle>wysiwys</DialogTitle>
-          <DialogDescription>What you see is what you sign.</DialogDescription>
-          {navigation}
+        <DialogContent className="max-w-[360px] gap-0 bg-sidebar p-0 sm:p-0">
+          <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
+          <DialogDescription className="sr-only">
+            Switch treasury or open a workspace page.
+          </DialogDescription>
+          {sidebar}
         </DialogContent>
       </Dialog>
     </div>
@@ -174,7 +217,7 @@ function ShellContent({ children }: { children: ReactNode }) {
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <SquadProvider>
-      <ShellContent>{children}</ShellContent>
+      <Workspace>{children}</Workspace>
     </SquadProvider>
   );
 }

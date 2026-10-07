@@ -10,7 +10,8 @@ function Dot({ state }: { state: StepState }) {
       className={cn(
         "relative z-10 grid size-6 shrink-0 place-items-center rounded-full border-2",
         state === "done" && "border-success bg-success text-background",
-        state === "failed" && "border-destructive bg-destructive text-background",
+        state === "failed" &&
+          "border-destructive bg-destructive text-background",
         state === "active" && "border-warning bg-card",
         state === "waiting" && "border-border bg-card",
       )}
@@ -19,7 +20,7 @@ function Dot({ state }: { state: StepState }) {
       {state === "failed" && <X className="size-3.5" strokeWidth={3} />}
       {state === "active" && (
         <>
-          <span className="absolute inset-0 animate-ping rounded-full bg-warning/40" />
+          <span className="absolute inset-0 motion-safe:animate-ping rounded-full bg-warning/40" />
           <span className="size-2 rounded-full bg-warning" />
         </>
       )}
@@ -42,7 +43,9 @@ export function ProgressTracker({
   steps: ProgressStep[];
   updatedAt: number | null;
 }) {
-  const finished = steps.every((s) => s.state === "done") || steps.some((s) => s.state === "failed");
+  const completed = steps.every((s) => s.state === "done");
+  const blocked = steps.some((s) => s.state === "failed");
+  const finished = completed || blocked;
   return (
     <Panel className="gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -50,12 +53,14 @@ export function ProgressTracker({
         <span className="caption flex items-center gap-2" aria-live="off">
           {!finished && (
             <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="absolute inline-flex size-full motion-safe:animate-ping rounded-full bg-success opacity-60" />
               <span className="relative inline-flex size-2 rounded-full bg-success" />
             </span>
           )}
-          {finished ? "Final" : "Live"}
-          {updatedAt ? ` · updated ${new Date(updatedAt).toLocaleTimeString()}` : ""}
+          {completed ? "Completed" : blocked ? "Execution blocked" : "Live"}
+          {updatedAt
+            ? ` · updated ${new Date(updatedAt).toLocaleTimeString()}`
+            : ""}
         </span>
       </div>
       <ol className="flex flex-col md:flex-row" aria-label="Proposal progress">

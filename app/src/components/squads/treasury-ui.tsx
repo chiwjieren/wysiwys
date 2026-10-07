@@ -1,5 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
+import { Inbox, RefreshCw, AlertCircle, LoaderCircle } from "lucide-react";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { useSquad } from "@/lib/squads/provider";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,9 @@ export function SquadFeedback() {
   const auth = useWalletConnection();
   if (!error && !auth.error && !busy && !signature) return null;
   return (
-    <div className="space-y-2 rounded-lg border px-4 py-3">
+    <div
+      className={`space-y-2 rounded-xl border px-4 py-3 ${error || auth.error ? "border-destructive/25 bg-danger-bg/40" : "bg-card"}`}
+    >
       {auth.error && (
         <div className="flex flex-wrap items-center gap-3">
           <p role="alert" className="flex-1 break-words text-destructive">
@@ -61,12 +64,16 @@ export function SquadFeedback() {
         </div>
       )}
       {error && (
-        <p role="alert" className="break-words text-destructive">
-          {error}
-        </p>
+        <div className="flex items-start gap-3">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <p role="alert" className="break-words text-destructive">
+            {error}
+          </p>
+        </div>
       )}
       {busy && (
-        <p role="status">
+        <p role="status" className="flex items-center gap-2">
+          <LoaderCircle className="size-4 motion-safe:animate-spin" />
           {signature
             ? "Confirming on Solana Devnet…"
             : "Waiting for wallet approval…"}
@@ -89,6 +96,9 @@ export function RefreshButton() {
       disabled={!!busy || mode === "loading"}
       onClick={() => void refresh()}
     >
+      <RefreshCw
+        className={`size-3.5 ${mode === "loading" ? "motion-safe:animate-spin" : ""}`}
+      />
       Refresh
     </Button>
   );
@@ -104,9 +114,12 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`flex min-h-[112px] flex-col items-center justify-center gap-2 px-4 py-6 text-center ${className}`}
+      className={`flex min-h-[160px] flex-col items-center justify-center gap-3 px-4 py-6 text-center ${className}`}
     >
-      <p className="font-medium">{title}</p>
+      <span className="mb-1 flex size-11 items-center justify-center rounded-xl border bg-secondary/50 text-muted-foreground">
+        <Inbox className="size-5" />
+      </span>
+      <h3 className="font-medium">{title}</h3>
       <p className="max-w-[440px] text-sm text-muted-foreground">{children}</p>
     </div>
   );

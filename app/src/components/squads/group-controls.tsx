@@ -1,6 +1,6 @@
 "use client";
-import { useState, type ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { useState, useRef, useEffect, useId, type ReactNode } from "react";
+import { Plus, X, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,8 +50,15 @@ export function CreateGroupButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  // One field per member wallet; two to start (a 3 of 3 treasury with you).
-  const [members, setMembers] = useState<string[]>(["", ""]);
+  const nextMemberId = useRef(1);
+  const memberInput = useRef<HTMLInputElement>(null);
+  const inputPrefix = useId();
+  const previousCount = useRef(1);
+  const [members, setMembers] = useState([{ id: 0, address: "" }]);
+  useEffect(() => {
+    if (members.length > previousCount.current) memberInput.current?.focus();
+    previousCount.current = members.length;
+  }, [members.length]);
   // Empty means "every member must approve" (the default).
   const [threshold, setThreshold] = useState("");
   const [standard, setStandard] = useState(false);
@@ -88,7 +95,10 @@ export function CreateGroupButton({
       };
     }
   })();
-  const checked = validateMemberInputs(members, auth.address ?? undefined);
+  const checked = validateMemberInputs(
+    members.map((m) => m.address),
+    auth.address ?? undefined,
+  );
   const invitees = checked.invitees;
   const count = invitees.length + 1;
   const required = threshold || String(count);
@@ -117,7 +127,7 @@ export function CreateGroupButton({
             : "Payouts execute only after member approval and an approved Guard review."}
         </DialogDescription>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={async (e) => {
             e.preventDefault();
             const address = await createGroup(
@@ -325,6 +335,7 @@ export function CreateGroupButton({
           {auth.connected ? (
             <Button
               type="submit"
+              className="w-full"
               disabled={
                 !!busy ||
                 !name.trim() ||

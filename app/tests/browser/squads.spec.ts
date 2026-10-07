@@ -1,13 +1,18 @@
 import { test, expect } from "@playwright/test";
 import { createPrivateKey, sign } from "node:crypto";
 import { createRequire } from "node:module";
+import { reviewPda } from "../../src/lib/squads/review";
+import { txHash } from "@wysiwys/shared";
 const require = createRequire(import.meta.url);
+const { BorshAccountsCoder, BN } = require("@anchor-lang/core");
+const guardIdl = require("@wysiwys/shared/idl/wysiwys_guard.json");
 const {
   Keypair,
   PublicKey,
   VersionedTransaction,
   SystemProgram,
   TransactionMessage,
+  ComputeBudgetProgram,
 } = require("@solana/web3.js") as typeof import("@solana/web3.js");
 const sqds = require("@sqds/multisig") as typeof import("@sqds/multisig");
 
@@ -92,6 +97,7 @@ for (const scenario of [
   "create",
   "execute",
   "config-execute",
+  "guard-reject",
 ]) {
   const cancelSigning = scenario === "switch";
   const proposing = scenario === "payment";
@@ -101,23 +107,26 @@ for (const scenario of [
   const configExecuting = scenario === "config-execute";
   // Memo payments without a guard review are the standard (opt-in) flow; guarded proposals
   // need the settlement runner, which these mocks do not provide.
+  const guardRejected = scenario === "guard-reject";
   const standard = creating || executing || configExecuting || proposing;
   test(
-    scenario === "disconnect"
-      ? "disconnect invalidates the account and allows reconnection without signing"
-      : creating
-        ? "create group signs multisigCreateV2 with creator Execute and opens the finalized treasury"
-        : executing
-          ? "standard creator executes a decoded payment only after the approval threshold"
-          : configExecuting
-            ? "standard creator applies an approved threshold change with the SDK"
-            : loginError
-              ? "failed Phantom connection shows an actionable error and can retry without submitting"
-              : proposing
-                ? "payment review signs SDK transaction creation and proposal, without execution"
-                : cancelSigning
-                  ? "an account change while signing prevents RPC submission"
-                  : "Direct wallet connection and SDK signing update votes only after finalized submission",
+    guardRejected
+      ? "rejected review highlights the exact recipient and blocks execution on desktop and mobile"
+      : scenario === "disconnect"
+        ? "disconnect invalidates the account and allows reconnection without signing"
+        : creating
+          ? "create group signs multisigCreateV2 with creator Execute and opens the finalized treasury"
+          : executing
+            ? "standard creator executes a decoded payment only after the approval threshold"
+            : configExecuting
+              ? "standard creator applies an approved threshold change with the SDK"
+              : loginError
+                ? "failed Phantom connection shows an actionable error and can retry without submitting"
+                : proposing
+                  ? "payment review signs SDK transaction creation and proposal, without execution"
+                  : cancelSigning
+                    ? "an account change while signing prevents RPC submission"
+                    : "Direct wallet connection and SDK signing update votes only after finalized submission",
     async ({ page }) => {
       let voted = false;
       let executed = false;
@@ -193,8 +202,8 @@ for (const scenario of [
         async (bytes: number[]) => {
           const tx = VersionedTransaction.deserialize(Uint8Array.from(bytes));
           if (creating) {
-            expect(tx.message.compiledInstructions.length).toBe(1);
-            const ix = tx.message.compiledInstructions[0];
+            expect(tx.message.compiledInstructions.length).toBe(3);
+            const ix = tx.message.compiledInstructions[2];
             expect(
               tx.message.staticAccountKeys[ix.programIdIndex].equals(
                 sqds.PROGRAM_ID,
@@ -293,14 +302,23 @@ for (const scenario of [
                       member: signer.publicKey,
                     }),
                   ];
-          expect(tx.message.compiledInstructions.length).toBe(expected.length);
+          const instructions = [
+            ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }),
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10000 }),
+            ...expected,
+          ];
+          expect(tx.message.compiledInstructions.length).toBe(
+            instructions.length,
+          );
           tx.message.compiledInstructions.forEach((ix, i) => {
             expect(
               tx.message.staticAccountKeys[ix.programIdIndex].equals(
-                sqds.PROGRAM_ID,
+                instructions[i].programId,
               ),
             ).toBeTruthy();
-            expect(Array.from(ix.data)).toEqual(Array.from(expected[i].data));
+            expect(Array.from(ix.data)).toEqual(
+              Array.from(instructions[i].data),
+            );
           });
           expect(
             tx.message.staticAccountKeys.some((k) =>
@@ -565,6 +583,34 @@ for (const scenario of [
                   }
                 : {}),
             };
+            if (guardRejected) {
+              const bytes = await new BorshAccountsCoder(guardIdl).encode(
+                "Review",
+                {
+                  version: 1,
+                  multisig,
+                  vault_transaction: transactionPda,
+                  proposal: proposalPda,
+                  tx_index: new BN(1),
+                  tx_hash: Array.from(
+                    txHash(transactionPda.toBytes(), transaction.serialize()[0]),
+                  ),
+                  status: { Rejected: {} },
+                  reason: 8,
+                  policy_hash: Array(32).fill(0),
+                  action_kind: 0,
+                  destination_hash: Array(32).fill(0),
+                  issued_at: new BN(100),
+                  expires_at: new BN(200),
+                  created_at: new BN(90),
+                  bump: 0,
+                },
+              );
+              accounts[reviewPda(guard, multisig, 1n).toBase58()] = {
+                ...accountInfo(bytes),
+                owner: guard.toBase58(),
+              };
+            }
             result = {
               context: { slot: 1 },
               value: request.params[0].map(
@@ -624,7 +670,7 @@ for (const scenario of [
       if (!creating) {
         await expect(page.getByText("2.5 SOL", { exact: true })).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "+ New payment" }),
+          page.getByRole("button", { name: "New payment", exact: true }),
         ).toBeEnabled();
       }
       await page
@@ -690,11 +736,12 @@ for (const scenario of [
       }
       if (creating) {
         await page
-          .getByRole("button", { name: "Create group", exact: true })
+          .getByRole("button", { name: "Create treasury", exact: true })
           .click();
-        await page.getByLabel("Group name").fill("Design team");
+        await page.getByLabel("Treasury name").fill("Design team");
+        await page.getByLabel("Standard group (no guard)").check();
         await page
-          .getByLabel("Member wallet addresses")
+          .getByLabel("Member 2 wallet address")
           .fill(otherMember.toBase58());
         await page.getByLabel("Required approvals").fill("2");
         await page
@@ -705,7 +752,7 @@ for (const scenario of [
           new RegExp(`group=${createdMultisig.toBase58()}`),
         );
         await expect(
-          page.getByText("Design team", { exact: true }),
+          page.getByText("Design team", { exact: true }).first(),
         ).toBeVisible();
         await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
         expect(submissions).toBe(1);
@@ -714,7 +761,10 @@ for (const scenario of [
           .first()
           .click();
         await expect(
-          page.getByRole("cell", { name: "Propose Vote Execute", exact: true }),
+          page.getByRole("cell", {
+            name: "Initiate + Vote + Execute",
+            exact: true,
+          }),
         ).toBeVisible();
         await page.screenshot({
           path: "test-results/created-group-members.png",
@@ -722,7 +772,9 @@ for (const scenario of [
         return;
       }
       if (proposing) {
-        await page.getByRole("button", { name: "+ New payment" }).click();
+        await page
+          .getByRole("button", { name: "New payment", exact: true })
+          .click();
         await page
           .getByLabel("Recipient wallet")
           .fill(signer.publicKey.toBase58());
@@ -764,7 +816,7 @@ for (const scenario of [
         expect(submitted).toBeTruthy();
         expect(voted).toBeFalsy();
         await expect(
-          page.getByRole("button", { name: "Execute payment" }),
+          page.getByRole("button", { name: "Execute payment", exact: true }),
         ).toBeDisabled();
         return;
       }
@@ -776,6 +828,37 @@ for (const scenario of [
           .click();
       await page.getByRole("link", { name: "Inspect proposal #1" }).click();
       await expect(page).toHaveURL(/transactions\/1$/, { timeout: 45000 });
+      if (guardRejected) {
+        await expect(
+          page.getByText("Recipient is not approved", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByText(signer.publicKey.toBase58(), { exact: true }).first(),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", {
+            name: "Execute through guard",
+            exact: true,
+          }),
+        ).toBeDisabled();
+        await expect(
+          page.getByRole("button", { name: "Reject proposal", exact: true }),
+        ).toHaveAttribute("data-variant", "default");
+        await page.screenshot({
+          path: "test-results/redesign-rejected-payment-desktop.png",
+          fullPage: true,
+        });
+        await page.setViewportSize({ width: 390, height: 844 });
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth),
+        ).toBeLessThanOrEqual(390);
+        await page.screenshot({
+          path: "test-results/redesign-rejected-payment-mobile.png",
+          fullPage: true,
+        });
+        expect(submissions).toBe(0);
+        return;
+      }
       if (configExecuting) {
         await expect(
           page.getByText("Change required approvals to 2.").first(),
@@ -789,6 +872,7 @@ for (const scenario of [
         await page
           .getByRole("button", { name: "Apply approved changes", exact: true })
           .click();
+        await expect.poll(() => executed).toBe(true);
         await expect(
           page.getByRole("button", {
             name: "Apply approved changes",
@@ -832,6 +916,7 @@ for (const scenario of [
             exact: true,
           })
           .click();
+        await expect.poll(() => executed).toBe(true);
         await expect(
           page.getByText("Executed", { exact: true }).first(),
         ).toBeVisible();

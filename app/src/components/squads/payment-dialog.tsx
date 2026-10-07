@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowDownLeft, Plus, Send, ScanLine } from "lucide-react";
 import { Connection, PublicKey, TransactionMessage } from "@solana/web3.js";
 import {
   Dialog,
@@ -33,6 +34,7 @@ export function ReceiveButton() {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="secondary" disabled={!snapshot}>
+          <ArrowDownLeft className="size-4" />
           Receive
         </Button>
       </DialogTrigger>
@@ -209,9 +211,30 @@ export function PaymentButton() {
       }}
     >
       <DialogTrigger asChild>
-        <Button disabled={!snapshot || !!busy}>+ New payment</Button>
+        <Button disabled={!snapshot || !!busy}>
+          <Plus className="size-4" />
+          New payment
+        </Button>
       </DialogTrigger>
       <DialogContent className="bg-card">
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            {step === "edit" ? (
+              <Send className="size-5" />
+            ) : (
+              <ScanLine className="size-5" />
+            )}
+          </span>
+          <div className="flex gap-2 text-xs text-muted-foreground">
+            <span className={step === "edit" ? "text-foreground" : ""}>
+              1. Payment details
+            </span>
+            <span>/</span>
+            <span className={step !== "edit" ? "text-foreground" : ""}>
+              2. Review & propose
+            </span>
+          </div>
+        </div>
         <DialogTitle>
           {step === "edit"
             ? "New payment"
@@ -237,6 +260,9 @@ export function PaymentButton() {
               <Input
                 required
                 placeholder="Solana wallet address"
+                className="font-mono text-xs"
+                spellCheck={false}
+                autoComplete="off"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value.trim())}
               />
@@ -244,7 +270,7 @@ export function PaymentButton() {
             <label className="block space-y-2">
               <span>Asset</span>
               <select
-                className="h-10 w-full rounded-lg border bg-secondary px-3"
+                className="h-11 w-full rounded-lg border border-input bg-background/60 px-3"
                 value={asset}
                 onChange={(e) => setAsset(e.target.value)}
               >
@@ -266,10 +292,19 @@ export function PaymentButton() {
                 required
                 inputMode="decimal"
                 placeholder="0.00"
+                className="h-14 text-2xl font-semibold tracking-tight md:text-2xl"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
             </label>
+            <p className="caption">
+              Available in vault:{" "}
+              {token
+                ? `${tokenAmount(token.amount, token.decimals)} ${assetLabel(config, token.mint)}`
+                : snapshot
+                  ? `${tokenAmount(String(snapshot.sol), 9)} SOL`
+                  : "Unavailable"}
+            </p>
             {!guarded && (
               <label className="block space-y-2">
                 <span>Memo (optional)</span>
@@ -295,15 +330,16 @@ export function PaymentButton() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-xl border bg-secondary p-5">
+            <div className="workspace-hero rounded-xl border border-primary/20 bg-background/40 p-5">
               <p className="caption">Decoded payment preview</p>
               {decoded?.payments.map((payment, i) => (
                 <div key={i}>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-[32px] leading-10 font-semibold tracking-tight">
                     Send {payment.amount} {assetLabel(config, payment.mint)}
                   </p>
-                  <p className="mt-3 break-all text-sm">
-                    To {payment.recipient}
+                  <p className="eyebrow mt-5">Recipient wallet</p>
+                  <p className="mt-2 break-all rounded-lg border bg-background/60 p-3 font-mono text-xs leading-5">
+                    {payment.recipient}
                   </p>
                   {payment.mint && (
                     <p className="caption mt-2 break-all">

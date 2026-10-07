@@ -24,7 +24,7 @@ export function StatusBadge({
   return (
     <Badge
       className={cn(
-        "h-7 min-w-[124px] justify-center rounded-lg border-0 px-3 text-xs font-normal leading-[18px]",
+        "h-7 w-fit justify-center rounded-full border border-current/10 px-2.5 text-xs font-medium leading-[18px]",
         toneClasses[tone],
         className,
       )}
@@ -43,7 +43,7 @@ export function Panel({
   return (
     <Card
       className={cn(
-        "gap-0 rounded-xl border bg-card p-6 shadow-none",
+        "min-w-0 gap-0 rounded-2xl border bg-card p-5 shadow-[0_2px_12px_#00000008] sm:p-6",
         className,
       )}
     >
@@ -61,8 +61,8 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <div className="min-w-0 basis-full flex-1 space-y-1.5 sm:basis-auto">
+    <div className="flex flex-wrap items-center gap-3 pb-1 sm:gap-4">
+      <div className="min-w-0 basis-full flex-1 space-y-2 sm:basis-auto">
         <h1>{title}</h1>
         <p className="text-muted-foreground">{description}</p>
       </div>
