@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createEventParser } from "../src/events";
-import { PROGRAM_ID, decisionRecorded, executed, guardLogs, idl, key, reviewRequested } from "./helpers";
+import { PROGRAM_ID, decisionRecorded, executed, guardLogs, idl, key, policyChanged, reviewRequested } from "./helpers";
 
 const parse = createEventParser(idl, PROGRAM_ID);
 
@@ -46,4 +46,11 @@ test("ignores events emitted by another program", () => {
 
 test("ignores logs without events", () => {
   assert.deepEqual(parse(["Program 11111111111111111111111111111111 invoke [1]", "Program 11111111111111111111111111111111 success"]), []);
+});
+
+test("parses PolicyChanged", () => {
+  const [ev] = parse(guardLogs([policyChanged(11)]));
+  assert.deepEqual(ev, {
+    name: "PolicyChanged", multisig: key(2).toBase58(), txIndex: "11", oldPolicyHash: "03".repeat(32), newPolicyHash: "05".repeat(32),
+  });
 });

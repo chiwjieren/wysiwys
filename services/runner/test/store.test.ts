@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openStore } from "../src/store";
-import type { DecisionRecorded, Executed, ReviewRequested } from "../src/events";
+import type { DecisionRecorded, Executed, PolicyChanged, ReviewRequested } from "../src/events";
 
 const R = "Review1111111111111111111111111111111111111";
 const requested: ReviewRequested = { name: "ReviewRequested", review: R, multisig: "Ms11", txIndex: "7", txHash: "ab".repeat(32) };
@@ -106,4 +106,24 @@ test("a review stops being retried after the maximum number of trigger attempts"
   s.markTrigger(R, false, "fail");
   assert.deepEqual(s.pendingTriggers(5), []);
   assert.equal(s.getReview(R)!.trigger_attempts, 5);
+});
+
+test("PolicyChanged goes to the activity feed without creating a review", () => {
+  const s = openStore(":memory:");
+  const ev: PolicyChanged = { name: "PolicyChanged", multisig: "Ms11", txIndex: "11", oldPolicyHash: "03".repeat(32), newPolicyHash: "05".repeat(32) };
+  assert.equal(s.applyEvent(ev, meta("p1")), true);
+  assert.equal(s.applyEvent(ev, meta("p1")), false);
+  assert.deepEqual(s.listReviews(), []);
+  const [row] = s.listEvents();
+  assert.equal(row!.name, "PolicyChanged");
+  assert.equal(row!.review, "policy_change:Ms11:11");
+});
+
+test("stores policy documents per multisig and hash", () => {
+  const s = openStore(":memory:");
+  assert.equal(s.getPolicy("Ms11", "aa"), null);
+  s.putPolicy({ hash: "aa", multisig: "Ms11", document: '{"version":2}', createdAt: 5 });
+  s.putPolicy({ hash: "aa", multisig: "Ms11", document: '{"version":2}', createdAt: 6 }); // idempotent
+  assert.equal(s.getPolicy("Ms11", "aa"), '{"version":2}');
+  assert.equal(s.getPolicy("Other", "aa"), null, "a document is only served for its own multisig");
 });

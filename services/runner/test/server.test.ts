@@ -145,13 +145,18 @@ test("config reads the settlement token; empty means unset (routes fail closed)"
 // ---------------------------------------------------------------- settlement routes
 
 import { SettlementError, type Settlement } from "../src/settlement";
-import { PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { policyHash } from "@wysiwys/shared";
+import decoderPkg from "../../../packages/decoder/package.json" with { type: "json" };
 
 const ix = new TransactionInstruction({
   programId: new PublicKey("9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya"),
   keys: [{ pubkey: PublicKey.default, isSigner: false, isWritable: true }],
   data: Buffer.from([1, 2, 3]),
 });
+
+const POLICY_MS = Keypair.generate().publicKey.toBase58();
+const currentHash: { value: string } = { value: "11".repeat(32) };
 
 function fakeSettlement(calls: string[]): Settlement {
   return {
@@ -169,6 +174,8 @@ function fakeSettlement(calls: string[]): Settlement {
       if (input.multisig === "Exists") throw new SettlementError(409, "guard config already exists for this multisig");
       return { multisig: input.multisig, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: false as const, instruction: ix };
     },
+    currentPolicyHash: async (ms: string) => (ms === POLICY_MS ? currentHash.value : null),
+    applyPolicyChange: async (input: any) => (calls.push(`policy-apply:${input.txIndex}`), ix),
     guardedGroup: async (ms: string) =>
       ms === "Guarded1111111111111111111111111111111111111"
         ? { multisig: ms, programId: "P", executorPda: "E", vaultIndex: 0, guardReady: true as const }
@@ -196,7 +203,7 @@ async function serveSettlement(token: string | null, rateLimitPerMinute = 100) {
       headers: { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
-  return { base, post, calls, close: () => server.close() };
+  return { base, post, calls, store, close: () => server.close() };
 }
 
 const ids = { multisig: "Ms1", txIndex: "3", member: "Mem1" };
@@ -378,4 +385,74 @@ test("config reads the CRE runner settings", () => {
   assert.deepEqual(cfg.cre, { command: ["cre"], projectDir: "/w/cre", workflow: "review", target: "staging-settings", broadcast: false, timeoutMs: 300000 });
   assert.equal(cfg.reviewToken, "rt");
   assert.equal(loadConfig({ CRE_PROJECT_DIR: "/w/cre" }, () => null).cre!.broadcast, true);
+});
+
+// ---------------------------------------------------------------- policy store and apply
+
+const DECODER = `${decoderPkg.name}@${decoderPkg.version}`;
+const policyDoc = (version: number) => ({
+  version, salt: "ab".repeat(16),
+  allowedPrograms: ["11111111111111111111111111111111"], allowedInstructions: ["system:transfer"], allowedMints: [],
+  maxAmountPerPayment: "5", destinationWhitelist: [Keypair.generate().publicKey.toBase58()],
+});
+const hashOf = (doc: unknown) => Buffer.from(policyHash(doc as Record<string, unknown>, DECODER)).toString("hex");
+
+test("POST /frontend/policies validates, hashes and stores a proposed policy; GET serves it to that multisig only", async () => {
+  const s = await serveSettlement("t");
+  try {
+    const doc = policyDoc(2);
+    const res = await s.post("/frontend/policies", { multisig: POLICY_MS, document: doc });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as any;
+    assert.equal(body.hash, hashOf(doc));
+    assert.equal(body.currentPolicyHash, currentHash.value);
+    assert.equal(body.currentVersionKnown, false);
+    const get = (ms: string, h: string) => fetch(`${s.base}/frontend/policies/${ms}/${h}`, { headers: { authorization: "Bearer t" } });
+    const got = await get(POLICY_MS, body.hash);
+    assert.equal(got.status, 200);
+    assert.deepEqual(((await got.json()) as any).document, doc);
+    assert.equal((await get(POLICY_MS, "00".repeat(32))).status, 404);
+    assert.equal((await get(Keypair.generate().publicKey.toBase58(), body.hash)).status, 404);
+    assert.equal((await fetch(`${s.base}/frontend/policies/${POLICY_MS}/${body.hash}`)).status, 401);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/policies refuses invalid documents, unguarded multisigs and versions not above the current one", async () => {
+  const s = await serveSettlement("t");
+  try {
+    const bad = await s.post("/frontend/policies", { multisig: POLICY_MS, document: { ...policyDoc(2), extra: 1 } });
+    assert.equal(bad.status, 400);
+    assert.match(((await bad.json()) as any).error, /unknown key "extra"/);
+    assert.equal((await s.post("/frontend/policies", { multisig: Keypair.generate().publicKey.toBase58(), document: policyDoc(2) })).status, 404);
+    assert.equal((await s.post("/frontend/policies", { multisig: "not-a-key", document: policyDoc(2) })).status, 400);
+
+    // The current policy is known (stored, and its hash is the treasury's): a proposal must raise the version.
+    const current = policyDoc(3);
+    currentHash.value = hashOf(current);
+    s.store.putPolicy({ hash: currentHash.value, multisig: POLICY_MS, document: JSON.stringify(current), createdAt: 1 });
+    const lower = await s.post("/frontend/policies", { multisig: POLICY_MS, document: policyDoc(3) });
+    assert.equal(lower.status, 409);
+    assert.match(((await lower.json()) as any).error, /version must be greater than 3/);
+    assert.equal((await s.post("/frontend/policies", { multisig: POLICY_MS, document: current })).status, 409);
+    const higher = await s.post("/frontend/policies", { multisig: POLICY_MS, document: policyDoc(4) });
+    assert.equal(higher.status, 200);
+    assert.equal(((await higher.json()) as any).currentVersionKnown, true);
+  } finally {
+    currentHash.value = "11".repeat(32);
+    s.close();
+  }
+});
+
+test("POST /frontend/policy-apply returns the apply_policy_change instruction", async () => {
+  const s = await serveSettlement("t");
+  try {
+    const res = await s.post("/frontend/policy-apply", { multisig: POLICY_MS, txIndex: "12", member: "Mem1" });
+    assert.equal(res.status, 200);
+    assert.ok(((await res.json()) as any).guardInstruction.programId);
+    assert.deepEqual(s.calls, ["policy-apply:12"]);
+  } finally {
+    s.close();
+  }
 });

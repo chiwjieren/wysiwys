@@ -1,10 +1,10 @@
 import * as anchorNs from "@anchor-lang/core";
 import type { Idl } from "@anchor-lang/core";
 import * as sqds from "@sqds/multisig";
-import { Keypair, PublicKey, SYSVAR_INSTRUCTIONS_PUBKEY, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, SYSVAR_INSTRUCTIONS_PUBKEY, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { decodeVaultTransaction } from "@wysiwys/decoder";
 import idlJson from "@wysiwys/shared/idl/wysiwys_guard.json" with { type: "json" };
-import { txIndexSeed } from "@wysiwys/shared";
+import { policyChangePda, txIndexSeed } from "@wysiwys/shared";
 
 // Builds the guard instructions the app asks for. The app validates them again and the member signs;
 // the guard and Squads enforce every rule on chain, so a wrong instruction can only fail, not pay.
@@ -154,6 +154,39 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
       .instruction();
   }
 
+  /**
+   * apply_policy_change for a Squads proposal whose only instruction is the policy change marker. The guard
+   * checks the vote, the waiting period, staleness and the expected current hash; the member pays the
+   * PolicyChange record's rent.
+   */
+  async function applyPolicyChange(input: unknown): Promise<TransactionInstruction> {
+    const { multisig, txIndex, member } = parseIds(input);
+    await requireGuarded(multisig);
+    const { vaultTransaction, proposal } = squadsAccounts(multisig, txIndex);
+    return program.methods
+      .applyPolicyChange()
+      .accountsPartial({
+        config: configPda(multisig), multisig, proposal, vaultTransaction,
+        policyChange: policyChangePda(programId, multisig, txIndex), payer: member, systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  /** The treasury's current policy hash (hex) from its GuardConfig, or null when it has none. */
+  async function currentPolicyHash(multisig: string): Promise<string | null> {
+    let ms: PublicKey;
+    try {
+      ms = new PublicKey(multisig);
+    } catch {
+      return null;
+    }
+    const info = await connection.getAccountInfo(configPda(ms), "confirmed");
+    if (!info || !info.owner.equals(programId)) return null;
+    // anchor.Program camel-cases IDL names.
+    const config = program.coder.accounts.decode("guardConfig", info.data) as { policyHash: number[] };
+    return Buffer.from(config.policyHash).toString("hex");
+  }
+
   async function guardedGroup(multisig: string): Promise<GuardedGroup | null> {
     let ms: PublicKey;
     try {
@@ -212,7 +245,7 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
     };
   }
 
-  return { requestReview, guardedExecute, guardedConfigExecute, destinationOf, guardedGroup, prepareGuardedGroup };
+  return { requestReview, guardedExecute, guardedConfigExecute, applyPolicyChange, currentPolicyHash, destinationOf, guardedGroup, prepareGuardedGroup };
 }
 
 export type Settlement = ReturnType<typeof createSettlement>;

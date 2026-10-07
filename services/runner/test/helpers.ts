@@ -11,7 +11,7 @@ export const key = (n: number) => new PublicKey(new Uint8Array(32).fill(n));
 export const bytes32 = (n: number) => Array.from(new Uint8Array(32).fill(n));
 
 /** "Program data:" line exactly as Anchor's emit! writes it. */
-export function eventLine(name: "ReviewRequested" | "DecisionRecorded" | "Executed", data: Record<string, unknown>): string {
+export function eventLine(name: "ReviewRequested" | "DecisionRecorded" | "Executed" | "PolicyChanged", data: Record<string, unknown>): string {
   const disc = idl.events!.find((e) => e.name === name)!.discriminator;
   const body = coder.types.encode(name, data);
   return `Program data: ${Buffer.concat([Buffer.from(disc), body]).toString("base64")}`;
@@ -34,3 +34,6 @@ export const decisionRecorded = (review: PublicKey, verdict = 1, reason = 0) =>
 
 export const executed = (review: PublicKey, txIndex = 7) =>
   eventLine("Executed", { review, multisig: key(2), tx_index: new BN(txIndex) });
+
+export const policyChanged = (txIndex = 11) =>
+  eventLine("PolicyChanged", { multisig: key(2), tx_index: new BN(txIndex), old_policy_hash: bytes32(3), new_policy_hash: bytes32(5) });
