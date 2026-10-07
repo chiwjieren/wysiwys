@@ -1,0 +1,47 @@
+Initializing...
+Loading settings...
+
+Deploying Workflow: wysiwys-review-live
+  Registry:      private
+  DON Family:    zone-a
+  Target:        live-devnet
+  Owner Address: 0xC6680AC5E2A0A6d63A172a9ac99b52b3eB9A2662 (derived)
+
+  Compiling workflow...
+✓ Workflow compiled successfully
+  Binary hash:   29a963b4e49f1cef3ef5dfce03fafc02bacebc4fd59e72273c36fa23c5ef33ff
+  Config hash:   88041d15b95b11e69f9623dd4c80828da949f151f3090a55b3e6250f233dd1b9
+  Workflow hash: 0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff
+! Workflow wysiwys-review-live already exists
+  This will update the existing workflow.
+
+  Uploading files...
+✓ Loaded binary from: ./binary.wasm.br.b64
+✓ Uploaded binary to: https://storage.cre.chain.link/artifacts/0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff/binary.wasm
+✓ Loaded config from: ./config.live.json
+✓ Uploaded config to: https://storage.cre.chain.link/artifacts/0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff/config
+
+  Registering workflow in private registry (workflowID: 0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff)...
+✓ Workflow registered in private registry
+
+Details:
+     Registry:         private
+     DON Family:       zone-a
+     Workflow Name:    wysiwys-review-live
+     Workflow ID:      0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff
+     Status:           Active
+     Binary URL:       https://storage.cre.chain.link/artifacts/0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff/binary.wasm
+     Config URL:       https://storage.cre.chain.link/artifacts/0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff/config
+     Owner:            c6680ac5e2a0a6d63a172a9ac99b52b3eb9a2662
+
+Next steps:
+     cre workflow list
+     cre execution list wysiwys-review-live
+     cre execution list wysiwys-review-live --status FAILURE
+     cre execution status <execution-id>
+     cre execution events  <execution-id>
+     cre execution logs    <execution-id>
+
+⚠️  Update available! You’re running 1.33.0, but 1.37.0 is the latest.
+Run `cre update` or visit https://github.com/smartcontractkit/cre-cli/releases to upgrade.
+

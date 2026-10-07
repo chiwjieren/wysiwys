@@ -41,3 +41,7 @@
 
 - In-place upgrade of `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` (additive: new instruction, no account layout change). Signature `3ZCvUu5bfBYzedxMmdYaY96cUyyZ3yPHpDNJDk3qDmNVgsgnBkqrwayYhxBuUWZweeoQFQWVTEeUcaaNgwhs9eVV`, slot 508302149. ProgramData extended to 233,008 bytes; dump byte-identical to the build (sha256 `97b176e7302760565275084ddd01b3ae36a3be751c31816de7b9938ca959da2e`).
 - Devnet check on treasury `26XYHwTdNnNN1mFZAu11LK3m68eY1SmA8HNVhb41gMc4`: voted AddMember (Initiate + Vote) executed through the guard (`3E4MnPWL…`), then voted RemoveMember (`5UEjjqji…`); the executor stayed the sole Execute member.
+
+## Guard upgrade: voted policy changes (7 Oct)
+
+Program `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` upgraded on devnet in slot 508404523 (default features, so `POLICY_CHANGE_MIN_DELAY` = 300 s; extended by 40000 bytes to 273008). Adds `apply_policy_change`; `guarded_execute` now requires the review's policy hash to equal the current one and refuses messages that invoke the guard. Live workflow `wysiwys-review-live` redeployed with Policy v1 enforcement and the policy registry: workflow ID `0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff` (`evidence/cre/2026-10-07-live-redeploy-policy.log`).
