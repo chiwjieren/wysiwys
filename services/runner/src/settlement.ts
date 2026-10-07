@@ -222,6 +222,8 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
     if (!sqds.getMultisigPda({ createKey })[0].equals(ms)) throw new SettlementError(400, "multisig is not derived from this create key");
     if (await connection.getAccountInfo(configPda(ms), "confirmed")) throw new SettlementError(409, "guard config already exists for this multisig");
     const g = o.guardSetup;
+    // A creator-chosen policy (stored and checked by the server route) or the deployment's default.
+    const policyHash = typeof i.policyHash === "string" ? i.policyHash : g.policyHash;
     const hex = (s: string, n: number) => {
       const b = Buffer.from(s.replace(/^0x/, ""), "hex");
       if (b.length !== n) throw new SettlementError(503, "guard values are malformed on the runner");
@@ -231,7 +233,7 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
       .initializeGuard(
         new PublicKey(g.forwarderProgram),
         new PublicKey(g.forwarderState),
-        hex(g.policyHash, 32),
+        hex(policyHash, 32),
         hex(g.workflowOwner, 20),
         new anchor.BN(g.maxReviewLifetime),
         new anchor.BN(g.reviewDeadlineSecs),

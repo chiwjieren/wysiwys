@@ -66,3 +66,18 @@ test("reads the treasury's current policy hash from its GuardConfig", async () =
   const foreign = await settlementWith(new Map([[config.toBase58(), { owner: Keypair.generate().publicKey, data: await guardConfigData(new Array(32).fill(7)) }]]));
   assert.equal(await foreign.currentPolicyHash(ms.toBase58()), null);
 });
+
+test("prepares initialize_guard with a chosen policy hash instead of the deployment's", async () => {
+  const createKey = Keypair.generate().publicKey;
+  const newMs = sqds.getMultisigPda({ createKey })[0];
+  const guardSetup = {
+    forwarderProgram: Keypair.generate().publicKey.toBase58(), forwarderState: Keypair.generate().publicKey.toBase58(),
+    policyHash: "11".repeat(32), workflowOwner: "22".repeat(20), maxReviewLifetime: "3600", reviewDeadlineSecs: "900",
+  };
+  const connection = { getAccountInfo: async () => null };
+  const s = createSettlement({ connection: connection as never, programId: PROGRAM_ID, guardSetup });
+  const input = { multisig: newMs.toBase58(), creator: member.toBase58(), createKey: createKey.toBase58() };
+  const policyAt = (data: Buffer) => data.subarray(72, 104).toString("hex");
+  assert.equal(policyAt((await s.prepareGuardedGroup(input)).instruction.data), "11".repeat(32));
+  assert.equal(policyAt((await s.prepareGuardedGroup({ ...input, policyHash: "33".repeat(32) })).instruction.data), "33".repeat(32));
+});

@@ -29,6 +29,9 @@ import {
   shortAddress,
 } from "@/lib/squads/config-actions";
 import { MEMBER_NAME_MAX, useMemberNames } from "@/lib/squads/member-names";
+import { buildCreationPolicy, randomPolicySalt } from "@/lib/squads/policy";
+import { parseAmount } from "@/lib/squads/governance";
+import { tokenAmount } from "@/lib/squads/payments";
 
 // Next.js inlines NEXT_PUBLIC_* only for literal property access.
 const standardEnabled = standardGroupsEnabled(
@@ -42,7 +45,7 @@ export function CreateGroupButton({
   label?: string;
   variant?: "default" | "secondary" | "ghost";
 }) {
-  const { createGroup, busy, error } = useSquad();
+  const { createGroup, busy, error, deploymentToken } = useSquad();
   const auth = useWalletConnection();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -52,6 +55,37 @@ export function CreateGroupButton({
   // Empty means "every member must approve" (the default).
   const [threshold, setThreshold] = useState("");
   const [standard, setStandard] = useState(false);
+  // Payment policy: the deployment's demo policy, or the treasury's own (whitelist, cap, screening).
+  const [ownPolicy, setOwnPolicy] = useState(false);
+  const [whitelist, setWhitelist] = useState("");
+  const [cap, setCap] = useState("100000");
+  const [screening, setScreening] = useState(true);
+  const [salt] = useState(randomPolicySalt);
+  const policyDraft = (() => {
+    if (standard || !ownPolicy) return { policy: undefined, error: "" };
+    if (!deploymentToken)
+      return {
+        policy: undefined,
+        error: "The treasury token is not configured.",
+      };
+    try {
+      return {
+        policy: buildCreationPolicy({
+          whitelist: whitelist.split(/\s+/).filter(Boolean),
+          cap: parseAmount(cap, deploymentToken.decimals).toString(),
+          screening,
+          token: deploymentToken,
+          salt,
+        }),
+        error: "",
+      };
+    } catch (e) {
+      return {
+        policy: undefined,
+        error: e instanceof Error ? e.message : "Invalid policy.",
+      };
+    }
+  })();
   const checked = validateMemberInputs(members, auth.address ?? undefined);
   const invitees = checked.invitees;
   const count = invitees.length + 1;
@@ -87,6 +121,7 @@ export function CreateGroupButton({
               invitees,
               Number(required),
               standard ? "standard" : "guarded",
+              policyDraft.policy,
             );
             if (address) {
               setOpen(false);
@@ -182,6 +217,80 @@ export function CreateGroupButton({
               ? "Your wallet pays creation fees and account rent. You can propose, vote and execute approved proposals. Other members can propose and vote."
               : "One transaction creates the Squads multisig and its guard configuration. Your wallet pays fees and account rent. Every member can propose and vote; only the guard executes payouts. Fund it with Deposit afterwards."}
           </p>
+          {!standard && (
+            <fieldset className="space-y-2">
+              <legend className="mb-2">Payment policy</legend>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="policy"
+                  checked={!ownPolicy}
+                  onChange={() => setOwnPolicy(false)}
+                />
+                Demo policy (the deployment's default; its whitelist stays
+                private)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="policy"
+                  checked={ownPolicy}
+                  onChange={() => setOwnPolicy(true)}
+                />
+                This treasury's own policy
+              </label>
+              {ownPolicy && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <label className="block space-y-1 text-sm">
+                    <span>Whitelisted wallets (one per line)</span>
+                    <textarea
+                      aria-label="Whitelisted wallets"
+                      className="min-h-24 w-full rounded-md border bg-transparent p-2 font-mono text-xs"
+                      value={whitelist}
+                      spellCheck={false}
+                      onChange={(e) => setWhitelist(e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1 text-sm">
+                    <span>
+                      Per-payment cap ({deploymentToken?.symbol ?? "token"})
+                    </span>
+                    <Input
+                      inputMode="decimal"
+                      value={cap}
+                      onChange={(e) => setCap(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={screening}
+                      onChange={(e) => setScreening(e.target.checked)}
+                    />
+                    Sanctions screening (Scorechain)
+                  </label>
+                  {policyDraft.error ? (
+                    <p className="text-xs text-destructive">
+                      {policyDraft.error}
+                    </p>
+                  ) : (
+                    <p className="caption">
+                      Pays only these wallets, in{" "}
+                      {deploymentToken?.symbol ?? "the treasury token"} or SOL.
+                      The cap is one number in base units, so SOL payments are
+                      capped at{" "}
+                      {tokenAmount(
+                        policyDraft.policy?.maxAmountPerPayment ?? "0",
+                        9,
+                      )}{" "}
+                      SOL. Members can change the policy later by vote. Your
+                      wallet signs once to store it.
+                    </p>
+                  )}
+                </div>
+              )}
+            </fieldset>
+          )}
           {standardEnabled && (
             <label className="flex items-center gap-2">
               <input
@@ -208,7 +317,8 @@ export function CreateGroupButton({
                 !checked.valid ||
                 !/^\d+$/.test(required) ||
                 Number(required) < 1 ||
-                Number(required) > count
+                Number(required) > count ||
+                (!standard && ownPolicy && !policyDraft.policy)
               }
             >
               {busy ||

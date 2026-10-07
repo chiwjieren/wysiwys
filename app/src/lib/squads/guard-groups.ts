@@ -34,7 +34,14 @@ export function parseCreateGroupRequest(input: unknown) {
       .toBase58() !== multisig
   )
     throw new Error("The group address does not match its create key.");
-  return { multisig, creator, createKey };
+  // Optional: the hash of a policy the creator registered for this treasury (else the deployment's).
+  if (record.policyHash === undefined) return { multisig, creator, createKey };
+  if (
+    typeof record.policyHash !== "string" ||
+    !/^[0-9a-f]{64}$/.test(record.policyHash)
+  )
+    throw new Error("Invalid policy hash.");
+  return { multisig, creator, createKey, policyHash: record.policyHash };
 }
 
 // A runner group response for an existing guarded treasury.

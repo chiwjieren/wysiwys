@@ -132,6 +132,19 @@ export function createStatusServer(d: Deps): Server {
     return [200, { hash, currentPolicyHash: current, currentVersionKnown: currentVersion !== null, current: false }];
   }
 
+  /** A creator's policy for a treasury about to be created: validated and stored by hash. */
+  function registerPolicy(input: unknown): [number, unknown] {
+    let doc;
+    try {
+      doc = parsePolicy(((input ?? {}) as Record<string, unknown>).document);
+    } catch (e) {
+      throw new HttpError(400, e instanceof PolicyFormatError ? e.message : "invalid policy document");
+    }
+    const hash = Buffer.from(policyHash(doc as unknown as Record<string, unknown>, DECODER_VERSION)).toString("hex");
+    d.store.putPolicy({ hash, multisig: "registered", document: JSON.stringify(doc), createdAt: Math.floor(Date.now() / 1000) });
+    return [200, { hash }];
+  }
+
   function policyDocument(hash: string): [number, unknown] {
     const document = d.store.getPolicyDocument(hash);
     return document ? [200, { document: JSON.parse(document) }] : [404, { error: "unknown policy document" }];
@@ -155,6 +168,7 @@ export function createStatusServer(d: Deps): Server {
     const policy = url.pathname.match(/^\/frontend\/policies\/([0-9a-f]{64})$/);
     if (req.method === "GET" && policy) return policyDocument(policy[1]!);
     if (req.method === "POST" && url.pathname === "/frontend/policies") return storePolicy(await readJson(req));
+    if (req.method === "POST" && url.pathname === "/frontend/policies/register") return registerPolicy(await readJson(req));
     if (req.method === "POST" && url.pathname === "/frontend/policy-apply") {
       return [200, { guardInstruction: toWire(await s.applyPolicyChange(await readJson(req))) }];
     }
@@ -166,7 +180,13 @@ export function createStatusServer(d: Deps): Server {
     }
     if (req.method !== "POST") throw new HttpError(405, "method not allowed");
     if (url.pathname === "/frontend/groups/prepare") {
-      const { instruction, ...group } = await s.prepareGuardedGroup(await readJson(req));
+      const body = (await readJson(req)) as Record<string, unknown>;
+      // A chosen policy must already be stored, so the workflow can always fetch it by hash.
+      if (body?.policyHash !== undefined) {
+        if (typeof body.policyHash !== "string" || !/^[0-9a-f]{64}$/.test(body.policyHash)) throw new HttpError(400, "invalid policy hash");
+        if (!d.store.getPolicyDocument(body.policyHash)) throw new HttpError(409, "policy document is not stored; register it first");
+      }
+      const { instruction, ...group } = await s.prepareGuardedGroup(body);
       return [200, { ...group, guardInstruction: toWire(instruction) }];
     }
     if (url.pathname === "/frontend/propose") return [200, { guardInstruction: toWire(await s.requestReview(await readJson(req))) }];

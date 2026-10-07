@@ -63,7 +63,7 @@ Wysiwys is a hackathon build on Solana devnet. One invariant holds even with eve
 | Gap | Today | Production fix |
 |---|---|---|
 | Policy change review | Members vote policy changes, but the DON does not screen them (signers who reach the threshold can loosen the policy after the wait) | CRE review of the change itself (screen added addresses); encrypted policy store read by the TEE |
-| Shared policy | Every UI-created treasury starts with the deployment's policy, then votes its own changes | Policy chosen at creation |
+| Policy at creation | Each new treasury picks the demo policy or its own (whitelist, cap, screening); allowed tokens and payment types are not editable in the form yet | Editable tokens and payment types; per-token caps |
 | Policy custody | Policy JSON and its salt live in one place | Backed-up, access-controlled policy store with an approval workflow |
 | Limits | Per-payment cap only | On-chain cumulative counters (daily budgets) |
 | Payment types | One SOL transfer or legacy SPL `TransferChecked` per payment | Batches, ATA creation, Token-2022, lookup tables |

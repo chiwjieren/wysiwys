@@ -94,7 +94,11 @@ export async function POST(request: Request) {
       input,
       {
         guardProgram: deployment?.config.guardProgram,
-        guardArgs: deployment?.guardArgs,
+        // Every guard value comes from the deployment except a policy hash the creator chose.
+        guardArgs:
+          deployment?.guardArgs && input.policyHash
+            ? { ...deployment.guardArgs, policyHash: input.policyHash }
+            : deployment?.guardArgs,
       },
     );
     return Response.json(prepared, {
