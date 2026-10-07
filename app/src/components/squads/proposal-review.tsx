@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +42,16 @@ import {
   ProposalStatus,
   ReviewBadge,
 } from "./treasury-ui";
+import { proposalProgress } from "@/lib/squads/progress";
+import { ProgressTracker } from "./progress-tracker";
+
+const PROGRAM_NAMES: Record<string, string> = {
+  "11111111111111111111111111111111": "System program",
+  TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA: "Token program",
+};
+// Fast refresh while a proposal is moving; slow once it can no longer change.
+const LIVE_MS = 5000;
+const SETTLED_MS = 30000;
 export function LiveProposal({ id }: { id: string }) {
   const { config, snapshot, account, error, busy, vote, execute } = useSquad();
   const { names } = useMemberNames(config?.multisig);
@@ -51,14 +61,30 @@ export function LiveProposal({ id }: { id: string }) {
   // On-chain guard Review: undefined = not loaded or unreadable, null = none.
   const [review, setReview] = useState<Review | null>();
   const guarded = isGuarded(config);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // The snapshot refreshes in the background; reading it through a ref keeps those refreshes from
+  // restarting (and blanking) this page.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+  const hasSnapshot = !!snapshot;
+  const loaded = useRef(false);
+  // Clear only when a different proposal or treasury opens.
   useEffect(() => {
-    let cancelled = false;
+    loaded.current = false;
     setRecord(undefined);
     setDecoded(undefined);
     setReview(undefined);
     setReadError("");
+    setUpdatedAt(null);
+    setRefreshFailed(false);
+  }, [config?.multisig, id]);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
       if (!config) return;
+      let settled = false;
       try {
         if (
           !/^\d{1,20}$/.test(id) ||
@@ -71,13 +97,10 @@ export function LiveProposal({ id }: { id: string }) {
           "finalized",
         );
         const result = await readProposal(rpc, config, BigInt(id));
+        const vault = snapshotRef.current?.vault;
         const preview =
-          result?.kind === "vault" && snapshot
-            ? await readPaymentPreview(
-                rpc,
-                result.transaction.message,
-                snapshot.vault,
-              )
+          result?.kind === "vault" && vault
+            ? await readPaymentPreview(rpc, result.transaction.message, vault)
             : undefined;
         let onChainReview: Review | null | undefined;
         if (isGuarded(config))
@@ -93,28 +116,43 @@ export function LiveProposal({ id }: { id: string }) {
           } catch {
             onChainReview = undefined;
           }
+        const status = result?.proposal.status.__kind;
+        settled =
+          !result ||
+          result.kind === "archived" ||
+          status === "Executed" ||
+          status === "Rejected" ||
+          status === "Cancelled" ||
+          onChainReview?.status === "Rejected";
         if (!cancelled) {
+          loaded.current = true;
           setDecoded(preview);
           setRecord(result);
           setReview(onChainReview);
           setReadError("");
+          setRefreshFailed(false);
+          setUpdatedAt(Date.now());
         }
       } catch (e) {
         if (!cancelled) {
-          setRecord(undefined);
-          setReadError(
-            e instanceof Error ? e.message : "Could not load this proposal.",
-          );
+          // Keep what is on screen during a failed refresh; only a first load shows the error.
+          if (loaded.current) setRefreshFailed(true);
+          else
+            setReadError(
+              e instanceof Error ? e.message : "Could not load this proposal.",
+            );
         }
       }
+      if (!cancelled) timer = setTimeout(() => void load(), settled ? SETTLED_MS : LIVE_MS);
     }
     void load();
-    const timer = setInterval(() => void load(), 15000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [config, id, snapshot]);
+    // The snapshot is read through snapshotRef; only its first arrival reloads (for the vault).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, id, hasSnapshot]);
   // Config actions of a guarded treasury are also checked against what
   // guarded_config_execute accepts, so refused changes are flagged up front.
   const configActions =
@@ -240,8 +278,27 @@ export function LiveProposal({ id }: { id: string }) {
         </Panel>
       ) : null}
       {record && (
-        <div className="grid items-start gap-6 xl:grid-cols-[2.08fr_1fr]">
-          <div className="space-y-5">
+        <ProgressTracker
+          steps={proposalProgress({
+            kind: record.kind,
+            guarded,
+            proposalStatus: record.proposal.status.__kind,
+            approvals: record.proposal.approved.length,
+            threshold: snapshot?.squad.threshold ?? null,
+            review,
+            nowSeconds: Date.now() / 1000,
+          })}
+          updatedAt={updatedAt}
+        />
+      )}
+      {refreshFailed && (
+        <p className="caption" role="status">
+          Live updates paused: the last refresh failed. Retrying.
+        </p>
+      )}
+      {record && (
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[2.08fr_1fr]">
+          <div className="min-w-0 space-y-5">
             {guarded &&
               (record.kind === "vault" || record.kind === "archived") && (
                 <Panel className="gap-4">
@@ -269,7 +326,7 @@ export function LiveProposal({ id }: { id: string }) {
                       <p className="font-medium">
                         {reviewReasonText(review.reason)}
                       </p>
-                      {review.expiresAt > 0 && review.status !== "Executed" && (
+                      {review.expiresAt > 0 && review.status === "Approved" && (
                         <p className="caption">
                           {review.expiresAt < Date.now() / 1000
                             ? "Verdict expired "
@@ -340,7 +397,7 @@ export function LiveProposal({ id }: { id: string }) {
               )}
               {lines.map((line, i) => (
                 <div key={i}>
-                  <p className="break-words">{line}</p>
+                  <p className="[overflow-wrap:anywhere]">{line}</p>
                   {flags[i] && (
                     <p className="text-xs font-medium text-destructive">
                       {flags[i]}
@@ -357,16 +414,20 @@ export function LiveProposal({ id }: { id: string }) {
             <Panel className="gap-5">
               <h2>Instruction breakdown</h2>
               {lines.map((line, i) => (
-                <div className="flex gap-3 border-t pt-4" key={i}>
-                  <AssetIcon src={figmaAssets.review.imgIconCheck} size={20} />
-                  <div>
+                <div className="flex items-start gap-3 border-t pt-4" key={i}>
+                  <AssetIcon
+                    src={figmaAssets.review.imgIconCheck}
+                    size={20}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0">
                     <p className="font-medium">
                       {String(i + 1).padStart(2, "0")} ·{" "}
                       {record.kind === "config"
                         ? "Group configuration"
                         : "Payment instruction"}
                     </p>
-                    <p className="mt-1 break-words text-muted-foreground">
+                    <p className="mt-1 text-muted-foreground [overflow-wrap:anywhere]">
                       {line}
                     </p>
                     {flags[i] && (
@@ -377,40 +438,54 @@ export function LiveProposal({ id }: { id: string }) {
                   </div>
                 </div>
               ))}
-              <details className="border-t pt-4">
-                <summary className="cursor-pointer text-xs text-muted-foreground">
+              <details className="group border-t pt-4">
+                <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <span
+                    aria-hidden="true"
+                    className="transition-transform group-open:rotate-90"
+                  >
+                    ›
+                  </span>
                   Technical details
                 </summary>
-                <div className="mt-4 space-y-3">
-                  <Explorer
-                    full
-                    address={record.transactionAddress.toBase58()}
-                  />
+                <dl className="mt-4 space-y-4">
+                  <div className="space-y-1">
+                    <dt className="caption">Stored transaction account</dt>
+                    <dd>
+                      <Explorer
+                        full
+                        address={record.transactionAddress.toBase58()}
+                      />
+                    </dd>
+                  </div>
                   {record.kind === "vault" &&
-                    record.transaction.message.instructions.map((ix, i) => (
-                      <div key={i} className="space-y-1">
-                        <p className="caption">Instruction {i + 1} · program</p>
-                        <Explorer
-                          full
-                          address={
-                            record.transaction.message.accountKeys[
-                              ix.programIdIndex
-                            ]?.toBase58() || "Unknown"
-                          }
-                        />
-                        <p className="caption break-all">
-                          Data:{" "}
-                          {Array.from(ix.data, (b) =>
-                            b.toString(16).padStart(2, "0"),
-                          ).join("")}
-                        </p>
-                      </div>
-                    ))}
-                </div>
+                    record.transaction.message.instructions.map((ix, i) => {
+                      const program =
+                        record.transaction.message.accountKeys[
+                          ix.programIdIndex
+                        ]?.toBase58() || "Unknown";
+                      return (
+                        <div key={i} className="space-y-1">
+                          <dt className="caption">
+                            Instruction {i + 1} ·{" "}
+                            {PROGRAM_NAMES[program] ?? "Program"}
+                          </dt>
+                          <dd className="space-y-2">
+                            <Explorer full address={program} />
+                            <code className="block break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+                              {Array.from(ix.data, (b) =>
+                                b.toString(16).padStart(2, "0"),
+                              ).join("")}
+                            </code>
+                          </dd>
+                        </div>
+                      );
+                    })}
+                </dl>
               </details>
             </Panel>
           </div>
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <Panel className="gap-4">
               <h2>Member approvals</h2>
               <p className="font-medium">
