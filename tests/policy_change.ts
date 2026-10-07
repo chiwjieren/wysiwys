@@ -5,8 +5,13 @@ import {
 import { expect } from "chai";
 import { encodePolicyChangeMarker, policyChangePda } from "@wysiwys/shared";
 import { testProvider } from "./helpers/provider";
-import { approve, proposePayout, sendWithFreshBlockhash, SQUADS_PROGRAM_ID, type Proposed } from "./helpers/squads";
-import { expectError, guardEvents, guardProgram, POLICY_HASH, randomHash, setupGuardedDesk, type GuardedDesk } from "./helpers/guard";
+import {
+  approve, executeRemainingAccounts, payoutIxs, proposePayout, sendWithFreshBlockhash, usdc, SQUADS_PROGRAM_ID, type Proposed,
+} from "./helpers/squads";
+import {
+  expectError, guardEvents, guardProgram, POLICY_HASH, randomHash, requestReview, setupGuardedDesk, statusOf, type GuardedDesk,
+} from "./helpers/guard";
+import { approvePayload, deliverReport, setupForwardedDesk } from "./helpers/forwarder";
 
 // Voted policy changes: a Squads proposal whose only instruction is the guard's policy change marker,
 // applied by apply_policy_change once approved and past max(time lock, POLICY_CHANGE_MIN_DELAY).
@@ -181,5 +186,44 @@ describe("apply_policy_change", () => {
     await expectError(apply(desk, p, { proposal: payer().publicKey }), "NotSquadsAccount");
     // The PolicyChange seed comes from the vault transaction's bytes, so Anchor may refuse on the seed first.
     await expectError(apply(desk, p, { vaultTransaction: payer().publicKey }), "NotSquadsAccount", "ConstraintSeeds");
+  });
+
+  describe("guarded_execute after a policy change", () => {
+    const execute = async (desk: GuardedDesk, p: Proposed, review: PublicKey) =>
+      program.methods
+        .guardedExecute()
+        .accountsPartial({
+          config: desk.config, review, multisig: desk.multisigPda, proposal: p.proposalPda, vaultTransaction: p.transactionPda,
+          destination: desk.counterpartyAta, executor: desk.executorPda, squadsProgram: SQUADS_PROGRAM_ID,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .remainingAccounts(await executeRemainingAccounts(connection, desk, p.transactionIndex))
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })])
+        .rpc({ commitment: "confirmed" });
+
+    it("refuses a payment approved under the previous policy", async () => {
+      const desk = await setupForwardedDesk();
+      const payment = await proposePayout(connection, desk, payoutIxs(desk, desk.counterpartyAta, usdc(1)));
+      const { review } = await requestReview(desk, payment);
+      await approve(connection, desk, payment.transactionIndex);
+      await deliverReport(desk, review, await approvePayload(desk, review)); // approved under POLICY_HASH
+
+      const change = await proposeChange(desk, randomHash());
+      await approve(connection, desk, change.transactionIndex);
+      await sleep(MIN_DELAY_MS + 1_000);
+      await apply(desk, change);
+
+      await expectError(execute(desk, payment, review), "PolicyMismatch");
+      expect(statusOf(await program.account.review.fetch(review, "confirmed"))).to.equal("approved");
+    });
+
+    it("never executes a policy change marker, even with an Approved review", async () => {
+      const desk = await setupForwardedDesk();
+      const marker = await proposeChange(desk, randomHash());
+      const { review } = await requestReview(desk, marker);
+      await approve(connection, desk, marker.transactionIndex);
+      await deliverReport(desk, review, await approvePayload(desk, review));
+      await expectError(execute(desk, marker, review), "GuardInMessage");
+    });
   });
 });

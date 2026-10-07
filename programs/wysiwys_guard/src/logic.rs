@@ -357,6 +357,25 @@ pub fn parse_policy_change_transaction(data: &[u8], guard: &Pubkey, vault: &Pubk
     Ok(marker)
 }
 
+/// Whether a Squads VaultTransaction's stored message lists `key` among its account keys.
+pub fn message_has_account_key(data: &[u8], key: &Pubkey) -> Result<bool> {
+    require!(data.len() >= 83 && data[..8] == VAULT_TRANSACTION_DISCRIMINATOR, GuardError::NotSquadsAccount);
+    let mut c = Cursor { d: data, off: 83 };
+    let scan = |c: &mut Cursor| -> Result<bool> {
+        let ephemeral = c.vec_len()?;
+        c.take(ephemeral)?;
+        c.take(3)?;
+        let n = c.vec_len()?;
+        for _ in 0..n {
+            if c.pubkey()? == *key {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    scan(&mut c).map_err(|_| not_squads())
+}
+
 /// Approval time of a Squads Proposal, or None for any status other than Approved. The status follows
 /// multisig (8..40) and transaction_index (40..48); every variant but Executing carries a timestamp.
 pub fn proposal_approved_at(data: &[u8]) -> Result<Option<i64>> {
@@ -1195,6 +1214,15 @@ mod policy_change_tests {
         let t = parse_multisig_timing(&d).unwrap();
         assert_eq!((t.time_lock, t.stale_transaction_index), (86_400, 9));
         assert_eq!(code_of(parse_multisig_timing(&d[..90])), code(GuardError::NotSquadsAccount));
+    }
+
+    #[test]
+    fn finds_a_key_among_the_stored_message_account_keys() {
+        let tx = good_tx();
+        assert!(message_has_account_key(&tx, &GUARD).unwrap());
+        assert!(message_has_account_key(&tx, &vault()).unwrap());
+        assert!(!message_has_account_key(&tx, &key(42)).unwrap());
+        assert_eq!(code_of(message_has_account_key(&tx[..90], &GUARD)), code(GuardError::NotSquadsAccount));
     }
 
     #[test]
