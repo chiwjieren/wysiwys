@@ -1,0 +1,14 @@
+{
+  "mode": "report",
+  "execution": "don",
+  "chainSelector": "16423721717087811551",
+  "guardProgram": "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya",
+  "forwarderProgram": "CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5",
+  "forwarderState": "8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9",
+  "decoderVersion": "@wysiwys/decoder@0.1.0",
+  "approvalSeconds": 600,
+  "maxSlotLag": 32,
+  "computeLimit": 200000,
+  "screening": true,
+  "authorizedKeys": [{ "type": "KEY_TYPE_ECDSA_EVM", "publicKey": "0xD6Bbf377d9ce95975a78b84656548B255d816325" }]
+}

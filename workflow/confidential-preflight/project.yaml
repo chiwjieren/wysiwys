@@ -17,6 +17,14 @@ staging-settings:
     - chain-name: solana-devnet
       url: ${CRE_HELIUS_SOLANA_DEVNET_RPC_URL}
 
+live-devnet:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+    # Review workflow: Solana writes through the production Keystone forwarder.
+    - chain-name: solana-devnet
+      url: ${CRE_HELIUS_SOLANA_DEVNET_RPC_URL}
+
 # ==========================================================================
 production-settings:
   rpcs:

@@ -15,3 +15,13 @@ staging-settings:
     workflow-path: "./main.ts"
     config-path: "./config.staging.json"
     secrets-path: "../review-secrets.yaml"
+
+# Live DON deployment (branch feat/live-don): plain DON handler, production Keystone forwarder.
+live-devnet:
+  user-workflow:
+    workflow-name: "wysiwys-review-live"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.live.json"
+    secrets-path: "../review-secrets.yaml"

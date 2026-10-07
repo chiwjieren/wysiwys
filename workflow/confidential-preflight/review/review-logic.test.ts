@@ -35,7 +35,9 @@ describe('parseReview / parseGuardConfig (real devnet accounts)', () => {
 		expect(c.multisig).toBe(fixtures.multisig)
 		expect(c.forwarderProgram).toBe(deployment.guard!.forwarderProgram)
 		expect(c.forwarderState).toBe(deployment.guard!.forwarderState)
-		expect(Buffer.from(c.policyHash).toString('hex')).toBe(deployment.guard!.policyHash)
+		// The fixture was recorded under the first policy; GuardConfig is immutable, so it keeps that hash
+		// after the 7 Oct rotation (deployments/devnet.json now names the new one for new treasuries).
+		expect(Buffer.from(c.policyHash).toString('hex')).toBe('402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0')
 		expect(c.reviewDeadlineSecs).toBe(900n)
 		expect(c.maxReviewLifetime).toBe(3600n)
 	})

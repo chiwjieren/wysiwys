@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
-import { cre, SolanaTxStatus, SolanaReceiverContractExecutionStatus, type TeeRuntime, type HTTPPayload } from '@chainlink/cre-sdk'
+import { cre, SolanaTxStatus, SolanaReceiverContractExecutionStatus, type Runtime, type TeeRuntime, type HTTPPayload } from '@chainlink/cre-sdk'
 import fixtures from './fixtures/devnet-e2e.json'
 import staging from './config.staging.json'
+import live from './config.live.json'
 import { policyHash } from '../../../packages/shared/src/index'
 import { base64ToBytes } from './review-logic'
-import { onReview, configSchema, type Config } from './workflow'
+import { initWorkflow, onReview, onReviewDon, configSchema, type Config } from './workflow'
 
 // Public devnet fixture bytes, synthetic policy and dummy credentials. These tests invoke the actual
 // handler and RPC callbacks; capability I/O is mocked, not the decoder or policy evaluation.
@@ -30,9 +31,9 @@ function harness(options: {
   screeningStatus?: number; screeningBody?: unknown; staleDestination?: boolean; noQuorum?: boolean;
   wrongGenesis?: number[]; policyMismatch?: boolean; changedTx?: boolean;
   txStatus?: number; receiverStatus?: number | null; signature?: Uint8Array; error?: string;
-  expired?: boolean; decided?: boolean;
+  expired?: boolean; decided?: boolean; execution?: 'tee' | 'don';
 } = {}) {
-  const config = configSchema.parse(staging)
+  const config = configSchema.parse(options.execution === 'don' ? { ...staging, execution: 'don' } : staging)
   const local = { mode: 'local-simulation', chainSelector: staging.chainSelector, guardProgram: staging.guardProgram,
     decoderVersion: staging.decoderVersion, approvalSeconds: staging.approvalSeconds, maxSlotLag: staging.maxSlotLag,
     screening: staging.screening, authorizedKeys: staging.authorizedKeys }
@@ -82,6 +83,9 @@ function harness(options: {
   const don = {
     config: runtimeConfig, log: () => {}, now: () => new Date(NOW * 1000),
     getSecret: ({ id }: { id: string }) => {
+      // Without a TEE (execution "don") the policy and screening key are Vault DON secrets too.
+      if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: JSON.stringify(policy) }) }
+      if (options.execution === 'don' && id === 'SCORECHAIN_SANCTIONS_API_KEY') return { result: () => ({ value: 'dummy-test-api-key' }) }
       if (!(id in secrets)) throw new Error('private secret crossed into DON')
       return { result: () => ({ value: secrets[id]! }) }
     },
@@ -90,9 +94,10 @@ function harness(options: {
   }
   const tee = { config: runtimeConfig, log: () => {}, usingTheDons: () => don,
     getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? JSON.stringify(policy) : 'dummy-test-api-key' }) }) }
-  return { run: () => JSON.parse(onReview(tee as unknown as TeeRuntime<Config>, {
-    input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })),
-  } as HTTPPayload)), calls, request, write, reports: () => reports }
+  const payload = { input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })) } as HTTPPayload
+  return { run: () => JSON.parse(options.execution === 'don'
+    ? onReviewDon(don as unknown as Runtime<Config>, payload)
+    : onReview(tee as unknown as TeeRuntime<Config>, payload)), calls, request, write, reports: () => reports }
 }
 
 describe('complete confidential review handler', () => {
@@ -158,5 +163,47 @@ describe('complete confidential review handler', () => {
   test('local config rejects report fields and unknown modes', () => {
     expect(() => configSchema.parse({ ...staging, mode: 'local-simulation' })).toThrow()
     expect(() => configSchema.parse({ ...staging, mode: 'unknown' })).toThrow()
+  })
+})
+
+describe('DON execution (live DON without Confidential Workflows)', () => {
+  test('approves, screens once in node mode and checks report delivery', () => {
+    const h = harness({ execution: 'don' }); const result = h.run()
+    expect(result.verdict).toBe('approve'); expect(result.txSignature).toBeTruthy()
+    expect(h.request.mock.calls.filter(([, r]: any) => r.method === 'GET')).toHaveLength(1)
+    expect(h.calls.length).toBe(12); expect(h.write).toHaveBeenCalledTimes(1); expect(h.reports()).toBe(1)
+  })
+  test('a sanctions match produces a reject report', () => {
+    const h = harness({ execution: 'don', sanctioned: true }); expect(h.run().reason).toBe(12); expect(h.write).toHaveBeenCalledTimes(1)
+  })
+  for (const options of [{ policyMismatch: true }, { screeningStatus: 503 }, { noQuorum: true }, { expired: true }]) {
+    test(`fails closed without a report: ${JSON.stringify(options)}`, () => {
+      const h = harness({ ...options, execution: 'don' }); expect(h.run).toThrow(); expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+    })
+  }
+})
+
+describe('workflow registration and live config', () => {
+  test('registers a TEE handler by default and a plain DON handler for execution "don"', () => {
+    const inTee = spyOn(cre, 'handlerInTee').mockImplementation((() => 'tee') as any)
+    const plain = spyOn(cre, 'handler').mockImplementation((() => 'don') as any)
+    mocks.push(inTee, plain)
+    expect(initWorkflow(configSchema.parse(staging))).toEqual(['tee'])
+    expect(initWorkflow(configSchema.parse({ ...staging, execution: 'don' }))).toEqual(['don'])
+    expect(plain.mock.calls[0]![1]).toBe(onReviewDon)
+  })
+  test('live config targets the production Keystone forwarder with DON execution and an authorized trigger key', () => {
+    const config = configSchema.parse(live)
+    if (config.mode !== 'report') throw new Error('live config must report')
+    expect(config.forwarderProgram).toBe('CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5')
+    expect(config.forwarderState).toBe('8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9')
+    expect(config.execution).toBe('don')
+    expect(config.authorizedKeys).toEqual([{ type: 'KEY_TYPE_ECDSA_EVM', publicKey: '0xD6Bbf377d9ce95975a78b84656548B255d816325' }])
+    expect({ ...live, forwarderProgram: undefined, forwarderState: undefined, authorizedKeys: undefined, execution: undefined })
+      .toEqual({ ...staging, forwarderProgram: undefined, forwarderState: undefined, authorizedKeys: undefined, execution: undefined })
+  })
+  test('authorized keys must be EVM key objects', () => {
+    expect(() => configSchema.parse({ ...staging, authorizedKeys: ['0xD6Bbf377d9ce95975a78b84656548B255d816325'] })).toThrow()
+    expect(() => configSchema.parse({ ...staging, authorizedKeys: [{ type: 'KEY_TYPE_ECDSA_EVM', publicKey: '0x1234' }] })).toThrow()
   })
 })
