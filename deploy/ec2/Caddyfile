@@ -1,0 +1,13 @@
+# Replace the two hostnames. Without a domain use sslip.io with your Elastic IP, e.g.
+#   app.13-229-1-2.sslip.io   and   runner.13-229-1-2.sslip.io
+# Caddy obtains HTTPS certificates automatically (ports 80 and 443 must be open).
+
+app.EXAMPLE.sslip.io {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}
+
+runner.EXAMPLE.sslip.io {
+	# /status and /reviews are public read-only; /frontend/* and /review require bearer tokens.
+	reverse_proxy 127.0.0.1:8787
+}

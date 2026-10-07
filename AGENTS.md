@@ -206,7 +206,7 @@ Record each scenario as soon as it works.
 ## Deployment
 
 - Solana: devnet only. Program ID fixed in hour 1; redeploys are upgrades. Upgrade authority stays with the deployer key during the event.
-- Web app: AWS Amplify (Next.js), region `ap-southeast-1`.
+- Web app and runner: one EC2 `t3.small` in `ap-southeast-1` (`deploy/ec2/`: setup script, systemd units, Caddyfile, env templates). Amplify/Vercel optional for the app.
 - Event adapter + CRE runner + SQLite: one EC2 `t3.small` with Elastic IP, Caddy for HTTPS, systemd services.
 - AWS CLI: `export AWS_PROFILE=origins`. Never use Learner Lab credentials. Budget alerts at $20 and $50.
 - Milestones: first devnet deploy 6 Oct 22:00; integration 7 Oct 12:00; **feature freeze 7 Oct 18:00**; submit by 22:00. No redeploys after recording unless something is broken. Keep everything running through 8 Oct.
