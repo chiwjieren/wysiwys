@@ -158,6 +158,8 @@ function screenWallet(runtime: TeeRuntime<Config> | NodeRuntime<Config>, apiKey:
 		.sendRequest(runtime, {
 			url: `https://sanctions.api.scorechain.com/v1/addresses/${encodeURIComponent(wallet)}`,
 			method: 'GET',
+			// CRE's maximum: 10 nodes call at once and Scorechain can be slower than the default deadline.
+			timeout: '10s',
 			multiHeaders: { 'x-api-key': { values: [apiKey] } },
 			cacheSettings: { store: false },
 		})

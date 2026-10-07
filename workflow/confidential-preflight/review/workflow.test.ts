@@ -283,3 +283,17 @@ describe('policy registry (one secret, one document per policy hash)', () => {
     }
   })
 })
+
+describe('sanctions screening request', () => {
+  // Live DON, 7 Oct: Scorechain missed CRE's default HTTP deadline on 7 of 10 nodes, so screening could not
+  // reach consensus. The request uses CRE's 10 s maximum, like the deadline-sensitive call it is.
+  for (const execution of ['tee', 'don'] as const) {
+    test(`asks Scorechain with a 10 s timeout (${execution})`, () => {
+      const h = harness({ execution })
+      h.run()
+      const screening = h.request.mock.calls.map(([, r]: any) => r).filter((r: any) => r.method === 'GET')
+      expect(screening).toHaveLength(1)
+      expect(screening[0].timeout).toBe('10s')
+    })
+  }
+})
