@@ -397,3 +397,16 @@ test("deployment guard args are parsed strictly", () => {
   ])
     assert.throws(() => parseGuardArgs({ guard: bad }), /guard/i);
 });
+
+test("a creator-chosen policy: the request carries its hash and initialize_guard must commit to exactly it", () => {
+  const request = { multisig: multisig.toBase58(), creator: creator.toBase58(), createKey: createKey.toBase58() };
+  const chosen = "ef".repeat(32);
+  assert.deepEqual(parseCreateGroupRequest({ ...request, policyHash: chosen }), { ...request, policyHash: chosen });
+  for (const policyHash of ["EF".repeat(32), "ef".repeat(31), 5])
+    assert.throws(() => parseCreateGroupRequest({ ...request, policyHash }));
+
+  const ix = initializeGuard({ data: encodeInitializeGuardArgs({ ...args, policyHash: chosen }) });
+  assert.ok(validateInitializeGuard(ix, { ...expected, policyHash: chosen }));
+  assert.ok(validateInitializeGuard(ix, { ...expected, args: { ...args, policyHash: chosen } }));
+  assert.throws(() => validateInitializeGuard(initializeGuard(), { ...expected, policyHash: chosen }), /policy/i);
+});

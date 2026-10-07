@@ -89,6 +89,8 @@ type ContextValue = {
     members: string[],
     threshold: number,
     kind?: "guarded" | "standard",
+    // The treasury's own payment policy; omitted means the deployment's default policy.
+    policy?: PolicyV1,
   ) => Promise<string | undefined>;
   openGroup: (address: string) => void;
   invite: (address: string) => Promise<string | undefined>;
@@ -116,6 +118,7 @@ type ContextValue = {
   ) => Promise<void>;
   execute: (index: bigint, reviewed?: readonly string[]) => Promise<void>;
   proposePayment: (input: PaymentInput) => Promise<string | undefined>;
+  deploymentToken?: SquadConfig["token"];
   // Voted policy changes on guarded treasuries (member-only, wallet-signed).
   policyRequest: <T = Record<string, unknown>>(
     body: Record<string, unknown>,
@@ -132,6 +135,9 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   const [groupName, setGroupName] = useState("Your group");
   const [groups, setGroups] = useState<{ address: string; name: string }[]>([]);
   const deployment = useRef<SquadConfig | undefined>(undefined);
+  // The deployment's treasury token, for new treasuries' policies (no treasury needs to be open).
+  const [deploymentToken, setDeploymentToken] =
+    useState<SquadConfig["token"]>();
   const groupConfigs = useRef<Record<string, SquadConfig>>({});
   const openEpoch = useRef(0);
   const searchParams = useSearchParams();
@@ -194,6 +200,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           );
         const { config: loaded } = await response.json();
         deployment.current = loaded || undefined;
+        setDeploymentToken(loaded?.token);
         let saved: { address: string; name: string }[] = [];
         try {
           const stored = JSON.parse(
@@ -943,6 +950,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
     members: string[],
     threshold: number,
     kind: "guarded" | "standard" = "guarded",
+    policy?: PolicyV1,
   ) {
     const createKey = Keypair.generate();
     let address: string | undefined;
@@ -968,12 +976,22 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           .getMultisigPda({ createKey: createKey.publicKey })[0]
           .toBase58();
         if (kind === "guarded") {
+          // A chosen policy is stored first (by hash), then initialize_guard commits to it.
+          const policyHash = policy
+            ? (
+                await policyRequest<{ hash: string }>({
+                  action: "register",
+                  document: policy,
+                })
+              ).hash
+            : undefined;
           // The runner builds initialize_guard; the server route and this
           // client both validate it before the wallet signs.
           const body = JSON.stringify({
             multisig,
             creator: key.toBase58(),
             createKey: createKey.publicKey.toBase58(),
+            ...(policyHash ? { policyHash } : {}),
           });
           const response = await fetch("/api/squads/groups", {
             method: "POST",
@@ -1004,6 +1022,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
               createKey: createKey.publicKey,
               creator: key,
               executor,
+              policyHash,
             },
           );
           const group = buildGroupCreation({
@@ -1162,6 +1181,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         vote,
         execute,
         proposePayment,
+        deploymentToken,
         policyRequest,
         proposePolicyChange,
         applyPolicyChange,

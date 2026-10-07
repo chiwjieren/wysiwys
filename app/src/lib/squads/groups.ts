@@ -462,6 +462,8 @@ export function validateInitializeGuard(
     creator: PublicKey;
     executor: PublicKey;
     args?: GuardInitArgs;
+    /** The policy hash the creator chose (hex); initialize_guard must commit to exactly it. */
+    policyHash?: string;
   },
 ) {
   const { guardProgram, multisig, createKey, creator, executor } = expected;
@@ -515,6 +517,11 @@ export function validateInitializeGuard(
     throw new Error(
       "initialize_guard does not match the deployment guard configuration.",
     );
+  if (
+    expected.policyHash &&
+    data.subarray(72, 104).toString("hex") !== expected.policyHash
+  )
+    throw new Error("initialize_guard does not commit to the chosen policy.");
   return { config, guardInstruction: ix };
 }
 
@@ -561,6 +568,7 @@ export function initialTreasury(o: {
   deploymentTreasury: string | null | undefined;
 }): string | null {
   if (o.link) return o.link;
-  if (o.remembered && o.remembered !== o.deploymentTreasury) return o.remembered;
+  if (o.remembered && o.remembered !== o.deploymentTreasury)
+    return o.remembered;
   return null;
 }

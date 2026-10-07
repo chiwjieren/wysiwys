@@ -6,6 +6,7 @@ import {
   POLICY_CHANGE_MIN_DELAY_SECONDS,
   buildPolicyChangeInstruction,
   diffPolicies,
+  buildCreationPolicy,
   isPolicyChangeRecord,
   isPolicyMember,
   parsePolicyRequest,
@@ -189,4 +190,28 @@ test("a vault record is a policy change only when its message is the guard marke
   assert.equal(isPolicyChangeRecord(record(0) as never, guard.toBase58()), false);
   assert.equal(isPolicyChangeRecord(record(1) as never, undefined), false);
   assert.equal(isPolicyChangeRecord({ kind: "config" } as never, guard.toBase58()), false);
+});
+
+test("a creation policy: whitelist, cap and screening from the form, the treasury token, a fresh salt, version 1", () => {
+  const salt = "12".repeat(16);
+  assert.deepEqual(buildCreationPolicy({ whitelist: [a, b], cap: "5000000", screening: true, token: { mint, decimals: 6 }, salt }), {
+    version: 1, salt,
+    allowedPrograms: [SYSTEM, TOKEN],
+    allowedInstructions: ["system:transfer", "spl-token:transferChecked"],
+    allowedMints: [{ mint, decimals: 6 }],
+    maxAmountPerPayment: "5000000",
+    destinationWhitelist: [a, b],
+    screening: { provider: "scorechain", blockOn: ["SANCTIONED"] },
+  });
+  assert.equal("screening" in buildCreationPolicy({ whitelist: [a], cap: "1", screening: false, token: { mint, decimals: 6 }, salt }), false);
+  assert.throws(() => buildCreationPolicy({ whitelist: [a, a], cap: "1", screening: true, token: { mint, decimals: 6 }, salt }), /unique/);
+  assert.throws(() => buildCreationPolicy({ whitelist: [], cap: "1", screening: true, token: { mint, decimals: 6 }, salt }), /whitelist/i);
+  assert.throws(() => buildCreationPolicy({ whitelist: [a], cap: "0", screening: true, token: { mint, decimals: 6 }, salt }), /maxAmountPerPayment/);
+});
+
+test("registering a creation policy needs only the document", () => {
+  const document = policy();
+  assert.deepEqual(parsePolicyRequest({ action: "register", document }), { action: "register", document });
+  assert.throws(() => parsePolicyRequest({ action: "register", document, multisig: key() }));
+  assert.throws(() => parsePolicyRequest({ action: "register" }));
 });

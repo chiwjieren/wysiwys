@@ -37,6 +37,15 @@ export async function POST(request: Request) {
         400,
       );
     }
+    // A creator registers the policy of a treasury they are about to create (no membership yet); the
+    // runner stores it by hash and treasury creation then commits to that hash.
+    if (input.action === "register") {
+      const registered = (await callRunner("frontend/policies/register", {
+        method: "POST",
+        body: JSON.stringify({ document: input.document }),
+      })) as { hash: string };
+      return json({ hash: registered.hash });
+    }
     const guardProgram = (await loadDeployment())?.config.guardProgram;
     if (!guardProgram) return json({ error: "Guard is not configured." }, 503);
     const rpc = new Connection(rpcUrl(), "finalized");

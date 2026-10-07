@@ -251,6 +251,7 @@ export function policyProgress(o: {
 }
 
 export type PolicyRequest =
+  | { action: "register"; document: PolicyV1 }
   | { action: "current"; multisig: string }
   | { action: "read"; multisig: string; index: string }
   | { action: "submit"; multisig: string; document: PolicyV1 };
@@ -263,6 +264,12 @@ export function parsePolicyRequest(input: unknown): PolicyRequest {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Invalid policy request.");
   const o = input as Record<string, unknown>;
+  // A creator's policy for a treasury that does not exist yet (no multisig to check membership against).
+  if (
+    o.action === "register" &&
+    Object.keys(o).sort().join(",") === "action,document"
+  )
+    return { action: "register", document: parsePolicy(o.document) };
   const multisig = new PublicKey(String(o.multisig ?? "")).toBase58();
   if (o.multisig !== multisig) throw new Error("Invalid multisig.");
   const keys = Object.keys(o).sort().join(",");
@@ -296,4 +303,41 @@ export function isPolicyChangeRecord(
     !!message &&
     readPolicyChange(message, new PublicKey(guardProgram)) !== null
   );
+}
+
+/** A random policy salt (16 bytes hex), so the public hash cannot be confirmed by guessing whitelist entries. */
+export function randomPolicySalt() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+/**
+ * A new treasury's own policy from the creation form: its whitelist, per-payment cap (base units) and
+ * screening choice, the treasury token, SOL and token transfers, version 1. Validated as Policy v1.
+ */
+export function buildCreationPolicy(o: {
+  whitelist: string[];
+  cap: string;
+  screening: boolean;
+  token: { mint: string; decimals: number };
+  salt: string;
+}): PolicyV1 {
+  if (!o.whitelist.length)
+    throw new Error("Add at least one wallet to the whitelist.");
+  return parsePolicy({
+    version: 1,
+    salt: o.salt,
+    allowedPrograms: [
+      "11111111111111111111111111111111",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    ],
+    allowedInstructions: ["system:transfer", "spl-token:transferChecked"],
+    allowedMints: [{ mint: o.token.mint, decimals: o.token.decimals }],
+    maxAmountPerPayment: o.cap,
+    destinationWhitelist: o.whitelist,
+    ...(o.screening
+      ? { screening: { provider: "scorechain", blockOn: ["SANCTIONED"] } }
+      : {}),
+  });
 }
