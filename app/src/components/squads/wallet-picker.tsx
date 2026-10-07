@@ -8,24 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+// Phantom is the only supported wallet for now.
 const install = [
   {
     name: "Phantom",
     url: "https://phantom.com/download",
     color: "bg-[#ab9ff2]",
     letter: "P",
-  },
-  {
-    name: "Solflare",
-    url: "https://solflare.com",
-    color: "bg-[#fc8e33]",
-    letter: "S",
-  },
-  {
-    name: "Backpack",
-    url: "https://backpack.app",
-    color: "bg-[#e33e3f]",
-    letter: "B",
   },
 ];
 export function WalletPicker({
@@ -52,7 +41,7 @@ export function WalletPicker({
         <div className="space-y-2">
           <DialogTitle className="text-2xl">Connect your wallet</DialogTitle>
           <DialogDescription>
-            Choose a Solana wallet to create or join your treasury.
+            Connect Phantom to create or join your treasury.
           </DialogDescription>
         </div>
         {error && (
@@ -86,15 +75,15 @@ export function WalletPicker({
           ))}
           {!wallets.length && (
             <p className="text-sm text-muted-foreground">
-              No Solana wallet detected. Install a wallet below, then return
-              here to connect.
+              Phantom was not detected. Install it below, then return here to
+              connect.
             </p>
           )}
         </div>
         {install.some((item) => !wallets.some((w) => w.name === item.name)) && (
           <div className="space-y-3 border-t pt-4">
             <p className="text-xs font-medium text-muted-foreground">
-              {wallets.length ? "Other wallets" : "Get a wallet"}
+              Get Phantom
             </p>
             <div className="space-y-1">
               {install

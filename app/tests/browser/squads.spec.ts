@@ -1,9 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { createPrivateKey, sign } from "node:crypto";
 import { createRequire } from "node:module";
-import { reviewPda } from "../../src/lib/squads/review";
-import { txHash } from "@wysiwys/shared";
 const require = createRequire(import.meta.url);
+// Loaded through require like web3.js below: mixing ESM and CJS copies of web3.js fails to link.
+const { reviewPda } =
+  require("../../src/lib/squads/review") as typeof import("../../src/lib/squads/review");
+const { txHash } =
+  require("@wysiwys/shared") as typeof import("@wysiwys/shared");
 const { BorshAccountsCoder, BN } = require("@anchor-lang/core");
 const guardIdl = require("@wysiwys/shared/idl/wysiwys_guard.json");
 const {
@@ -593,7 +596,10 @@ for (const scenario of [
                   proposal: proposalPda,
                   tx_index: new BN(1),
                   tx_hash: Array.from(
-                    txHash(transactionPda.toBytes(), transaction.serialize()[0]),
+                    txHash(
+                      transactionPda.toBytes(),
+                      transaction.serialize()[0],
+                    ),
                   ),
                   status: { Rejected: {} },
                   reason: 8,
@@ -711,6 +717,16 @@ for (const scenario of [
       // Connection itself must not ask for any off-chain signature.
       expect(messageSignatures).toBe(0);
       if (scenario === "disconnect") {
+        // A reload restores the authorized Phantom account silently (no popup, no signature).
+        await page.reload();
+        await expect(
+          page.getByRole("button", {
+            name: `${signer.publicKey.toBase58().slice(0, 4)}…${signer.publicKey.toBase58().slice(-4)}`,
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        expect(messageSignatures).toBe(0);
         await page
           .getByRole("button", {
             name: `${signer.publicKey.toBase58().slice(0, 4)}…${signer.publicKey.toBase58().slice(-4)}`,

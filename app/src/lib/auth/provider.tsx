@@ -22,6 +22,7 @@ import { PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import { assertWalletConnected } from "./wallet-state";
 import { requestMessage } from "./request-proof";
+import { accountChange, isPhantom, restoreSession } from "./wallet-session";
 import { WalletPicker } from "@/components/squads/wallet-picker";
 
 type SolanaWallet = Wallet & {
@@ -119,7 +120,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [connecting, setConnecting] = useState("");
   const [error, setError] = useState("");
   const attempt = useRef(0);
+  const restoring = useRef(false);
   const unsubscribe = useRef<() => void>(() => {});
+  const addresses = (wallet: SolanaWallet) =>
+    solanaAccounts(wallet).map((a) => a.address);
+  // Reconnect an account the user already authorized for this site, without a prompt. A manual
+  // connect or disconnect started meanwhile wins.
+  async function restore(wallet: SolanaWallet) {
+    if (restoring.current) return;
+    restoring.current = true;
+    const id = attempt.current;
+    try {
+      const address = await restoreSession(wallet, addresses);
+      if (id !== attempt.current || active.current.address) return;
+      if (address) {
+        if (active.current.wallet !== wallet) attach(wallet);
+        update(wallet, address);
+        setError("");
+      }
+    } finally {
+      restoring.current = false;
+    }
+  }
   function update(wallet?: SolanaWallet, address?: string) {
     const next = { wallet, address, epoch: active.current.epoch + 1 };
     active.current = next;
@@ -131,23 +153,46 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       "change",
       () => {
         if (active.current.wallet !== wallet) return;
-        const accounts = solanaAccounts(wallet);
-        update(
-          wallet,
-          accounts.find((a) => a.address === active.current.address)?.address ||
-            accounts[0]?.address,
-        );
-        if (!accounts.length) {
-          setError("Wallet disconnected. Connect again to continue.");
-          savedWallet("");
+        const change = accountChange(addresses(wallet), active.current.address);
+        // Phantom also emits "change" for non-account updates; those keep the session.
+        if (change.kind === "same") return;
+        if (change.kind === "switched") {
+          update(wallet, change.address);
+          setError("");
+          return;
         }
+        // Switching Phantom to an account not connected to this site drops access. Try a silent
+        // reconnect; keep Phantom remembered so the next reload restores it.
+        update(wallet);
+        void restore(wallet).then(() => {
+          if (!active.current.address)
+            setError(
+              "Phantom switched to an account that is not connected to this site. Connect again to continue.",
+            );
+        });
       },
     );
   }
   useEffect(() => {
     const registry = getWallets();
+    // Phantom may register after this page mounts; restore it whenever it appears.
+    const resume = () => {
+      if (active.current.address || savedWallet() !== "Phantom") return;
+      const wallet = registry
+        .get()
+        .filter(isSolanaWallet)
+        .find((w) => isPhantom(w));
+      if (!wallet) return;
+      const ready = addresses(wallet);
+      if (ready.length) {
+        attach(wallet);
+        update(wallet, ready[0]);
+      } else void restore(wallet);
+    };
     const discover = () => {
-      const installed = registry.get().filter(isSolanaWallet);
+      const installed = registry
+        .get()
+        .filter((w): w is SolanaWallet => isSolanaWallet(w) && isPhantom(w));
       // Some extensions register more than once; present one entry per wallet name.
       setWallets(
         installed.filter(
@@ -161,18 +206,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
     discover();
     setReady(true);
-    const offRegister = registry.on("register", discover);
+    const offRegister = registry.on("register", () => {
+      discover();
+      resume();
+    });
     const offUnregister = registry.on("unregister", discover);
-    // Restore an already-authorized extension only. Never prompt or sign automatically.
-    const saved = savedWallet();
-    const wallet = registry
-      .get()
-      .filter(isSolanaWallet)
-      .find((w) => w.name === saved);
-    if (wallet && solanaAccounts(wallet).length) {
-      update(wallet, solanaAccounts(wallet)[0].address);
-      attach(wallet);
-    }
+    // Restore an already-authorized Phantom only. Never prompt or sign automatically.
+    resume();
     return () => {
       ++attempt.current;
       offRegister();
@@ -182,7 +222,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   async function choose(wallet: Wallet) {
-    if (!isSolanaWallet(wallet)) return;
+    if (!isSolanaWallet(wallet) || !isPhantom(wallet)) return;
     const id = ++attempt.current;
     setConnecting(wallet.name);
     setError("");
