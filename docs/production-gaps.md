@@ -31,7 +31,7 @@ The invariant that holds today, even with every gap below: money moves only when
 | # | Gap | Today | Risk | Production fix | Severity |
 |---|---|---|---|---|---|
 | 13 | No recovery path | If CRE or the runner is down, nothing can execute | Funds safe but stuck | Timelocked recovery, e.g. supermajority can execute after N days without a review | High |
-| 14 | Fixed membership | Members and threshold cannot change after creation (config transactions need Execute, which only the guard has) | Lost key or staff change needs a new treasury | Guarded config path (`guarded_config_execute` with its own review) | Medium |
+| 14 | Membership changes | Resolved (7 Oct): `guarded_config_execute` lets members add or remove voters and change the threshold after a vote; spending limits, rent collector and Execute members stay impossible | Policy for who may join is only the members' vote (no CRE review of membership) | Optional CRE review of membership changes | Low |
 | 15 | One review per transaction | Rejected, expired or late (> 900 s) reviews cannot be retried | Re-propose the payment | Review generations (`RequestHead`) | Low |
 | 16 | Payment types | One instruction per payment: SOL transfer or legacy SPL `TransferChecked` to an existing token account | No batches, ATA creation, Token-2022, lookup tables, swaps | Extend decoder, policy and guard binding per instruction type | Medium |
 | 17 | Limits | Per-payment cap only | Many small payments bypass a daily budget | On-chain cumulative counters updated atomically at execution | Medium |

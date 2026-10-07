@@ -12,7 +12,17 @@ pub const VAULT_TRANSACTION_DISCRIMINATOR: [u8; 8] = [168, 250, 162, 100, 81, 14
 pub const PROPOSAL_DISCRIMINATOR: [u8; 8] = [26, 94, 189, 187, 116, 136, 53, 33];
 pub const MULTISIG_DISCRIMINATOR: [u8; 8] = [224, 116, 121, 186, 68, 161, 79, 236];
 pub const VAULT_TRANSACTION_EXECUTE_DISCRIMINATOR: [u8; 8] = [194, 8, 161, 87, 153, 164, 25, 171];
+pub const CONFIG_TRANSACTION_DISCRIMINATOR: [u8; 8] = [94, 8, 4, 35, 113, 139, 139, 112];
+pub const CONFIG_TRANSACTION_EXECUTE_DISCRIMINATOR: [u8; 8] = [114, 146, 244, 189, 252, 140, 36, 40];
 
+// Squads ConfigAction variants (Borsh enum tags). Only the first four are ever executed by the guard.
+pub const CONFIG_ADD_MEMBER: u8 = 0;
+pub const CONFIG_REMOVE_MEMBER: u8 = 1;
+pub const CONFIG_CHANGE_THRESHOLD: u8 = 2;
+pub const CONFIG_SET_TIME_LOCK: u8 = 3;
+
+pub const PERMISSION_INITIATE: u8 = 1;
+pub const PERMISSION_VOTE: u8 = 1 << 1;
 pub const PERMISSION_EXECUTE: u8 = 1 << 2;
 
 pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");

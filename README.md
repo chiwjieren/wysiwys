@@ -9,8 +9,8 @@ The guard (`programs/wysiwys_guard`) holds the only Execute permission on the tr
 | # | Check | Covered by |
 |---|---|---|
 | 1 | CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` (`InvalidSquadsProgram`) | `tests/guarded_execute.ts` |
-| 2 | The executor PDA signs only the Squads `vault_transaction_execute` CPI (one `invoke_signed` in the program) and may not appear in the vault transaction, so its signature cannot reach inner instructions (`ExecutorInMessage`) | `tests/structure.ts`, `tests/guarded_execute.ts` |
-| 3 | `GuardConfig` is immutable: the program exposes only `initialize_guard`, `request_review`, `on_report`, `guarded_execute` | `tests/structure.ts` |
+| 2 | The executor PDA signs only the Squads `vault_transaction_execute` and `config_transaction_execute` CPIs (one `invoke_signed` in each execute handler) and may not appear in the vault transaction, so its signature cannot reach inner instructions (`ExecutorInMessage`) | `tests/structure.ts`, `tests/guarded_execute.ts` |
+| 3 | `GuardConfig` is immutable: the program exposes only `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, `guarded_config_execute` | `tests/structure.ts` |
 | 4 | Instructions sysvar address checked before the durable-nonce check (`InvalidInstructionsSysvar`, `DurableNonceDetected`) | `tests/guarded_execute.ts` |
 | 5 | Owner, discriminator and seed checks on every account; `has_one = multisig` (`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`) | `tests/request_review.ts`, `tests/guarded_execute.ts` |
 | 6 | Review bound to its vault transaction and proposal; `tx_hash = sha256("wysiwys:tx:v1" \|\| vault_transaction \|\| data)` computed on-chain at review and recomputed at execute (`ReviewMismatch`, `HashMismatch`) | `tests/request_review.ts`, `tests/guarded_execute.ts`, `programs/wysiwys_guard/src/logic.rs` |
@@ -23,6 +23,7 @@ The guard (`programs/wysiwys_guard`) holds the only Execute permission on the tr
 | 13 | Only the vault transaction's creator can call `request_review`, so nobody else can claim the single Review slot (`NotProposer`) | `tests/request_review.ts` |
 | 14 | A report must arrive within `review_deadline_secs` of `request_review` (`ReviewDeadlinePassed`); both durations must be positive at init (`InvalidConfig`) | `tests/on_report.ts`, `tests/initialize_guard.ts` |
 | 15 | `guarded_execute` recomputes `destination_hash` from the passed destination account: same account and, for SPL, still a legacy Token account with the reviewed mint and owner, not frozen (`DestinationChanged`) | `tests/guarded_execute.ts`, `logic.rs` |
+| 16 | `guarded_config_execute` runs a voted Squads config transaction only if every action is a safe membership change (add a voter without Execute, remove a member other than the executor, change threshold, set time lock); spending limits, rent collector and unknown actions are refused, and after the CPI the executor must still be the sole Execute member (`ConfigActionNotAllowed`, `InvalidMultisigConfig`) | `tests/guarded_config.ts`, `logic.rs` |
 
 **Trust assumptions**
 - Squads v4 (audited) enforces the 3 of 3 vote; the guard never replaces it.

@@ -117,10 +117,10 @@ Plan: `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Ask before changing an
 ## Component guidelines
 
 ### Guard program (`programs/wysiwys_guard`)
-- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`. No admin, pause or config update. Nothing else without team agreement.
+- Instructions: `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, `guarded_config_execute` (agreed 7 Oct). No admin, pause or guard config update. Nothing else without team agreement.
 - Security rules (every rule has a test; never weaken a security test to make something pass):
   1. CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. No general-purpose CPI or PDA-signing entry point.
-  2. The executor PDA signs only the Squads vault-transaction execute CPI, and is the sole Execute member.
+  2. The executor PDA signs only two Squads CPIs: `vault_transaction_execute` (in `guarded_execute`, after the review checks) and `config_transaction_execute` (in `guarded_config_execute`, only when every action is AddMember with Initiate/Vote and not the executor, RemoveMember not the executor, ChangeThreshold or SetTimeLock; after the CPI the executor must still be the sole Execute member of an autonomous multisig). It is the sole Execute member.
   3. `GuardConfig` is immutable after init; `max_review_lifetime` and `review_deadline_secs` must be positive. `request_review` takes no arguments, computes `tx_hash` on-chain and only the vault transaction's creator may call it.
   4. `on_report`: forwarder state owner == pinned forwarder program and authority == PDA `["forwarder", forwarder_state, guard_program_id]`, signed; metadata names the configured `workflow_owner` (a payload field is not proof of origin; live approval stays disabled until provenance on the deployed Solana path is verified); review Pending; payload v2 exact length and ranges; `issued_at <= now + 60`; `expires_at > now` and `<= issued_at + max_review_lifetime`; arrives by `created_at + review_deadline_secs`; `tx_hash` and `policy_hash` match. A second report on a decided review fails.
   5. `guarded_execute`: check the instructions sysvar address, then reject if instruction 0 is `AdvanceNonceAccount`; re-derive the Review and bind it to multisig, vault transaction and proposal; APPROVED and unexpired; recompute `tx_hash`; recompute `destination_hash` from the passed destination account and its live data (`DestinationChanged`); refuse a message that references the executor PDA.
