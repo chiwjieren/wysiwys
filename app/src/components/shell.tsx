@@ -76,7 +76,7 @@ function Workspace({ children }: { children: ReactNode }) {
         className="flex shrink-0 items-center px-2"
       >
         <Image
-          src="/brand/wysiwys-logo.png"
+          src="/brand/wysiwys-logo.webp"
           alt="Wysiwys. What You See Is What You Sign."
           width={1600}
           height={657}
