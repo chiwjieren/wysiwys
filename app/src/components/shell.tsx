@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -67,21 +68,21 @@ function Workspace({ children }: { children: ReactNode }) {
     </nav>
   );
   const sidebar = (
-    <div className="flex h-full flex-col gap-7 p-5">
+    <div className="workspace-sidebar flex h-full flex-col gap-7 p-5">
       <Link
         href="/"
         onClick={() => setMobileOpen(false)}
-        className="flex items-center gap-3 px-2 py-2"
+        aria-label="Wysiwys Treasury workspace"
+        className="flex shrink-0 items-center px-2"
       >
-        <span className="flex size-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
-          <ShieldCheck className="size-6" />
-        </span>
-        <span className="text-xl font-semibold tracking-tight">
-          Wysiwys
-          <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Treasury workspace
-          </span>
-        </span>
+        <Image
+          src="/brand/wysiwys-logo.png"
+          alt="Wysiwys. What You See Is What You Sign."
+          width={1600}
+          height={657}
+          priority
+          className="brand-logo h-16 w-full object-contain"
+        />
       </Link>
       <GroupManage label="Switch treasury">
         <div className="rounded-xl border bg-card p-4 text-left">
@@ -108,7 +109,7 @@ function Workspace({ children }: { children: ReactNode }) {
         <p className="eyebrow px-4">Workspace</p>
         {navigation}
       </div>
-      <div className="mt-auto space-y-5 pt-6">
+      <div className="workspace-sidebar-footer mt-auto space-y-5 pt-6">
         <div className="space-y-2 rounded-xl border border-primary/10 bg-primary/5 p-4">
           <div className="flex items-center gap-2 font-medium">
             <ShieldCheck className="size-4 shrink-0 text-primary" />
@@ -116,7 +117,7 @@ function Workspace({ children }: { children: ReactNode }) {
               ? "Guarded treasury"
               : "Review before you sign"}
           </div>
-          <p className="caption">
+          <p className="workspace-sidebar-description caption">
             {config?.guardProgram
               ? "Member approval and a valid Guard review are required."
               : "Check every amount and destination before you approve."}
@@ -158,7 +159,7 @@ function Workspace({ children }: { children: ReactNode }) {
       </a>
       <aside
         data-shell-sidebar
-        className="fixed inset-y-0 left-0 z-30 hidden w-[248px] overflow-y-auto border-r bg-sidebar lg:block"
+        className="fixed inset-y-0 left-0 z-30 hidden w-[248px] overflow-hidden border-r bg-sidebar lg:block"
       >
         {sidebar}
       </aside>
@@ -203,7 +204,7 @@ function Workspace({ children }: { children: ReactNode }) {
         </footer>
       </div>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-        <DialogContent className="max-w-[360px] gap-0 bg-sidebar p-0 sm:p-0">
+        <DialogContent className="max-w-[360px] gap-0 overflow-hidden bg-sidebar p-0 sm:p-0">
           <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
           <DialogDescription className="sr-only">
             Switch treasury or open a workspace page.

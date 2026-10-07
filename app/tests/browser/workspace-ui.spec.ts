@@ -6,6 +6,43 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test("navigation fits a short viewport without sidebar scrolling", async ({
+  page,
+}) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 650 });
+    await page.goto("/");
+    if (width < 1024)
+      await page.getByRole("button", { name: "Open navigation" }).click();
+    const container =
+      width < 1024
+        ? page.getByRole("dialog")
+        : page.locator("[data-shell-sidebar]");
+    const size = await container.evaluate((element) => ({
+      overflow: getComputedStyle(element).overflowY,
+      height: element.clientHeight,
+      content: element.scrollHeight,
+    }));
+    expect(size.overflow).toBe("hidden");
+    expect(size.content).toBeLessThanOrEqual(size.height);
+    await expect(
+      container.getByRole("link", { name: "Settings", exact: true }),
+    ).toBeInViewport();
+    await expect(
+      container.getByText("Wallet not connected", { exact: true }),
+    ).toBeInViewport();
+    await expect(
+      container.getByRole("img", {
+        name: "Wysiwys. What You See Is What You Sign.",
+      }),
+    ).toBeVisible();
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
+      "href",
+      /icon\.svg/,
+    );
+  }
+});
+
 test("first use explains the treasury flow and keeps setup actions in reach", async ({
   page,
 }) => {

@@ -169,6 +169,39 @@
     );
   }
 }
+.brand-logo {
+  filter: brightness(0.505) contrast(100) brightness(2);
+  mix-blend-mode: screen;
+}
+[data-theme="light"] .brand-logo {
+  filter: brightness(0.505) contrast(100) brightness(2) invert(1);
+  mix-blend-mode: multiply;
+}
+@media (max-height: 800px) {
+  .workspace-sidebar {
+    gap: 8px;
+    padding: 16px;
+  }
+  .workspace-sidebar nav a {
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .workspace-sidebar-footer {
+    padding-top: 8px;
+    gap: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+  .workspace-sidebar-footer > * {
+    margin: 0;
+  }
+  .workspace-sidebar-footer > :last-child {
+    padding-top: 12px;
+  }
+  .workspace-sidebar-description {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
