@@ -47,3 +47,5 @@
 Program `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` upgraded on devnet in slot 508404523 (default features, so `POLICY_CHANGE_MIN_DELAY` = 300 s; extended by 40000 bytes to 273008). Adds `apply_policy_change`; `guarded_execute` now requires the review's policy hash to equal the current one and refuses messages that invoke the guard. Live workflow `wysiwys-review-live` redeployed with Policy v1 enforcement and the policy registry: workflow ID `0063f3300131a4884c2fa850ba957242900a23d7162b49fcaaac4dbb909193ff` (`evidence/cre/2026-10-07-live-redeploy-policy.log`).
 
 Live workflow redeployed with a 10 s timeout on the Scorechain screening call (it missed CRE's default deadline on 7 of 10 nodes in execution `f78eafb8...`): workflow ID `00040bdc813a11742d71269592e4c778110f647a7da2a01c0951bb68b68fcf69` (`evidence/cre/2026-10-07-live-redeploy-screening-timeout.log`).
+
+Live workflow redeployed to fetch policies by hash from the runner store (`GET /cre/policies/:hash`, secret `POLICY_STORE_TOKEN` added to the Vault DON): workflow ID `0007bda336f75bcb930240d5006341c6f4db26a868192ea8fc4377d1e43464d7` (`evidence/cre/2026-10-07-live-redeploy-policy-fetch.log`).
