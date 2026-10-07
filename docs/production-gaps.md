@@ -13,7 +13,7 @@ The invariant that holds today, even with every gap below: money moves only when
 | 3 | Workflow provenance | Guard checks the 20-byte workflow owner only | Any workflow of the same owner could report | Bind the workflow ID (or a per-workflow key) in the guard once the live Solana report path exposes it | High |
 | 4 | Confidential execution | TEE simulated locally; no attestation | Policy and screening inputs are not hardware-protected | Confidential Workflows enrollment; verify attestation before trusting enclave output | High |
 | 5 | Transmitter key | Hot key on the server pays report transactions | Theft drains its SOL (it cannot approve or move treasury funds) | Small balance, alerts, separate key per runner, KMS-backed signing | Low |
-| 6 | Secrets storage | `.env` files on the EC2 box | Server compromise exposes RPC, Scorechain and policy secrets | AWS SSM Parameter Store / Secrets Manager; rotate the Scorechain key (it was pasted in chat once) | Medium |
+| 6 | Secrets storage | `.env` files on the EC2 box | Server compromise exposes RPC, Scorechain and policy secrets | AWS SSM Parameter Store / Secrets Manager; rotate the Scorechain key and the CRE API key (both were pasted in chat once) | Medium |
 | 7 | Token authority | mUSD mint authority is the deployer key | Unlimited minting of the demo token | Real USDC (or a mint with no authority) in production | Low (demo only) |
 
 ## Oracle and data
