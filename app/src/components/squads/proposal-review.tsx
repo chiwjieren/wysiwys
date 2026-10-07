@@ -54,6 +54,7 @@ import { proposalProgress } from "@/lib/squads/progress";
 import { policyProgress, readPolicyChange } from "@/lib/squads/policy";
 import { policyChangePda, type PolicyV1 } from "@wysiwys/shared";
 import { ProgressTracker } from "./progress-tracker";
+import { PaymentInsights } from "./payment-insights";
 import {
   PolicyApplyPanel,
   PolicyChangePanel,
@@ -561,6 +562,9 @@ export function LiveProposal({ id }: { id: string }) {
                     <p className="break-words font-medium">
                       {configActions.headline.text}
                     </p>
+                  )}
+                  {record.kind === "vault" && decoded && (
+                    <PaymentInsights preview={decoded} />
                   )}
                   {fields && (
                     <div className="space-y-5">

@@ -805,6 +805,10 @@ for (const scenario of [
         await expect(
           page.getByText(/Send 1.25 SOL from the treasury vault/),
         ).toBeVisible();
+        // Plain-language facts from the decoded draft.
+        await expect(page.getByTestId("payment-insights")).toContainText(
+          "Only this transfer.",
+        );
         // The draft is decoded by @wysiwys/decoder; its JSON is under Technical details.
         await page.getByText("Technical details", { exact: true }).click();
         await expect(page.getByTestId("decoder-json")).toContainText(

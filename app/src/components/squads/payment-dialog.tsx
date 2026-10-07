@@ -28,6 +28,7 @@ import {
 } from "@/lib/squads/decoded-preview";
 import { CopyButton } from "@/components/dialogs";
 import { VaultFunding } from "./account-actions";
+import { PaymentInsights } from "./payment-insights";
 export function ReceiveButton() {
   const { snapshot } = useSquad();
   return (
@@ -350,6 +351,11 @@ export function PaymentButton() {
                   )}
                 </div>
               ))}
+              {decoded && (
+                <div className="mt-4">
+                  <PaymentInsights preview={decoded} />
+                </div>
+              )}
               {decoded?.lines.map((line, i) => (
                 <p
                   key={i}
