@@ -517,3 +517,35 @@ export function validateInitializeGuard(
     );
   return { config, guardInstruction: ix };
 }
+
+/**
+ * Per-field validation for the member address inputs of the create-treasury form. Empty fields are
+ * ignored; each other field must be a wallet (on-curve) address that is not yours and not repeated.
+ */
+export function validateMemberInputs(
+  values: string[],
+  self: string | undefined,
+) {
+  const seen = new Set<string>();
+  const invitees: string[] = [];
+  const errors = values.map((raw): string | null => {
+    const value = raw.trim();
+    if (!value) return null;
+    let key: PublicKey;
+    try {
+      key = new PublicKey(value);
+    } catch {
+      return "Enter a valid Solana wallet address.";
+    }
+    if (!PublicKey.isOnCurve(key.toBytes()))
+      return "This is not a wallet address (it is a program-derived account).";
+    const base58 = key.toBase58();
+    if (self && base58 === self)
+      return "This is your wallet; it joins automatically.";
+    if (seen.has(base58)) return "This wallet is already added.";
+    seen.add(base58);
+    invitees.push(base58);
+    return null;
+  });
+  return { invitees, errors, valid: errors.every((e) => e === null) };
+}
