@@ -1,0 +1,129 @@
+{
+  "checkedAt": "2026-10-07T11:55:19.825Z",
+  "rpc": "https://app.13-250-78-41.sslip.io/api/squads/rpc",
+  "runner": "https://runner.13-250-78-41.sslip.io",
+  "cluster": "devnet",
+  "guardProgram": "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya",
+  "liveTreasury": "CrWczNMHL472uHpkyStkZowSp6E6GEAAJ4tAijb1dxfX",
+  "evidenceScope": "Fresh public chain and runner reads; no transaction submission; CRE control-plane login lists zero workflows.",
+  "donNodes": {
+    "count": 10,
+    "basis": "Recorded live execution evidence in evidence/cre/2026-10-07-live-don-e2e.md; not freshly enumerated through this machine's CRE login."
+  },
+  "confidentialExecution": {
+    "live": false,
+    "configuredExecution": "don",
+    "teePath": "Implemented and simulated only"
+  },
+  "errors": [],
+  "runnerHealth": {
+    "httpStatus": 200,
+    "healthy": true,
+    "subscribed": true,
+    "reviewPath": {
+      "mode": "live",
+      "available": [
+        "live",
+        "simulator"
+      ],
+      "forwarder": "CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5"
+    },
+    "counts": {
+      "approved": 6,
+      "executed": 9,
+      "pending": 3,
+      "rejected": 11
+    },
+    "lastBackfillAt": 1791374081405
+  },
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "finalizedContextSlot": 508446371,
+  "configs": [
+    {
+      "address": "EUUgHhroo7byVUtAVHKPsUrddjeqCJckBfAW7B7TG2yc",
+      "multisig": "CrWczNMHL472uHpkyStkZowSp6E6GEAAJ4tAijb1dxfX",
+      "forwarderProgram": "CXsKEJcs25TQEYU2e5jZ8QTPE3ffMLZhH6BWHrdcCCB5",
+      "forwarderState": "8QoomCQyPSkJ8WopJbX9B4HyvrFzziwvJdU8hZE6DCr9",
+      "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
+      "workflowOwner": "c6680ac5e2a0a6d63a172a9ac99b52b3eb9a2662",
+      "maxReviewLifetime": "3600",
+      "reviewDeadlineSecs": "900"
+    },
+    {
+      "address": "3CkstZUS4JguoceC12wP9aMkGq41xmAY4dU9McYzQuUb",
+      "multisig": "Boz5Dukxrwi5MGRam8bGimokhZwFRLHFdVeEsjaTLgPH",
+      "forwarderProgram": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
+      "forwarderState": "5Tipz3yhTBdVsDbaBxZkrp7Gjf3brGq5SKkxReefPMP7",
+      "policyHash": "402fba2bed1a4a6381b7c449d53309db5d71e5beab0e4da5bf43d60ba02a7ec0",
+      "workflowOwner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "maxReviewLifetime": "3600",
+      "reviewDeadlineSecs": "900"
+    }
+  ],
+  "permissions": {
+    "threshold": 3,
+    "timeLock": 0,
+    "humanVoteMembers": 3,
+    "executeMembers": [
+      "3PgwdTtZZQswpxRJwv7xL5g7XNXfCGLekmQXTnfcEM3Y"
+    ],
+    "expectedExecutor": "3PgwdTtZZQswpxRJwv7xL5g7XNXfCGLekmQXTnfcEM3Y",
+    "configAuthority": "11111111111111111111111111111111",
+    "soleGuardExecutor": true
+  },
+  "reviews": [
+    {
+      "address": "5NzPVvHrXF7aBsZyXhkwCQMTUzrRvDbguohUAjYLopPA",
+      "txIndex": "2",
+      "status": "Executed",
+      "reason": 0,
+      "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
+      "issuedAt": "1791353696",
+      "expiresAt": "1791354296"
+    },
+    {
+      "address": "EF48TskY3f9K26DSNBgZGody1MUonWmbgtN3abYCrewD",
+      "txIndex": "3",
+      "status": "Rejected",
+      "reason": 8,
+      "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
+      "issuedAt": "1791353761",
+      "expiresAt": "1791354361"
+    },
+    {
+      "address": "D1xonBRQQPDvVLTmN7Qgm2VPvYBku4X1KEJczTEwwqhi",
+      "txIndex": "4",
+      "status": "Executed",
+      "reason": 0,
+      "policyHash": "f2e827b5a16156d3f46c99da48297dddd83bd29e8182a0e5e0f7174668afb44a",
+      "issuedAt": "1791353987",
+      "expiresAt": "1791354587"
+    }
+  ],
+  "recordedReportTransactions": [
+    {
+      "signature": "44q8rhtLR3RxxKAc4fJpLHYWkkY2Fk6Rj4AQjqKxNuigwX9zRbh6qVKyUUYZJsbyij4ze3iefwpxTkaMAxqe4TUw",
+      "found": true,
+      "successful": true,
+      "confirmationStatus": "finalized",
+      "slot": 508360700,
+      "cpiEvidence": "CPI path described in the committed live execution evidence; this proxy exposes signature status, not transaction logs."
+    },
+    {
+      "signature": "2M4SasZwwPKU9z4EZeG8oYUc8jU3s4Fs1Zo95MUT6mdzKDkRgJwJMqXc75ZDQdSjK4g3oiSKXn4UQ4xCkTcyeueh",
+      "found": true,
+      "successful": true,
+      "confirmationStatus": "finalized",
+      "slot": 508361919,
+      "cpiEvidence": "CPI path described in the committed live execution evidence; this proxy exposes signature status, not transaction logs."
+    },
+    {
+      "signature": "3yv2vdG5wHeDXxPUpspZS2y4ranvFPNJJ7DKobcnzNzaaTiYDB5sBnJomnomuPdeTkbtNs2g7igJ3cMqykZU9RJW",
+      "found": true,
+      "successful": true,
+      "confirmationStatus": "finalized",
+      "slot": 508360970,
+      "cpiEvidence": "CPI path described in the committed live execution evidence; this proxy exposes signature status, not transaction logs."
+    }
+  ]
+}

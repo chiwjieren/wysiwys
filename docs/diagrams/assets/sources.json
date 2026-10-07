@@ -1,0 +1,62 @@
+[
+  {
+    "service": "alchemy",
+    "sourcePage": "https://www.alchemy.com/brand",
+    "assetUrl": "https://media.alchemy.com/1699253173-alchemy-logo.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "aws",
+    "sourcePage": "https://aws.amazon.com",
+    "assetUrl": "https://aws.amazon.com (inline SVG)",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "chainlink",
+    "sourcePage": "https://chain.link/brand-assets",
+    "assetUrl": "https://cdn.prod.website-files.com/5f6b7190899f41fb70882d08/6aa7fef794684220a0f5a14a_Chainlink-Logo-Blue.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "chainlink-symbol",
+    "sourcePage": "https://chain.link/brand-assets",
+    "assetUrl": "https://cdn.prod.website-files.com/5f6b7190899f41fb70882d08/6aa7fef7f56d1f1d953c589d_Chainlink-Symbol-Blue.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "cre",
+    "sourcePage": "https://docs.chain.link/cre/account/confidential-workflows-access",
+    "assetUrl": "https://docs.chain.link/_astro/cre-logo.DR9bKHVO.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "helius",
+    "sourcePage": "https://www.helius.dev/brand",
+    "assetUrl": "https://www.helius.dev/Helius-Brandkit/Helius/Helius-Horizontal-Logo.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "quicknode",
+    "sourcePage": "https://www.quicknode.com",
+    "assetUrl": "https://www.quicknode.com (inline SVG)",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "scorechain",
+    "sourcePage": "https://www.scorechain.com",
+    "assetUrl": "https://cdn.prod.website-files.com/654506076ba62ddb88e1876a/65450a5621f5872f324f12da_Logo_horizontal.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "solana",
+    "sourcePage": "https://solana.com/branding",
+    "assetUrl": "https://solana.com/src/img/branding/solanaLogoMark.svg",
+    "retrieved": "2026-10-07"
+  },
+  {
+    "service": "squads",
+    "sourcePage": "https://squads.xyz/brand-assets",
+    "assetUrl": "https://squads.xyz/brand-assets (inline SVG)",
+    "retrieved": "2026-10-07"
+  }
+]

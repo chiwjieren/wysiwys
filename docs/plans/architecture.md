@@ -1,8 +1,8 @@
-# Treasury Payment Firewall — complete coding-agent architecture
+# Treasury Payment Firewall: architecture reference
 
-> **Implementation status (7 Oct):** the MVP deliberately simplifies this design. No `RequestHead`, request generations, pause flag or admin/policy updates: one Review per Squads transaction index (never closed, so it is the permanent consumed marker) and an immutable GuardConfig. The report is payload v2 (117 bytes) with `destination_hash`. The current contract is `docs/specs/guard-cre-interface.md`; the decisions are in `docs/plans/2026-10-06-wysiwys-guard-migration.md`. Sections below that conflict with these are design references for after the hackathon.
+> **Current implementation, checked 7 Oct:** the live devnet review uses a deployed CRE DON workflow and the production Solana Keystone forwarder. Recorded live runs show 10 participating nodes. Each node requires 2-of-3 matching RPC snapshots; CRE then aggregates node outputs. Live policy evaluation runs on DON nodes; the TEE path is implemented and simulated only. Payment execution still requires both Squads approval and a matching, current-policy, unexpired, unused Guard review. One permanent Review exists per transaction index. The current program also supports guarded config execution and voted, delayed policy-hash changes. The report remains payload v2, 117 bytes. See the [judge diagram](../diagrams/wysiwys-judge-architecture-live.svg), [PNG](../diagrams/wysiwys-judge-architecture-live.png), and [verified implementation notes](../diagrams/judge-architecture-live-notes.md). Cross-component contracts remain defined in `packages/shared` and `docs/specs/guard-cre-interface.md`.
 
-**Design review: 6 October 2026.** Scope: the treasury payment flow in the user's selected image, with three representative DON node operators, three RPC providers inside each operator, and a private whitelisted-address rule in the TEE. This is a proposed architecture, not verified application behavior or a frozen API contract.
+**Historical design review: 6 October 2026.** The material below is the original design reference, including proposed and simulated TEE behavior. The verified implementation notes above describe the current payment and governance paths and resolve conflicts with this historical design. Drawn node counts do not configure DON membership or prove a numeric consensus threshold.
 
 The invariant is: **Squads human approval AND a matching, current, unexpired, unused APPROVED Guard review are required before money moves.** Votes and review may arrive in either order. A CRE verdict is neither a Squads vote nor permission for a human to execute directly.
 
@@ -54,9 +54,9 @@ Use these responsibility boundaries within the repository's existing layout:
 | Confidential policy module | Private policy loading, destination whitelist and other deterministic checks |
 | Deployment/configuration | Network/program identities, protected authorities, secrets and environment separation |
 
-## Current MVP architecture
+## Historical simulated TEE architecture
 
-The current diagram is [architecture_diagram.svg](architecture_diagram.svg), with a [PNG export](architecture_diagram_current.png). The original [PNG](architecture_diagram.png) and the conceptual diagram below remain historical design references.
+The previous simulated TEE diagram is [architecture_diagram.svg](architecture_diagram.svg), with its [PNG export](architecture_diagram_current.png). The original [PNG](architecture_diagram.png) and the conceptual diagram below remain historical references. Use the [verified live architecture](../diagrams/wysiwys-judge-architecture-live.svg) for the current judge presentation. The original default treasury still has the simulator forwarder on chain; the live treasury is identified in `deployments/devnet.live.json`.
 
 The entire `onReview` callback is registered with `handlerInTee`. It uses `runtime.usingTheDons()` for public chain observations and report submission. The decoder, policy document and Scorechain sanctions call execute within the confidential handler. Public account facts enter that handler; only the derived bound report leaves it. RPC credentials are operational DON inputs, not private policy data. Source code and exported logs are not confidential.
 

@@ -1,73 +1,219 @@
-# Wysiwys
+<div align="center">
+  <img src="docs/diagrams/mainreadme.png" alt="Wysiwys: What You See Is What You Sign" width="800" />
+  <h1>Wysiwys</h1>
+  <p><strong>A Treasury Payment Firewall for Solana</strong></p>
+  <p>
+    <a href="https://solana.com"><img src="https://img.shields.io/badge/Network-Solana_Devnet-9945FF?style=flat-square" alt="Network: Solana Devnet" /></a>
+    <a href="https://chain.link/cre"><img src="https://img.shields.io/badge/Oracle-Chainlink_CRE-375BD2?style=flat-square" alt="Oracle: Chainlink CRE" /></a>
+    <a href="https://squads.so"><img src="https://img.shields.io/badge/Multisig-Squads_v4-111111?style=flat-square" alt="Multisig: Squads v4" /></a>
+    <a href="https://www.anchor-lang.com"><img src="https://img.shields.io/badge/Guard-Anchor-EA580C?style=flat-square" alt="Guard: Anchor" /></a>
+    <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Frontend-Next.js-000000?style=flat-square" alt="Frontend: Next.js" /></a>
+  </p>
+  <p>A Squads payment executes only when human signers approve it and Chainlink CRE approves the exact stored transaction under the treasury's policy.</p>
+  <p>
+    <a href="https://app.13-250-78-41.sslip.io">Live demo</a> &middot;
+    <a href="docs/chainlink/README.md">Chainlink judge guide</a> &middot;
+    <a href="evidence/cre/2026-10-07-live-don-e2e.md">Live DON evidence</a> &middot;
+    <a href="docs/production-gaps.md">Production gaps</a>
+  </p>
+  <p><sub>Devnet, test keys only. Built for the TOKEN2049 Origins Hackathon.</sub></p>
+</div>
 
-What You See Is What You Sign: a treasury payment firewall for Solana. A Squads v4 payment executes only with human approval AND a matching, current, unexpired, unused Guard review from a Chainlink CRE workflow. Design: `docs/plans/architecture.md`.
+---
 
-## Security (guard program)
+## Overview
 
-The guard (`programs/wysiwys_guard`) holds the only Execute permission on the treasury's Squads v4 multisig. A payment runs only through `guarded_execute`, after a Chainlink CRE report approved that exact vault transaction and its destination, and only while that destination is unchanged.
+**What You See Is What You Sign.** Wysiwys checks what a treasury payment actually does before funds leave the vault.
 
-| # | Check | Covered by |
-|---|---|---|
-| 1 | CPI target is exactly Squads `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` (`InvalidSquadsProgram`) | `tests/guarded_execute.ts` |
-| 2 | The executor PDA signs only the Squads `vault_transaction_execute` and `config_transaction_execute` CPIs (one `invoke_signed` in each execute handler) and may not appear in the vault transaction, so its signature cannot reach inner instructions (`ExecutorInMessage`) | `tests/structure.ts`, `tests/guarded_execute.ts` |
-| 3 | `GuardConfig` is immutable: the program exposes only `initialize_guard`, `request_review`, `on_report`, `guarded_execute`, `guarded_config_execute` | `tests/structure.ts` |
-| 4 | Instructions sysvar address checked before the durable-nonce check (`InvalidInstructionsSysvar`, `DurableNonceDetected`) | `tests/guarded_execute.ts` |
-| 5 | Owner, discriminator and seed checks on every account; `has_one = multisig` (`NotSquadsAccount`, `WrongMultisig`, `WrongTxIndex`) | `tests/request_review.ts`, `tests/guarded_execute.ts` |
-| 6 | Review bound to its vault transaction and proposal; `tx_hash = sha256("wysiwys:tx:v1" \|\| vault_transaction \|\| data)` computed on-chain at review and recomputed at execute (`ReviewMismatch`, `HashMismatch`) | `tests/request_review.ts`, `tests/guarded_execute.ts`, `programs/wysiwys_guard/src/logic.rs` |
-| 7 | One-way status Pending → Approved or Rejected; Approved → Executed; Executed written before the CPI (`InvalidStatusTransition`, `AlreadyExecuted`, `NotApproved`) | `tests/on_report.ts`, `tests/guarded_execute.ts` |
-| 8 | `on_report` accepts only the configured Keystone forwarder state, owner and signed authority PDA, reports whose metadata names the configured CRE workflow owner, and matching `tx_hash`, `policy_hash` (`InvalidForwarder`, `InvalidWorkflow`, `HashMismatch`, `PolicyMismatch`) | `tests/on_report.ts`, `logic.rs` |
-| 9 | Expiry uses `Clock::get()` (`Expired`) | `tests/guarded_execute.ts` |
-| 10 | Report payload v2 is exactly 117 bytes (fits CRE's 265-byte Solana raw report): version 2, verdict 1 or 2, reason <= 13, approve names a destination kind (SOL or SPL) with a non-zero `destination_hash`, `issued_at` at most 60 s ahead, `expires_at` in the future and at most `max_review_lifetime` after `issued_at` (`InvalidPayload`) | `logic.rs`, `tests/on_report.ts` |
-| 11 | `init` only, never `init_if_needed` | `tests/structure.ts` |
-| 12 | `initialize_guard` needs the Squads `create_key` signature and an autonomous multisig where the executor PDA is the only Execute member (`InvalidMultisigConfig`) | `tests/initialize_guard.ts` |
-| 13 | Only the vault transaction's creator can call `request_review`, so nobody else can claim the single Review slot (`NotProposer`) | `tests/request_review.ts` |
-| 14 | A report must arrive within `review_deadline_secs` of `request_review` (`ReviewDeadlinePassed`); both durations must be positive at init (`InvalidConfig`) | `tests/on_report.ts`, `tests/initialize_guard.ts` |
-| 15 | `guarded_execute` recomputes `destination_hash` from the passed destination account: same account and, for SPL, still a legacy Token account with the reviewed mint and owner, not frozen (`DestinationChanged`) | `tests/guarded_execute.ts`, `logic.rs` |
-| 16 | `guarded_config_execute` runs a voted Squads config transaction only if every action is a safe membership change (add a voter without Execute, remove a member other than the executor, change threshold, set time lock); spending limits, rent collector and unknown actions are refused, and after the CPI the executor must still be the sole Execute member (`ConfigActionNotAllowed`, `InvalidMultisigConfig`) | `tests/guarded_config.ts`, `logic.rs` |
+A convincing browser preview, invoice or lookalike address cannot authorize a payout. Chainlink CRE re-reads the transaction stored in Squads through three RPC providers, decodes its instructions and checks the destination, token, amount and sanctions screening against the treasury's policy. An on-chain Guard enforces the result at execution.
 
-**Trust assumptions**
-- Squads v4 (audited) enforces the 3 of 3 vote; the guard never replaces it.
-- Chainlink CRE and the Keystone forwarder deliver the verdict. On devnet the demo uses Chainlink's simulator mock forwarder, which skips DON signature checks.
-- The guard program itself is not audited.
+```text
+Payment executes = Human approval AND a matching, current, unexpired, unused APPROVED Guard review
+```
 
-**Deployment**
-- Devnet only. Test keys only.
-- The upgrade authority stays with the deployer key during the hackathon. Before any mainnet use it moves to governance or the program is made immutable, after an audit.
+Human votes and the review can arrive in either order. A CRE verdict does not cast a Squads vote. The Guard's executor PDA is the sole member with Execute permission, so payment execution passes through the on-chain checks.
 
-## Production gaps
+---
 
-Wysiwys is a hackathon build on Solana devnet. One invariant holds even with every gap below: money moves only when the treasury's human threshold has voted AND the guard holds an Approved, unexpired review for that exact transaction and destination. Full list with today's state, risk and fix per item: `docs/production-gaps.md`.
+## Core stack
 
-**High: must close before mainnet**
+- **Guard: Anchor / Rust** checks the review, transaction hash, policy and live destination before a Squads execution CPI.
+- **Multisig: Squads v4** stores transactions and enforces the treasury's human approval threshold and timelock.
+- **Verification: Chainlink CRE / TypeScript** orchestrates RPC agreement, deterministic decoding, policy evaluation, screening and report delivery.
+- **Event adapter: Node.js / SQLite** observes finalized Guard events, triggers CRE and serves activity history and settlement instructions.
+- **Frontend: Next.js / Tailwind / shadcn/ui** connects browser wallets and shows decoded payments, votes and on-chain review status.
 
-| Gap | Today | Production fix |
-|---|---|---|
-| Confidential execution | The live DON runs the review without a TEE: the policy is a Vault DON secret that node operators can see at run time. The TEE path is built and simulated | Confidential Workflows enrollment (private beta); verify attestation |
-| Workflow provenance | The guard checks the 20-byte workflow owner (confirmed in live report metadata), not the workflow ID | Bind the workflow ID once the live Solana report path exposes it |
-| Upgrade authority | One deployer key can upgrade the guard | Squads multisig as upgrade authority; immutable after audit |
-| Audit | Guard not audited (the instruction-0 durable-nonce check matches the runtime, which honours a nonce only as the first instruction) | External audit; internal security review first |
-| Recovery path | CRE or the runner down means nothing can execute (funds safe but stuck); a failed DON run can be re-triggered within the 15-minute review deadline | Timelocked recovery, e.g. a supermajority can execute after N days without a review |
+## Independent verification
 
-**Medium: product and operations**
+Wysiwys separates **data-source agreement**, **DON consensus** and **human approval**:
 
-| Gap | Today | Production fix |
-|---|---|---|
-| Policy change review | Members vote policy changes, but the DON does not screen them (signers who reach the threshold can loosen the policy after the wait) | CRE review of the change itself (screen added addresses); encrypted policy store read by the TEE |
-| Policy at creation | Each new treasury picks the demo policy or its own (whitelist, cap, screening); allowed tokens and payment types are not editable in the form yet | Editable tokens and payment types; per-token caps |
-| Policy custody | Policy JSON and its salt live in one place | Backed-up, access-controlled policy store with an approval workflow |
-| Limits | Per-payment cap only | On-chain cumulative counters (daily budgets) |
-| Payment types | One SOL transfer or legacy SPL `TransferChecked` per payment | Batches, ATA creation, Token-2022, lookup tables |
-| RPC sources | Same 3 providers (QuickNode, Helius, Alchemy) for every node, 2 of 3; 10 nodes calling at once can hit rate limits | More independent providers, per-operator diversity, paid tiers |
-| Screening | Scorechain sanctions only, called by every DON node; an outage or slow responses block payments (fail closed) | Add a wallet-risk provider and thresholds; a provider plan sized for DON load |
-| Single runner | One EC2 instance with SQLite; downtime delays reviews (fail closed) | 2+ runners behind health checks, or DON-native triggers |
-| Secrets | `.env` files on the EC2 instance | AWS SSM / Secrets Manager; rotate keys shared during the event |
-| Monitoring | Logs only | Alerts on `/status`, trigger failures, transmitter balance, missed review deadlines |
+1. **Within each CRE node:** read QuickNode, Helius and Alchemy. Require a 2-of-3 exact match of validated account contents before decoding.
+2. **Across CRE nodes:** use CRE consensus to aggregate node observations. Recorded live executions show **10 DON nodes**, each using the same three providers. The workflow does not set the DON size.
+3. **Within the treasury:** Squads enforces the human threshold. The demonstrated live treasury uses **3 of 3** signers, separate from DON operators.
 
-**Low: known limits**
-- One review per transaction: a rejected, expired or late review means proposing the payment again.
-- The 117-byte report payload is 3 bytes under CRE's 265-byte Solana limit; new fields must be hashed or compressed.
-- Treasury creation fits in one transaction up to 11 humans.
-- Membership changes are voted by members but not reviewed by CRE.
-- The DON size (10 nodes) is set by Chainlink, not by the workflow; every review costs about 10 times the calls of a simulation.
-- Squads v4 is upgradable by the Squads team (audited, widely used).
-- mUSD is a demo token whose mint authority is the deployer key.
+The decoder and policy are deterministic. Unknown instructions, unsupported features, missing inputs and unavailable screening fail closed. There is no AI in the payment decision path.
+
+---
+
+## Architecture & workflow
+
+<div align="center">
+  <a href="docs/diagrams/wysiwys_final_diagram.png">
+    <img src="docs/diagrams/wysiwys_final_diagram.png" alt="Wysiwys architecture: Squads proposal and human votes, finalized event adapter, ten-node Chainlink CRE review, Keystone Forwarder and guarded execution" width="1000" />
+  </a>
+  <p><sub>Click the diagram to view it at full resolution.</sub></p>
+</div>
+
+1. **Propose:** a member signs a transaction that creates the Squads vault transaction and proposal and requests a Guard review. The Guard hashes the stored transaction on-chain.
+2. **Trigger:** the runner observes the finalized `ReviewRequested` event and sends an authenticated CRE HTTP trigger containing identifiers only.
+3. **Read and agree:** CRE nodes independently read the required accounts, require provider agreement and aggregate observations through CRE consensus.
+4. **Decode and evaluate:** decode the stored message and apply the committed policy, including destination whitelist, allowed programs and instructions, mint, per-payment cap and Scorechain sanctions screening.
+5. **Record:** a DON-signed report goes through the production Keystone Forwarder to Guard `on_report`, which authenticates delivery and stores APPROVED or REJECTED.
+6. **Approve:** treasury members vote in Squads. This can happen before, during or after the CRE review.
+7. **Execute:** anyone may submit `guarded_execute`. The Guard re-checks the exact transaction, current policy, expiry and live destination, then executes through Squads using its executor PDA. A failed vote check or transfer rolls back both review consumption and payout.
+
+Policy changes follow a separate, voted governance path with a waiting period of at least five minutes on devnet. Changing the policy commitment invalidates approvals under the previous policy.
+
+### UML sequence diagram
+
+<details>
+  <summary><strong>Expand the complete proposal, review and execution sequence</strong></summary>
+
+<div align="center">
+  <a href="docs/diagrams/wysiwys_uml_final.png">
+    <img src="docs/diagrams/wysiwys_uml_final.png" alt="Wysiwys UML sequence diagram showing parallel human voting and CRE review, authenticated report delivery, execution gates and atomic rollback" width="900" />
+  </a>
+  <p><sub>Click the diagram to view it at full resolution.</sub></p>
+</div>
+
+</details>
+
+---
+
+## Chainlink integration & confidential execution
+
+**Demonstrated live:** CRE review on a DON, ten observed nodes, three-provider reads, consensus, policy evaluation, sanctions screening and Solana report delivery through the production Keystone Forwarder. The recorded devnet flow includes approved payments and rejected lookalike destinations.
+
+**Implemented and locally simulated:** a Confidential Workflow handler that evaluates the policy inside an AWS Nitro TEE enclave and returns a minimal, transaction-bound verdict. Live TEE execution and attestation have not been demonstrated. The current live workflow uses `execution: "don"`; secrets are kept out of public source and reports, but DON operators can see policy data at runtime.
+
+Read the [Chainlink judge guide](docs/chainlink/README.md) for implementation details, code references, evidence and developer feedback, including the Solana event-adapter workaround.
+
+## Demo scenarios
+
+| Scenario | Expected result |
+| --- | --- |
+| Whitelisted payment within the cap | APPROVED; executes once after human approval |
+| Lookalike or non-whitelisted recipient | REJECTED |
+| Hidden authority change or nonce instruction in a payout | DENY |
+| Destination token-account ownership changes after approval | Execution fails |
+| Guarded execution submitted with a durable nonce | Execution fails |
+
+The MVP supports **one System SOL transfer or one legacy SPL Token `TransferChecked`** to an existing destination account. mUSD is the devnet demo token. Amounts use integer base units; limits are per payment.
+
+---
+
+## Repository structure
+
+| Path | Purpose |
+| --- | --- |
+| `programs/wysiwys_guard/` | Anchor Guard and executor PDA |
+| `packages/shared/` | Shared seeds, hashes, report layout, schemas and IDL |
+| `packages/decoder/` | Deterministic transaction decoder and policy |
+| `workflow/confidential-preflight/review/` | CRE review workflow and tests |
+| `services/runner/` | Finalized event adapter, CRE triggers and SQLite history |
+| `app/` | Next.js treasury dashboard and wallet flows |
+| `scripts/` | Bootstrap, scenario builders and devnet verification |
+| `deployments/` | Deployment addresses and treasury configuration |
+| `docs/` | Architecture, Chainlink guide, diagrams and security notes |
+| `evidence/` | Simulation logs and live execution evidence |
+
+## Quick start
+
+### Prerequisites
+
+- **Node.js 22.13+** and npm for the app, runner and workspaces.
+- **Bun** for the isolated CRE review project; **CRE CLI** for workflow simulation.
+- **Rust, Solana CLI and Anchor CLI** for Guard development. Rust is pinned in `rust-toolchain.toml`; use Linux or WSL for the Solana toolchain.
+- A browser wallet configured for **Solana devnet** to use the app.
+
+### 1) Install dependencies
+
+Run from the repository root:
+
+```bash
+npm install
+```
+
+For the CRE review project:
+
+```bash
+cd workflow/confidential-preflight/review
+bun install
+```
+
+### 2) Configure the app and runner
+
+Copy `.env.example` to `.env` and `app/.env.example` to `app/.env.local`, then configure the values below. The [EC2 runner template](deploy/ec2/runner.env.example) also documents live gateway settings.
+
+| Component | Configuration |
+| --- | --- |
+| App | `SOLANA_RPC_URL`, `WYSIWYS_DEPLOYMENT_PATH`, `WYSIWYS_SETTLEMENT_URL`, `WYSIWYS_SETTLEMENT_TOKEN` |
+| Runner | RPC/WebSocket endpoints, `SETTLEMENT_TOKEN` and review-trigger settings |
+| Live CRE trigger | `CRE_WORKFLOW_ID`, `CRE_GATEWAY_PRIVATE_KEY`; see the [review workflow guide](workflow/confidential-preflight/review/README.md) |
+
+For a local app and runner, use `http://127.0.0.1:8787` as the settlement URL and set the app's `WYSIWYS_SETTLEMENT_TOKEN` equal to the runner's `SETTLEMENT_TOKEN`. All credentials stay server-side; keep real environment files, signing keys and private policy documents out of Git.
+
+The demonstrated live treasury is described by [`deployments/devnet.live.json`](deployments/devnet.live.json). Point the app's `WYSIWYS_DEPLOYMENT_PATH` at `../deployments/devnet.live.json` to inspect it. The original treasury in `deployments/devnet.json` uses the simulator mock forwarder; its results are separate from live DON evidence. Match the runner configuration to the treasury you use.
+
+### 3) Start the runner and frontend
+
+From the repository root, in separate terminals:
+
+```bash
+# Event adapter and settlement service: http://localhost:8787
+npm run dev --workspace=services/runner
+```
+
+```bash
+# Frontend: http://localhost:3000
+npm run dev --workspace=app
+```
+
+Running the frontend alone does not enable CRE reviews. Use the [app guide](app/README.md), [runner guide](services/runner/README.md) and [review workflow guide](workflow/confidential-preflight/review/README.md) for component setup and simulation targets.
+
+---
+
+## Testing
+
+```bash
+# TypeScript workspaces, from the repository root
+npm run typecheck
+npm test
+
+# Guard tests on a local legacy validator
+anchor test --validator legacy -- --features short-policy-delay
+```
+
+The `short-policy-delay` feature is for local tests only. Devnet uses the normal five-minute minimum.
+
+The isolated CRE review project has its own checks:
+
+```bash
+cd workflow/confidential-preflight/review
+bun run typecheck
+bun test
+```
+
+## Evidence & documentation
+
+- [Live DON end-to-end evidence](evidence/cre/2026-10-07-live-don-e2e.md): deployed workflow, report delivery and devnet transaction receipts.
+- [Architecture verification](docs/diagrams/judge-architecture-live-notes.md): verified components, current state and evidence boundaries.
+- [Design reference](docs/plans/architecture.md): architecture and component contracts.
+- [Guard security checks](docs/security.md): execution gates, report authentication and linked tests.
+- [Production gaps](docs/production-gaps.md): current risks and planned fixes.
+
+## Security & current limits
+
+Wysiwys is a **devnet hackathon build**. The Guard is unaudited, the upgrade authority remains with the deployer, and report provenance is bound to the configured workflow owner rather than a specific workflow ID. Live confidential execution remains pending.
+
+The payment path currently excludes batches, account creation, Token-2022 and Address Lookup Tables. It has no daily budget counter or emergency bypass. Runner, RPC, screening or CRE failure blocks approval; on-chain state remains the source of truth.
