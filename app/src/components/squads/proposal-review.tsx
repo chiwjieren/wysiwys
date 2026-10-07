@@ -16,7 +16,10 @@ import {
   actionsForMember,
   type ProposalRecord,
 } from "@/lib/squads/sdk";
-import { readPaymentPreview, type PaymentPreview } from "@/lib/squads/payments";
+import {
+  previewVaultTransaction,
+  type PaymentPreview,
+} from "@/lib/squads/decoded-preview";
 import {
   assertStandardExecution,
   guardedConfigGate,
@@ -123,10 +126,6 @@ export function LiveProposal({ id }: { id: string }) {
         );
         const result = await readProposal(rpc, config, BigInt(id));
         const vault = snapshotRef.current?.vault;
-        const preview =
-          result?.kind === "vault" && vault
-            ? await readPaymentPreview(rpc, result.transaction.message, vault)
-            : undefined;
         let onChainReview: Review | null | undefined;
         if (isGuarded(config))
           try {
@@ -141,6 +140,19 @@ export function LiveProposal({ id }: { id: string }) {
           } catch {
             onChainReview = undefined;
           }
+        // Decode the exact stored bytes; a Review's tx_hash must match them.
+        const preview =
+          result?.kind === "vault" && vault
+            ? await previewVaultTransaction(
+                rpc,
+                {
+                  address: result.transactionAddress,
+                  data: result.transactionData,
+                },
+                vault,
+                onChainReview?.txHash,
+              )
+            : undefined;
         const change =
           result?.kind === "vault" && isGuarded(config)
             ? readPolicyChange(
@@ -582,6 +594,40 @@ export function LiveProposal({ id }: { id: string }) {
                       />
                     </dd>
                   </div>
+                  {record.kind === "vault" && decoded?.txHash && (
+                    <div className="space-y-1">
+                      <dt className="caption">Transaction hash (tx_hash)</dt>
+                      <dd className="space-y-1">
+                        <code className="block break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {decoded.txHash}
+                        </code>
+                        <p className="caption">
+                          {!review
+                            ? "Computed from the stored account bytes with the shared tx_hash encoding."
+                            : Array.from(review.txHash, (b) =>
+                                  b.toString(16).padStart(2, "0"),
+                                ).join("") === decoded.txHash
+                              ? "Matches the transaction hash in the guard Review."
+                              : "Differs from the transaction hash in the guard Review. Approval is blocked."}
+                        </p>
+                      </dd>
+                    </div>
+                  )}
+                  {record.kind === "vault" && decoded?.decoded && (
+                    <div className="space-y-1">
+                      <dt className="caption">
+                        Decoder output (@wysiwys/decoder)
+                      </dt>
+                      <dd>
+                        <pre
+                          data-testid="decoder-json"
+                          className="max-h-80 overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground"
+                        >
+                          {JSON.stringify(decoded.decoded, null, 2)}
+                        </pre>
+                      </dd>
+                    </div>
+                  )}
                   {record.kind === "vault" &&
                     record.transaction.message.instructions.map((ix, i) => {
                       const program =

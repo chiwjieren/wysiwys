@@ -19,9 +19,12 @@ import {
   buildPaymentInstructions,
   tokenAmount,
   type PaymentInput,
-  readPaymentPreview,
-  type PaymentPreview,
 } from "@/lib/squads/payments";
+import {
+  draftVaultTransaction,
+  previewVaultTransaction,
+  type PaymentPreview,
+} from "@/lib/squads/decoded-preview";
 import { CopyButton } from "@/components/dialogs";
 import { VaultFunding } from "./account-actions";
 export function ReceiveButton() {
@@ -70,6 +73,9 @@ export function PaymentButton() {
     input: PaymentInput;
     multisig: string;
     vault: string;
+    vaultIndex: number;
+    creator: string;
+    index: bigint;
     guarded: boolean;
   }>();
   const guarded = !!config?.executor;
@@ -90,8 +96,10 @@ export function PaymentButton() {
             new URL("/api/squads/rpc", window.location.origin).toString(),
             "finalized",
           );
-          // Preview exactly what proposePayment will store for this group type.
-          const compiled = new TransactionMessage({
+          // Preview exactly what proposePayment will store for this group type: the
+          // VaultTransaction account bytes from the Squads SDK serializer, decoded by
+          // @wysiwys/decoder.
+          const message = new TransactionMessage({
             payerKey: vault,
             recentBlockhash: reviewed.input.recipient,
             instructions: reviewed.guarded
@@ -105,18 +113,16 @@ export function PaymentButton() {
                   ...reviewed.input,
                   vault,
                 }),
-          }).compileToV0Message();
-          const result = await readPaymentPreview(
+          });
+          const result = await previewVaultTransaction(
             rpc,
-            {
-              accountKeys: compiled.staticAccountKeys,
-              instructions: compiled.compiledInstructions.map((ix) => ({
-                programIdIndex: ix.programIdIndex,
-                accountIndexes: new Uint8Array(ix.accountKeyIndexes),
-                data: ix.data,
-              })),
-              addressTableLookups: compiled.addressTableLookups,
-            },
+            draftVaultTransaction({
+              multisig: new PublicKey(reviewed.multisig),
+              creator: new PublicKey(reviewed.creator),
+              index: reviewed.index,
+              vaultIndex: reviewed.vaultIndex,
+              message,
+            }),
             vault,
           );
           if (!cancelled) {
@@ -176,6 +182,10 @@ export function PaymentButton() {
         input,
         multisig: config.multisig,
         vault: snapshot.vault.toBase58(),
+        vaultIndex: config.vaultIndex,
+        // Creator and index only change the draft's header bytes, never the decoded actions.
+        creator: account?.address ?? snapshot.vault.toBase58(),
+        index: BigInt(snapshot.squad.transactionIndex.toString()) + 1n,
         guarded,
       });
       setValidation("");
@@ -287,20 +297,21 @@ export function PaymentButton() {
           <div className="space-y-4">
             <div className="rounded-xl border bg-secondary p-5">
               <p className="caption">Decoded payment preview</p>
-              <p className="mt-2 text-lg font-semibold">
-                Send {reviewed?.input.amount}{" "}
-                {assetLabel(config, reviewed?.input.token?.mint)}
-              </p>
-              <p className="mt-3 break-all text-sm">
-                To {reviewed?.input.recipient}
-              </p>
-              {reviewed?.input.token && (
-                <p className="caption mt-2 break-all">
-                  {reviewed.guarded
-                    ? `Mint ${reviewed.input.token.mint}. Paid into the recipient's existing token account.`
-                    : `Mint ${reviewed.input.token.mint}. Create recipient token account if needed; treasury pays rent.`}
-                </p>
-              )}
+              {decoded?.payments.map((payment, i) => (
+                <div key={i}>
+                  <p className="mt-2 text-lg font-semibold">
+                    Send {payment.amount} {assetLabel(config, payment.mint)}
+                  </p>
+                  <p className="mt-3 break-all text-sm">
+                    To {payment.recipient}
+                  </p>
+                  {payment.mint && (
+                    <p className="caption mt-2 break-all">
+                      {`Mint ${payment.mint}. Paid into token account ${payment.destination}.`}
+                    </p>
+                  )}
+                </div>
+              ))}
               {decoded?.lines.map((line, i) => (
                 <p
                   key={i}
@@ -311,6 +322,22 @@ export function PaymentButton() {
               ))}
               {reviewed?.input.memo && (
                 <p className="mt-3">{reviewed.input.memo}</p>
+              )}
+              {decoded?.decoded && (
+                <details className="mt-3">
+                  <summary className="caption cursor-pointer">
+                    Technical details
+                  </summary>
+                  <p className="caption mt-2">
+                    Decoder output (@wysiwys/decoder)
+                  </p>
+                  <pre
+                    data-testid="decoder-json"
+                    className="mt-1 max-h-60 overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground"
+                  >
+                    {JSON.stringify(decoded.decoded, null, 2)}
+                  </pre>
+                </details>
               )}
             </div>
             <p className="caption">

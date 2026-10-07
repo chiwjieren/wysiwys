@@ -229,7 +229,12 @@ export type ProposalRecord = {
   address: PublicKey;
   transactionAddress: PublicKey;
 } & (
-  | { kind: "vault"; transaction: sqds.accounts.VaultTransaction }
+  | {
+      kind: "vault";
+      transaction: sqds.accounts.VaultTransaction;
+      /** Exact finalized account bytes: the decoder input and the tx_hash preimage. */
+      transactionData: Uint8Array;
+    }
   | { kind: "config"; transaction: sqds.accounts.ConfigTransaction }
   | { kind: "batch"; transaction: sqds.accounts.Batch }
   | { kind: "archived"; transaction: null }
@@ -357,6 +362,7 @@ function decodeProposalPair(
         kind: "vault",
         proposal,
         transaction: transaction as sqds.accounts.VaultTransaction,
+        transactionData: new Uint8Array(transactionInfo.data),
         address,
         transactionAddress,
       };
