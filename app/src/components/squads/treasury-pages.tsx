@@ -17,10 +17,12 @@ import { useWalletConnection } from "@/lib/auth/provider";
 import { actionsForMember } from "@/lib/squads/sdk";
 import { assetLabel, tokenAmount } from "@/lib/squads/payments";
 import { memberRole } from "@/lib/squads/groups";
+import { memberDisplayName, useMemberNames } from "@/lib/squads/member-names";
 import { PublicKey } from "@solana/web3.js";
 import { figmaAssets } from "@/lib/figma-assets";
 import {
   CreateGroupButton,
+  EditMemberButton,
   GroupManage,
   GroupInvite,
   RemoveMemberButton,
@@ -312,6 +314,7 @@ export function SquadTransactions() {
 }
 export function SquadMembers() {
   const { config, snapshot, account } = useSquad();
+  const { names } = useMemberNames(config?.multisig);
   const humans =
     snapshot?.squad.members.filter(
       (m) => m.key.toBase58() !== config?.executor,
@@ -361,38 +364,43 @@ export function SquadMembers() {
               </tr>
             </thead>
             <tbody>
-              {humans.map((m, i) => (
-                <tr className="h-20" key={m.key.toBase58()}>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <Avatar
-                        initials={m.key.toBase58().slice(0, 2)}
-                        size={40}
-                      />
-                      <span>
-                        {m.key.toBase58() === account?.address
-                          ? "Your wallet · You"
-                          : `Member ${i + 1}`}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <Explorer address={m.key.toBase58()} />
-                  </td>
-                  <td>
-                    <StatusBadge className="min-w-0">
-                      {memberRole(
-                        m.key.toBase58(),
-                        m.permissions.mask,
-                        config?.executor,
-                      )}
-                    </StatusBadge>
-                  </td>
-                  <td className="text-right">
-                    <RemoveMemberButton address={m.key.toBase58()} />
-                  </td>
-                </tr>
-              ))}
+              {humans.map((m, i) => {
+                const address = m.key.toBase58();
+                const label = memberDisplayName(
+                  address,
+                  i,
+                  names,
+                  account?.address,
+                );
+                return (
+                  <tr className="h-20" key={address}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar initials={address.slice(0, 2)} size={40} />
+                        <span>{label}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <Explorer address={m.key.toBase58()} />
+                    </td>
+                    <td>
+                      <StatusBadge className="min-w-0">
+                        {memberRole(
+                          m.key.toBase58(),
+                          m.permissions.mask,
+                          config?.executor,
+                        )}
+                      </StatusBadge>
+                    </td>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <EditMemberButton address={address} label={label} />
+                        <RemoveMemberButton address={address} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

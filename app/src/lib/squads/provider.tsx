@@ -11,6 +11,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import {
   buildGroupCreation,
+  buildMemberEdit,
   buildMemberInvitation,
   buildMemberRemoval,
   validateInitializeGuard,
@@ -89,6 +90,11 @@ type ContextValue = {
   openGroup: (address: string) => void;
   invite: (address: string) => Promise<string | undefined>;
   removeMember: (address: string) => Promise<string | undefined>;
+  // One config proposal replacing the wallet and/or changing permissions.
+  editMember: (
+    address: string,
+    change: { newWallet?: string; permissions?: number },
+  ) => Promise<string | undefined>;
   snapshot?: Snapshot;
   error: string;
   busy: string;
@@ -996,6 +1002,35 @@ export function SquadProvider({ children }: { children: ReactNode }) {
       return id;
     }
   }
+  async function editMember(
+    address: string,
+    change: { newWallet?: string; permissions?: number },
+  ) {
+    let id: string | undefined;
+    const success = await run("edit member", async (rpc, key) => {
+      const squad = await readMultisig(rpc, config!);
+      const edit = buildMemberEdit({
+        squad,
+        multisig: new PublicKey(config!.multisig),
+        member: key,
+        edited: new PublicKey(address),
+        newWallet: change.newWallet
+          ? new PublicKey(change.newWallet)
+          : undefined,
+        permissions: change.permissions,
+        executor: config!.executor
+          ? new PublicKey(config!.executor)
+          : undefined,
+        vaultIndex: config!.vaultIndex,
+      });
+      id = edit.index.toString();
+      return edit.instructions;
+    });
+    if (success) {
+      setCursor(undefined);
+      return id;
+    }
+  }
   return (
     <Context.Provider
       value={{
@@ -1007,6 +1042,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         openGroup,
         invite,
         removeMember,
+        editMember,
         snapshot,
         error,
         busy,

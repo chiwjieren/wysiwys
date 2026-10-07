@@ -1,6 +1,7 @@
 import { Buffer } from "buffer";
 import * as sqds from "@sqds/multisig";
 import type { SquadConfig } from "./sdk";
+import { permissionChoiceLabel, shortAddress } from "./config-actions";
 import {
   PublicKey,
   SystemProgram,
@@ -195,13 +196,7 @@ export function buildMemberRemoval({
   removed: PublicKey;
   executor?: PublicKey;
 }) {
-  const proposer = squad.members.find((m) => m.key.equals(member));
-  if (!proposer || !holds(proposer, sqds.types.Permission.Initiate))
-    throw new Error("Your wallet cannot propose configuration changes.");
-  if (!squad.configAuthority.equals(SystemProgram.programId))
-    throw new Error(
-      "Membership changes require the group's existing configuration authority.",
-    );
+  assertConfigProposer(squad, member);
   const { newThreshold } = planMemberRemoval(
     squad,
     removed,
@@ -218,22 +213,181 @@ export function buildMemberRemoval({
   return {
     index,
     newThreshold,
-    instructions: [
-      sqds.instructions.configTransactionCreate({
-        multisigPda: multisig,
-        transactionIndex: index,
-        creator: member,
-        rentPayer: member,
-        actions,
-      }),
-      sqds.instructions.proposalCreate({
-        multisigPda: multisig,
-        transactionIndex: index,
-        creator: member,
-        rentPayer: member,
-        isDraft: false,
-      }),
-    ],
+    instructions: configProposal(multisig, index, member, actions),
+  };
+}
+
+type ConfigSquad = MemberList &
+  Pick<sqds.accounts.Multisig, "transactionIndex" | "configAuthority">;
+function assertConfigProposer(squad: ConfigSquad, member: PublicKey) {
+  const proposer = squad.members.find((m) => m.key.equals(member));
+  if (!proposer || !holds(proposer, sqds.types.Permission.Initiate))
+    throw new Error("Your wallet cannot propose configuration changes.");
+  if (!squad.configAuthority.equals(SystemProgram.programId))
+    throw new Error(
+      "Membership changes require the group's existing configuration authority.",
+    );
+}
+function configProposal(
+  multisig: PublicKey,
+  index: bigint,
+  member: PublicKey,
+  actions: sqds.types.ConfigAction[],
+) {
+  return [
+    sqds.instructions.configTransactionCreate({
+      multisigPda: multisig,
+      transactionIndex: index,
+      creator: member,
+      rentPayer: member,
+      actions,
+    }),
+    sqds.instructions.proposalCreate({
+      multisigPda: multisig,
+      transactionIndex: index,
+      creator: member,
+      rentPayer: member,
+      isDraft: false,
+    }),
+  ];
+}
+
+// Permissions a member can be given from the Edit dialog. Never Execute: in a
+// guarded treasury the guard executor stays the sole Execute member.
+export const MEMBER_PERMISSION_CHOICES = [3, 2, 1] as const;
+
+export type MemberEdit = {
+  // The member being edited.
+  member: PublicKey;
+  // Replacement wallet; omitted when only permissions change.
+  newWallet?: PublicKey;
+  // New permission mask (Initiate 1, Vote 2); omitted to keep the current one.
+  permissions?: number;
+  executor?: string;
+  vault?: string;
+  // Display label for the member in the summary (defaults to a short address).
+  label?: string;
+};
+
+// Plans one config proposal that replaces a member's wallet and/or changes its
+// permissions. Squads applies every action and checks its invariants at the
+// end, so a wallet replacement is AddMember(new) then RemoveMember(old) and a
+// permission change is RemoveMember(wallet) then AddMember(wallet). The same
+// rules as planMemberRemoval apply: a remaining proposer and voter (and, in a
+// standard group, executor), and the threshold is lowered first when it would
+// exceed the voters.
+export function planMemberEdit(squad: MemberList, edit: MemberEdit) {
+  const { member, newWallet, executor, vault } = edit;
+  const address = member.toBase58();
+  if (executor && address === executor)
+    throw new Error("The guard executor cannot be edited.");
+  const current = squad.members.find((m) => m.key.equals(member));
+  if (!current) throw new Error("This wallet is not a member.");
+  if (newWallet) {
+    const wallet = newWallet.toBase58();
+    if (executor && wallet === executor)
+      throw new Error("The guard executor cannot be a member wallet.");
+    if (vault && wallet === vault)
+      throw new Error("The treasury vault cannot be a member wallet.");
+    if (!PublicKey.isOnCurve(newWallet.toBytes()))
+      throw new Error("Enter the new member's Solana wallet address.");
+    if (squad.members.some((m) => m.key.equals(newWallet)))
+      throw new Error("This wallet is already a member.");
+  }
+  const changesPermissions =
+    edit.permissions !== undefined &&
+    edit.permissions !== current.permissions.mask;
+  if (
+    changesPermissions &&
+    !(MEMBER_PERMISSION_CHOICES as readonly number[]).includes(
+      edit.permissions!,
+    )
+  )
+    throw new Error("Members can have Initiate and/or Vote, never Execute.");
+  if (!newWallet && !changesPermissions) throw new Error("Nothing to change.");
+  // A replacement wallet keeps the old permissions, without Execute.
+  const mask = changesPermissions
+    ? edit.permissions!
+    : current.permissions.mask & 3;
+  if (!mask)
+    throw new Error("Members can have Initiate and/or Vote, never Execute.");
+  const after = squad.members.map((m) =>
+    m.key.equals(member)
+      ? { key: newWallet ?? member, permissions: { mask } }
+      : m,
+  );
+  const voters = after.filter((m) => m.permissions.mask & 2).length;
+  if (!voters || !after.some((m) => m.permissions.mask & 1))
+    throw new Error(
+      "At least one remaining member must be able to propose and vote.",
+    );
+  if (!executor && !after.some((m) => m.permissions.mask & 4))
+    throw new Error("At least one remaining member must be able to execute.");
+  const newThreshold = squad.threshold > voters ? voters : undefined;
+  const newMember = { key: newWallet ?? member, permissions: { mask } };
+  const actions: sqds.types.ConfigAction[] = [
+    // Lowered first so the threshold never exceeds the voters at any step.
+    ...(newThreshold === undefined
+      ? []
+      : [{ __kind: "ChangeThreshold" as const, newThreshold }]),
+    ...(newWallet
+      ? [
+          { __kind: "AddMember" as const, newMember },
+          { __kind: "RemoveMember" as const, oldMember: member },
+        ]
+      : [
+          { __kind: "RemoveMember" as const, oldMember: member },
+          { __kind: "AddMember" as const, newMember },
+        ]),
+  ];
+  const label = edit.label || shortAddress(address);
+  const summary = [
+    newWallet
+      ? `Replace ${label} with ${shortAddress(newWallet.toBase58())} (${permissionChoiceLabel(mask)})`
+      : `Change ${label} to ${permissionChoiceLabel(mask)}`,
+    ...(newThreshold === undefined
+      ? []
+      : [`Threshold lowers from ${squad.threshold} to ${newThreshold}`]),
+  ];
+  return { actions, summary, newThreshold, voters };
+}
+export function buildMemberEdit({
+  squad,
+  multisig,
+  member,
+  edited,
+  newWallet,
+  permissions,
+  executor,
+  vaultIndex = 0,
+}: {
+  squad: ConfigSquad;
+  multisig: PublicKey;
+  // The proposing wallet.
+  member: PublicKey;
+  edited: PublicKey;
+  newWallet?: PublicKey;
+  permissions?: number;
+  executor?: PublicKey;
+  vaultIndex?: number;
+}) {
+  assertConfigProposer(squad, member);
+  const [vault] = sqds.getVaultPda({
+    multisigPda: multisig,
+    index: vaultIndex,
+  });
+  const plan = planMemberEdit(squad, {
+    member: edited,
+    newWallet,
+    permissions,
+    executor: executor?.toBase58(),
+    vault: vault.toBase58(),
+  });
+  const index = BigInt(squad.transactionIndex.toString()) + 1n;
+  return {
+    index,
+    plan,
+    instructions: configProposal(multisig, index, member, plan.actions),
   };
 }
 

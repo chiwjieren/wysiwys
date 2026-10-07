@@ -10,8 +10,8 @@ import {
   reviewStateTone,
   type Review,
 } from "@/lib/squads/review";
-export const shortAddress = (address: string) =>
-  `${address.slice(0, 4)}…${address.slice(-4)}`;
+import { shortAddress } from "@/lib/squads/config-actions";
+export { shortAddress };
 export function Explorer({
   address,
   transaction = false,
