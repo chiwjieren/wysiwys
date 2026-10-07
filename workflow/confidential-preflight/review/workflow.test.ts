@@ -12,9 +12,13 @@ import { eligibleFrom, HEALTH_AGGREGATION, initWorkflow, onReview, onReviewDon, 
 const ENDPOINTS = ['https://test.solana-devnet.quiknode.pro/test', 'https://devnet.helius-rpc.com/?api-key=test', 'https://solana-devnet.g.alchemy.com/v2/test']
 const IDS = ['QUICKNODE_SOLANA_DEVNET_RPC_URL', 'HELIUS_SOLANA_DEVNET_RPC_URL', 'ALCHEMY_SOLANA_DEVNET_RPC_URL']
 const NOW = 1_800_000_000
-const policy = {
-  version: 1, salt: '00'.repeat(16), allowedMints: [{ mint: '', decimals: 6 }],
+const policy: Record<string, any> = {
+  version: 1, salt: '00'.repeat(16),
+  allowedPrograms: ['11111111111111111111111111111111', 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'],
+  allowedInstructions: ['system:transfer', 'spl-token:transferChecked'],
+  allowedMints: [{ mint: '', decimals: 6 }],
   maxAmountPerPayment: '100000000000', destinationWhitelist: [] as string[],
+  screening: { provider: 'scorechain', blockOn: ['SANCTIONED'] },
 }
 // The destination fixture only stores owner/data; decode its public token-account fields.
 import { PublicKey } from '@solana/web3.js'
@@ -32,7 +36,10 @@ function harness(options: {
   wrongGenesis?: number[]; policyMismatch?: boolean; changedTx?: boolean;
   txStatus?: number; receiverStatus?: number | null; signature?: Uint8Array; error?: string;
   expired?: boolean; decided?: boolean; execution?: 'tee' | 'don';
+  /** Replaces the policy document (the GuardConfig commits to whatever is passed). */
+  policyDoc?: Record<string, unknown>;
 } = {}) {
+  const doc = options.policyDoc ?? policy
   const config = configSchema.parse(options.execution === 'don' ? { ...staging, execution: 'don' } : staging)
   const local = { mode: 'local-simulation', chainSelector: staging.chainSelector, guardProgram: staging.guardProgram,
     decoderVersion: staging.decoderVersion, approvalSeconds: staging.approvalSeconds, maxSlotLag: staging.maxSlotLag,
@@ -46,7 +53,7 @@ function harness(options: {
   review[145] = options.decided ? 1 : 0
   new DataView(review.buffer).setBigInt64(229, BigInt(NOW - (options.expired ? 1000 : 30)), true)
   const guard = base64ToBytes(fixtures.config.data)
-  guard.set(policyHash(policy, staging.decoderVersion), 104)
+  guard.set(policyHash(doc, staging.decoderVersion), 104)
   if (options.policyMismatch) guard[104] ^= 1
   const tx = base64ToBytes(s.vaultTransaction.data)
   if (options.changedTx) tx[tx.length - 1] ^= 1
@@ -84,7 +91,7 @@ function harness(options: {
     config: runtimeConfig, log: () => {}, now: () => new Date(NOW * 1000),
     getSecret: ({ id }: { id: string }) => {
       // Without a TEE (execution "don") the policy and screening key are Vault DON secrets too.
-      if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: JSON.stringify(policy) }) }
+      if (options.execution === 'don' && id === 'POLICY_DOCUMENT') return { result: () => ({ value: JSON.stringify(doc) }) }
       if (options.execution === 'don' && id === 'SCORECHAIN_SANCTIONS_API_KEY') return { result: () => ({ value: 'dummy-test-api-key' }) }
       if (!(id in secrets)) throw new Error('private secret crossed into DON')
       return { result: () => ({ value: secrets[id]! }) }
@@ -93,7 +100,7 @@ function harness(options: {
     report: () => { reports++; return { result: () => ({}) } },
   }
   const tee = { config: runtimeConfig, log: () => {}, usingTheDons: () => don,
-    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? JSON.stringify(policy) : 'dummy-test-api-key' }) }) }
+    getSecret: ({ id }: { id: string }) => ({ result: () => ({ value: id === 'POLICY_DOCUMENT' ? JSON.stringify(doc) : 'dummy-test-api-key' }) }) }
   const payload = { input: new TextEncoder().encode(JSON.stringify({ multisig: fixtures.multisig, txIndex: s.txIndex })) } as HTTPPayload
   return { run: () => JSON.parse(options.execution === 'don'
     ? onReviewDon(don as unknown as Runtime<Config>, payload)
@@ -234,5 +241,21 @@ describe('provider health consensus across DON nodes', () => {
     // An even split's median may land between 0 and 1; the provider stays eligible and the
     // nodes where it fails simply do not count it in their 2-of-3 read.
     expect(eligibleFrom({ minContextSlot: 1, quicknode: 0.5, helius: 1, alchemy: 0 })).toBe('110')
+  })
+})
+
+describe('policy document handling', () => {
+  test('screening runs only when the policy has a screening entry', () => {
+    const { screening: _, ...unscreened } = policy
+    const h = harness({ policyDoc: unscreened })
+    expect(h.run().verdict).toBe('approve')
+    expect(h.request.mock.calls.filter(([, r]: any) => r.method === 'GET')).toHaveLength(0)
+  })
+  test('an invalid policy document fails closed without a report, even when its hash matches', () => {
+    for (const execution of ['tee', 'don'] as const) {
+      const h = harness({ execution, policyDoc: { ...policy, extra: 'not in Policy v1' } })
+      expect(h.run).toThrow('POLICY_INVALID')
+      expect(h.reports()).toBe(0); expect(h.write).not.toHaveBeenCalled()
+    }
   })
 })
