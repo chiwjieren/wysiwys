@@ -16,6 +16,7 @@ import { HttpTrigger, LogTrigger } from "./trigger";
 import { GatewayTrigger } from "./gateway";
 import { guardForwarderReader, PathFilteredTrigger } from "./path-filter";
 import { LiveReviewRunner } from "./live-review";
+import { ModeSwitch, type ReviewMode, type ReviewPath } from "./mode";
 
 // Secrets (RPC key, trigger token) come from the root .env locally and from SSM on EC2.
 try {
@@ -42,33 +43,30 @@ const creRunner = cfg.cre
     })
   : null;
 const gateway = cfg.gateway ? new GatewayTrigger(cfg.gateway) : null;
-const baseTrigger = gateway
-  ? gateway
-  : creRunner
-  ? creRunner.asTrigger()
-  : cfg.triggerUrl
-    ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined)
-    : new LogTrigger();
-// One review path per runner: live (gateway) or simulator (cre simulate); skip the other path's treasuries.
-const servedForwarder = gateway
-  ? cfg.forwarders?.live.program
-  : creRunner
-    ? cfg.forwarders?.simulator.program
-    : undefined;
 const forwarderOf = guardForwarderReader(connection, programId);
-const trigger = servedForwarder
-  ? new PathFilteredTrigger(baseTrigger, forwarderOf, servedForwarder)
-  : baseTrigger;
-// POST /review: re-trigger the live workflow in gateway mode, else run the simulation.
-const reviewRunner =
-  gateway && cfg.forwarders
-    ? new LiveReviewRunner({
-        trigger: gateway,
-        forwarderOf,
-        liveForwarder: cfg.forwarders.live.program,
-        isDecided: createReviewVerifier(connection, programId),
-      })
-    : creRunner;
+const isDecided = createReviewVerifier(connection, programId);
+// Review paths this runner can serve. Each skips treasuries whose GuardConfig names the other forwarder;
+// the operator picks the active one (POST /admin/mode, remembered across restarts). Live is the default.
+const paths: Partial<Record<ReviewMode, ReviewPath>> = {};
+if (gateway && cfg.forwarders) {
+  const forwarder = cfg.forwarders.live.program;
+  paths.live = {
+    forwarder,
+    trigger: new PathFilteredTrigger(gateway, forwarderOf, forwarder),
+    review: new LiveReviewRunner({ trigger: gateway, forwarderOf, liveForwarder: forwarder, isDecided }),
+  };
+}
+if (creRunner && cfg.forwarders) {
+  const forwarder = cfg.forwarders.simulator.program;
+  paths.simulator = { forwarder, trigger: new PathFilteredTrigger(creRunner.asTrigger(), forwarderOf, forwarder), review: creRunner };
+}
+const reviewMode = Object.keys(paths).length
+  ? new ModeSwitch({ paths, store, requeueWindowSecs: Number(cfg.guardSetup?.reviewDeadlineSecs ?? 900) })
+  : null;
+// Without forwarders in deployments/devnet.json: one unfiltered trigger, as before.
+const trigger = reviewMode ?? gateway ?? creRunner?.asTrigger() ??
+  (cfg.triggerUrl ? new HttpTrigger(cfg.triggerUrl, cfg.triggerToken ?? undefined) : new LogTrigger());
+const reviewRunner = reviewMode ?? creRunner;
 const listener = new Listener({
   connection,
   programId,
@@ -93,6 +91,8 @@ const server = createStatusServer({
   settlementToken: cfg.settlementToken,
   review: reviewRunner ?? undefined,
   reviewToken: cfg.reviewToken,
+  reviewMode: reviewMode ?? undefined,
+  adminToken: cfg.adminToken,
 });
 
 const ws = cfg.wsUrl
@@ -102,10 +102,10 @@ console.log(
   `[runner] guard ${cfg.programId}, rpc ${new URL(cfg.rpcUrl).host}, ws ${ws}, db ${cfg.dbPath}`,
 );
 console.log(
-  `[runner] review path: ${servedForwarder ? `only treasuries using forwarder ${servedForwarder}` : "all treasuries (no forwarders in deployments/devnet.json)"}`,
+  `[runner] review path: ${reviewMode ? `${reviewMode.mode} (only treasuries using forwarder ${reviewMode.forwarder}); available: ${reviewMode.available.join(", ")}; switch ${cfg.adminToken ? "enabled" : "disabled (ADMIN_TOKEN unset)"}` : "all treasuries (no forwarders in deployments/devnet.json)"}`,
 );
 console.log(
-  `[runner] trigger: ${gateway ? `CRE gateway, live workflow ${cfg.gateway!.workflowId.replace(/^0x/, "").slice(0, 12)}..., signer ${gateway.address}` : cfg.cre ? `cre simulate ${cfg.cre.workflow} in ${cfg.cre.projectDir}${cfg.cre.broadcast ? " --broadcast" : ""}` : cfg.triggerUrl ? "http" : "none (log only)"}`,
+  `[runner] live: ${gateway ? `CRE gateway, workflow ${cfg.gateway!.workflowId.replace(/^0x/, "").slice(0, 12)}..., signer ${gateway.address}` : "off"}; simulator: ${cfg.cre ? `cre simulate ${cfg.cre.workflow}${cfg.cre.broadcast ? " --broadcast" : ""}` : "off"}${!reviewMode && cfg.triggerUrl ? "; http trigger" : ""}`,
 );
 console.log(
   `[runner] settlement routes: ${cfg.settlementToken ? "enabled" : "disabled (SETTLEMENT_TOKEN unset, 503)"}`,

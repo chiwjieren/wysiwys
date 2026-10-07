@@ -84,7 +84,9 @@ Each treasury's GuardConfig fixes its path forever: live treasuries accept only 
 | Runner log | `review path: only treasuries using forwarder CXsKE...`, `trigger: CRE gateway` | `review path: only treasuries using forwarder 7kuEAA...`, `trigger: cre simulate` |
 | Treasury to demo | one created in the app (live GuardConfig) | an existing simulator treasury |
 
-Switch (about a minute):
+Switch from the app (seconds): open `/status`, press **Switch to Simulator (backup)** (or back to **Live Chainlink DON**) and enter the operator token (`ADMIN_TOKEN` in `/opt/wysiwys/.env`). The runner keeps both paths loaded when both are configured, remembers the choice across restarts, and re-queues pending reviews still inside the 15-minute deadline so the new path picks them up. `GET /status` shows `reviewPath`.
+
+Switch over SSH instead (also how to remove a path entirely):
 
 ```bash
 sudo -u wysiwys nano /opt/wysiwys/.env      # set or comment out CRE_WORKFLOW_ID and CRE_GATEWAY_PRIVATE_KEY

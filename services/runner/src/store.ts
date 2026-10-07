@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS events (
   PRIMARY KEY (signature, idx)
 );
 CREATE TABLE IF NOT EXISTS cursor (id INTEGER PRIMARY KEY CHECK (id = 1), last_signature TEXT);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
 
 // node:sqlite returns null-prototype rows; callers get plain objects.
@@ -132,6 +133,11 @@ export function openStore(path: string) {
     "INSERT INTO cursor (id, last_signature) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET last_signature = excluded.last_signature",
   );
   const selectReviews = db.prepare("SELECT * FROM reviews ORDER BY updated_at DESC, rowid DESC LIMIT ?");
+  const selectSetting = db.prepare("SELECT value FROM settings WHERE key = ?");
+  const upsertSetting = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  const requeuePending = db.prepare(
+    "UPDATE reviews SET trigger_status = 'none', trigger_attempts = 0, trigger_error = NULL WHERE status = 'pending' AND updated_at >= ?",
+  );
   const selectEvents = db.prepare("SELECT * FROM events ORDER BY block_time DESC, signature, idx LIMIT ?");
   const selectCounts = db.prepare("SELECT status, COUNT(*) AS n FROM reviews GROUP BY status");
 
@@ -144,6 +150,10 @@ export function openStore(path: string) {
       void updateTrigger.run(ok ? "sent" : "failed", ok ? null : (error ?? "unknown error"), review),
     getCursor: () => ((selectCursor.get() as { last_signature: string } | undefined)?.last_signature ?? null),
     setCursor: (signature: string) => void upsertCursor.run(signature),
+    getSetting: (key: string) => ((selectSetting.get(key) as { value: string } | undefined)?.value ?? null),
+    setSetting: (key: string, value: string) => void upsertSetting.run(key, value),
+    /** Makes pending reviews requested at or after `since` (unix seconds) eligible for triggering again. */
+    requeuePendingSince: (since: number) => Number(requeuePending.run(since).changes),
     listReviews: (limit = 50) => selectReviews.all(limit).map((r) => plain<ReviewRow>(r)),
     listEvents: (limit = 100) => selectEvents.all(limit).map((r) => plain<Record<string, unknown>>(r)),
     counts: () =>

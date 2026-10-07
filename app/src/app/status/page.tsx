@@ -1,10 +1,117 @@
 "use client";
+import { useEffect, useState } from "react";
 import { PageHeader, Panel } from "@/components/design";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SquadFeedback } from "@/components/squads/live-squad";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
 import { useRunnerPoll } from "@/lib/runner/client";
-import type { RunnerStatus } from "@/lib/runner/types";
+import type {
+  RunnerReviewMode,
+  RunnerReviewPath,
+  RunnerStatus,
+} from "@/lib/runner/types";
+const PATH_LABEL: Record<RunnerReviewMode, string> = {
+  live: "Live Chainlink DON",
+  simulator: "Simulator (backup)",
+};
+function ReviewPathSwitch({ path }: { path: RunnerReviewPath }) {
+  // The last switch result shows until the next status poll reports the same mode.
+  const [switched, setSwitched] = useState<RunnerReviewMode | null>(null);
+  // A newer poll is authoritative (another operator may have switched since).
+  useEffect(() => setSwitched(null), [path.mode]);
+  const mode = switched ?? path.mode;
+  const target: RunnerReviewMode = mode === "live" ? "simulator" : "live";
+  const canSwitch = path.available.includes(target);
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/runner/mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: target, token }),
+      });
+      const body = (await response.json()) as
+        | { reviewPath: RunnerReviewPath }
+        | { error: string };
+      if ("reviewPath" in body) {
+        setSwitched(body.reviewPath.mode);
+        setOpen(false);
+        setMessage(
+          `Switched to ${PATH_LABEL[body.reviewPath.mode]}. Only treasuries on this path are reviewed now.`,
+        );
+      } else setMessage(body.error);
+    } catch {
+      setMessage("The switch could not be sent.");
+    } finally {
+      setToken("");
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p>
+        Review path: <strong>{PATH_LABEL[mode]}</strong>
+      </p>
+      {canSwitch && !open && (
+        <div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setOpen(true);
+              setMessage(null);
+            }}
+          >
+            Switch to {PATH_LABEL[target]}
+          </Button>
+        </div>
+      )}
+      {open && (
+        <form className="flex flex-wrap items-center gap-2" onSubmit={submit}>
+          <Input
+            type="password"
+            autoComplete="off"
+            aria-label="Operator token"
+            placeholder="Operator token"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button type="submit" disabled={busy || !token}>
+            {busy ? "Switching…" : `Switch to ${PATH_LABEL[target]}`}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setOpen(false);
+              setToken("");
+            }}
+          >
+            Cancel
+          </Button>
+        </form>
+      )}
+      {message && (
+        <p className="caption" role="status">
+          {message}
+        </p>
+      )}
+      <p className="caption">
+        Each treasury is bound to one path by its guard config. The runner
+        reviews only treasuries on the selected path; payments on the other
+        path wait until you switch back.
+      </p>
+    </div>
+  );
+}
 const unavailable: RunnerStatus = {
   configured: true,
   reachable: false,
@@ -50,6 +157,7 @@ function RunnerPanel() {
             approved, {runner.reviews.rejected} rejected,{" "}
             {runner.reviews.executed} executed
           </p>
+          {runner.reviewPath && <ReviewPathSwitch path={runner.reviewPath} />}
         </>
       )}
       <p className="caption">

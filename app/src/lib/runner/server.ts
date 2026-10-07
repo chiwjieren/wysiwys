@@ -1,5 +1,10 @@
 import { PublicKey } from "@solana/web3.js";
-import type { RunnerReview, RunnerStatus } from "./types";
+import type {
+  RunnerReview,
+  RunnerReviewMode,
+  RunnerReviewPath,
+  RunnerStatus,
+} from "./types";
 
 // Server-only access to the runner's public read endpoints. The runner URL
 // never leaves the server and upstream text is never echoed to the client.
@@ -70,7 +75,93 @@ export function sanitizeRunnerStatus(
       rejected: count(reviews.rejected),
       executed: count(reviews.executed),
     },
+    ...(reviewPathOf(body.reviewPath)
+      ? { reviewPath: reviewPathOf(body.reviewPath)! }
+      : {}),
   };
+}
+
+const MODES: RunnerReviewMode[] = ["live", "simulator"];
+const isMode = (value: unknown): value is RunnerReviewMode =>
+  MODES.includes(value as RunnerReviewMode);
+// Mode and available paths only; the runner's forwarder and any extra fields stay server-side.
+function reviewPathOf(input: unknown): RunnerReviewPath | null {
+  const path = record(input);
+  if (!isMode(path.mode)) return null;
+  const available = Array.isArray(path.available)
+    ? MODES.filter((m) => (path.available as unknown[]).includes(m))
+    : [];
+  return { mode: path.mode, available };
+}
+
+/** A review path switch request from the status page: a known mode and the operator token. */
+export function parseModeSwitch(
+  input: unknown,
+): { mode: RunnerReviewMode; token: string } | null {
+  const body = record(input);
+  if (!isMode(body.mode)) return null;
+  if (
+    typeof body.token !== "string" ||
+    body.token.length === 0 ||
+    body.token.length > 512
+  )
+    return null;
+  return { mode: body.mode, token: body.token };
+}
+
+const SWITCH_ERRORS: Record<number, string> = {
+  400: "This runner cannot serve that review path.",
+  401: "Operator token rejected.",
+  429: "Too many attempts. Try again shortly.",
+  503: "Review path switching is not enabled on the runner.",
+};
+
+/**
+ * Forwards the operator's switch to the runner (POST /admin/mode). The token is the operator's, typed
+ * on the status page; the app holds no admin credential. Runner text is never echoed.
+ */
+export async function switchRunnerMode(request: {
+  mode: RunnerReviewMode;
+  token: string;
+}): Promise<{
+  status: number;
+  body: { reviewPath: RunnerReviewPath } | { error: string };
+}> {
+  const base = process.env.WYSIWYS_SETTLEMENT_URL;
+  if (!base)
+    return { status: 503, body: { error: "Runner is not configured." } };
+  try {
+    const response = await fetch(
+      new URL("admin/mode", base.endsWith("/") ? base : base + "/"),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${request.token}`,
+        },
+        body: JSON.stringify({ mode: request.mode }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    const text = await response.text();
+    if (response.ok) {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // Falls through to the generic error.
+      }
+      const reviewPath = reviewPathOf(parsed);
+      if (reviewPath) return { status: 200, body: { reviewPath } };
+    }
+    const message = SWITCH_ERRORS[response.status];
+    return message
+      ? { status: response.status, body: { error: message } }
+      : { status: 502, body: { error: "Runner could not switch the review path." } };
+  } catch {
+    return { status: 502, body: { error: "Runner is unreachable." } };
+  }
 }
 
 const STATUSES = new Set(["pending", "approved", "rejected", "executed"]);

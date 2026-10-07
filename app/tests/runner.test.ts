@@ -1,11 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   sanitizeRunnerStatus,
   sanitizeRunnerReviews,
   fetchRunner,
   reviewsMultisig,
+  parseModeSwitch,
+  switchRunnerMode,
 } from "../src/lib/runner/server";
 
 test("runner status keeps only the public health fields", () => {
@@ -135,6 +139,78 @@ test("fetchRunner reports unconfigured and unreachable runners", async () => {
     assert.deepEqual(await fetchRunner("/status"), { kind: "unreachable" });
     process.env.WYSIWYS_SETTLEMENT_URL = "not a url";
     assert.deepEqual(await fetchRunner("/status"), { kind: "unreachable" });
+  } finally {
+    if (previous === undefined) delete process.env.WYSIWYS_SETTLEMENT_URL;
+    else process.env.WYSIWYS_SETTLEMENT_URL = previous;
+  }
+});
+
+test("runner status exposes the review path mode, never the forwarder or junk modes", () => {
+  const base = { ok: true, listener: {}, reviews: {} };
+  assert.deepEqual(
+    sanitizeRunnerStatus({ ...base, reviewPath: { mode: "live", available: ["live", "simulator", "evil"], forwarder: "CXs" } }).reviewPath,
+    { mode: "live", available: ["live", "simulator"] },
+  );
+  assert.equal(sanitizeRunnerStatus({ ...base, reviewPath: { mode: "evil", available: ["live"] } }).reviewPath, undefined);
+  assert.equal(sanitizeRunnerStatus(base).reviewPath, undefined);
+});
+
+test("a review path switch needs a known mode and an operator token", () => {
+  assert.deepEqual(parseModeSwitch({ mode: "simulator", token: "op" }), { mode: "simulator", token: "op" });
+  for (const body of [{ mode: "evil", token: "op" }, { mode: "live", token: "" }, { mode: "live" }, { mode: "live", token: "x".repeat(513) }, null, "live"])
+    assert.equal(parseModeSwitch(body), null);
+});
+
+async function withRunner(status: number, body: unknown, fn: (seen: { auth?: string; path?: string; body?: string }) => Promise<void>) {
+  const seen: { auth?: string; path?: string; body?: string } = {};
+  const server = createServer((req, res) => {
+    let text = "";
+    req.on("data", (c) => (text += c));
+    req.on("end", () => {
+      Object.assign(seen, { auth: req.headers.authorization, path: req.url, body: text });
+      res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const previous = process.env.WYSIWYS_SETTLEMENT_URL;
+  process.env.WYSIWYS_SETTLEMENT_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    await fn(seen);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.WYSIWYS_SETTLEMENT_URL;
+    else process.env.WYSIWYS_SETTLEMENT_URL = previous;
+  }
+}
+
+test("switching forwards the operator token to the runner and returns only the sanitized path", async () => {
+  await withRunner(200, { mode: "simulator", available: ["live", "simulator"], forwarder: "7kuE" }, async (seen) => {
+    assert.deepEqual(await switchRunnerMode({ mode: "simulator", token: "op" }), {
+      status: 200,
+      body: { reviewPath: { mode: "simulator", available: ["live", "simulator"] } },
+    });
+    assert.equal(seen.auth, "Bearer op");
+    assert.equal(seen.path, "/admin/mode");
+    assert.deepEqual(JSON.parse(seen.body!), { mode: "simulator" });
+  });
+});
+
+test("switch failures map to fixed messages and never echo the runner", async () => {
+  const cases: Array<[number, string]> = [
+    [401, "Operator token rejected."],
+    [400, "This runner cannot serve that review path."],
+    [503, "Review path switching is not enabled on the runner."],
+    [500, "Runner could not switch the review path."],
+  ];
+  for (const [status, message] of cases) {
+    await withRunner(status, { error: "internal https://key@rpc.example" }, async () => {
+      assert.deepEqual(await switchRunnerMode({ mode: "live", token: "op" }), { status: status === 500 ? 502 : status, body: { error: message } });
+    });
+  }
+  const previous = process.env.WYSIWYS_SETTLEMENT_URL;
+  process.env.WYSIWYS_SETTLEMENT_URL = "http://127.0.0.1:1";
+  try {
+    assert.deepEqual(await switchRunnerMode({ mode: "live", token: "op" }), { status: 502, body: { error: "Runner is unreachable." } });
   } finally {
     if (previous === undefined) delete process.env.WYSIWYS_SETTLEMENT_URL;
     else process.env.WYSIWYS_SETTLEMENT_URL = previous;
