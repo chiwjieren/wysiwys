@@ -25,6 +25,7 @@ import {
   describeConfigActions,
   GUARD_REFUSES,
 } from "@/lib/squads/config-actions";
+import { memberDisplayName, useMemberNames } from "@/lib/squads/member-names";
 import {
   executeGate,
   isGuarded,
@@ -43,6 +44,7 @@ import {
 } from "./treasury-ui";
 export function LiveProposal({ id }: { id: string }) {
   const { config, snapshot, account, error, busy, vote, execute } = useSquad();
+  const { names } = useMemberNames(config?.multisig);
   const [record, setRecord] = useState<ProposalRecord | null>();
   const [readError, setReadError] = useState("");
   const [decoded, setDecoded] = useState<PaymentPreview>();
@@ -331,6 +333,11 @@ export function LiveProposal({ id }: { id: string }) {
                       ? "Completed payment"
                       : "Proposed settings change"}
               </h2>
+              {configActions?.headline && (
+                <p className="break-words font-medium">
+                  {configActions.headline.text}
+                </p>
+              )}
               {lines.map((line, i) => (
                 <div key={i}>
                   <p className="break-words">{line}</p>
@@ -415,7 +422,11 @@ export function LiveProposal({ id }: { id: string }) {
               </div>
               {snapshot?.squad.members
                 .filter((m) => !!(m.permissions.mask & 2))
-                .map((m, i) => {
+                .map((m) => {
+                  // Numbered as on the Members page (human members in order).
+                  const i = snapshot.squad.members
+                    .filter((h) => h.key.toBase58() !== config?.executor)
+                    .findIndex((h) => h.key.equals(m.key));
                   const approved = record.proposal.approved.some((k) =>
                       k.equals(m.key),
                     ),
@@ -432,9 +443,12 @@ export function LiveProposal({ id }: { id: string }) {
                         size={32}
                       />
                       <p className="flex-1 text-xs">
-                        {m.key.toBase58() === account?.address
-                          ? "Your wallet · You"
-                          : `Member ${i + 1}`}
+                        {memberDisplayName(
+                          m.key.toBase58(),
+                          i,
+                          names,
+                          account?.address,
+                        )}
                       </p>
                       <span
                         className={`text-xs ${approved ? "text-success" : rejected ? "text-destructive" : "text-muted-foreground"}`}

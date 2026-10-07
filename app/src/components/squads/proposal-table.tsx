@@ -59,11 +59,7 @@ export function ProposalTable({
                   ? describeConfigActions(
                       record.transaction.actions,
                       isGuarded(config) ? config?.executor : undefined,
-                    )
-                      .lines.map((l) =>
-                        l.refused ? `${l.label} (guard refuses)` : l.label,
-                      )
-                      .join(", ")
+                    ).listLabel
                   : record.kind === "archived"
                     ? "Details cleared after execution"
                     : record.kind === "batch"
