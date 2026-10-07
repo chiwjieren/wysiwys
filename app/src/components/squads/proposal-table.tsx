@@ -6,6 +6,7 @@ import { useSquad } from "@/lib/squads/provider";
 import { previewMessage } from "@/lib/squads/payments";
 import { EmptyState, ProposalStatus, ReviewBadge } from "./treasury-ui";
 import { isGuarded } from "@/lib/squads/review";
+import { describeConfigActions } from "@/lib/squads/config-actions";
 import type { ProposalRecord } from "@/lib/squads/sdk";
 export function ProposalTable({
   records,
@@ -55,13 +56,12 @@ export function ProposalTable({
                   : undefined;
               const payment =
                 record.kind === "config"
-                  ? record.transaction.actions
-                      .map((a) =>
-                        a.__kind === "ChangeThreshold"
-                          ? `Set threshold to ${a.newThreshold}`
-                          : a.__kind === "AddMember"
-                            ? "Invite member"
-                            : a.__kind,
+                  ? describeConfigActions(
+                      record.transaction.actions,
+                      isGuarded(config) ? config?.executor : undefined,
+                    )
+                      .lines.map((l) =>
+                        l.refused ? `${l.label} (guard refuses)` : l.label,
                       )
                       .join(", ")
                   : record.kind === "archived"
@@ -97,6 +97,8 @@ export function ProposalTable({
                     {isGuarded(config) &&
                     (record.kind === "vault" || record.kind === "archived") ? (
                       <ReviewBadge review={snapshot?.reviews?.[id]} />
+                    ) : isGuarded(config) && record.kind === "config" ? (
+                      <span className="caption">Guard check on-chain</span>
                     ) : (
                       <span className="caption">
                         {config?.executionMode === "standard"

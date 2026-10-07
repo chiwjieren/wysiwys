@@ -88,18 +88,23 @@ export function buildGroupCreation({
     }),
   };
 }
+// New members always get Initiate + Vote, never Execute: in a guarded treasury
+// the guard executor stays the sole Execute member (guarded_config_execute
+// refuses anything else).
 export function buildMemberInvitation({
   multisig,
   creator,
   index,
   newMember,
+  executor,
 }: {
   multisig: PublicKey;
   creator: PublicKey;
   index: bigint;
   newMember: PublicKey;
+  executor?: PublicKey;
 }) {
-  if (!PublicKey.isOnCurve(newMember.toBytes()))
+  if (!PublicKey.isOnCurve(newMember.toBytes()) || executor?.equals(newMember))
     throw new Error("Enter the member's Solana wallet address.");
   return [
     sqds.instructions.configTransactionCreate({
@@ -130,13 +135,106 @@ export function standardGroupsEnabled(flag: string | undefined) {
   return flag === "true";
 }
 
-// Squads config transactions (members, threshold) need a member with Execute.
-// In a guarded treasury that is only the guard executor, and the guard only
-// executes vault payments, so membership is fixed at creation.
-export function fixedMembershipReason(config: SquadConfig | undefined) {
+// Squads applies member and threshold changes through config transactions.
+// In a guarded treasury the guard executor applies them with
+// guarded_config_execute, which only accepts voter changes.
+export function membershipChangeNote(config: SquadConfig | undefined) {
   return config?.executor && config.executionMode !== "standard"
-    ? "Members are fixed after creation: only the guard can execute, and it executes payments only."
-    : null;
+    ? "Member changes need the members' vote and are checked by the guard."
+    : "Member changes need the members' vote, then execution by an authorized member.";
+}
+
+type MemberList = Pick<sqds.accounts.Multisig, "members" | "threshold">;
+const holds = (
+  member: sqds.accounts.Multisig["members"][number],
+  permission: sqds.types.Permission,
+) => sqds.types.Permissions.has(member.permissions, permission);
+
+// Checks a removal against the Squads invariants (a remaining proposer, voter
+// and executor; threshold <= voters). When the threshold would exceed the
+// remaining voters, the same proposal lowers it to the voter count.
+export function planMemberRemoval(
+  squad: MemberList,
+  removed: PublicKey,
+  executor?: string,
+) {
+  if (executor && removed.toBase58() === executor)
+    throw new Error("The guard executor cannot be removed.");
+  if (!squad.members.some((m) => m.key.equals(removed)))
+    throw new Error("This wallet is not a member.");
+  const remaining = squad.members.filter((m) => !m.key.equals(removed));
+  const remainingVoters = remaining.filter((m) =>
+    holds(m, sqds.types.Permission.Vote),
+  ).length;
+  if (
+    !remainingVoters ||
+    !remaining.some((m) => holds(m, sqds.types.Permission.Initiate))
+  )
+    throw new Error(
+      "At least one remaining member must be able to propose and vote.",
+    );
+  if (!remaining.some((m) => holds(m, sqds.types.Permission.Execute)))
+    throw new Error("At least one remaining member must be able to execute.");
+  return {
+    remainingVoters,
+    newThreshold:
+      squad.threshold > remainingVoters ? remainingVoters : undefined,
+  };
+}
+export function buildMemberRemoval({
+  squad,
+  multisig,
+  member,
+  removed,
+  executor,
+}: {
+  squad: MemberList &
+    Pick<sqds.accounts.Multisig, "transactionIndex" | "configAuthority">;
+  multisig: PublicKey;
+  member: PublicKey;
+  removed: PublicKey;
+  executor?: PublicKey;
+}) {
+  const proposer = squad.members.find((m) => m.key.equals(member));
+  if (!proposer || !holds(proposer, sqds.types.Permission.Initiate))
+    throw new Error("Your wallet cannot propose configuration changes.");
+  if (!squad.configAuthority.equals(SystemProgram.programId))
+    throw new Error(
+      "Membership changes require the group's existing configuration authority.",
+    );
+  const { newThreshold } = planMemberRemoval(
+    squad,
+    removed,
+    executor?.toBase58(),
+  );
+  const index = BigInt(squad.transactionIndex.toString()) + 1n;
+  const actions: sqds.types.ConfigAction[] = [
+    // Lowered first so the threshold never exceeds the voters at any step.
+    ...(newThreshold === undefined
+      ? []
+      : [{ __kind: "ChangeThreshold" as const, newThreshold }]),
+    { __kind: "RemoveMember", oldMember: removed },
+  ];
+  return {
+    index,
+    newThreshold,
+    instructions: [
+      sqds.instructions.configTransactionCreate({
+        multisigPda: multisig,
+        transactionIndex: index,
+        creator: member,
+        rentPayer: member,
+        actions,
+      }),
+      sqds.instructions.proposalCreate({
+        multisigPda: multisig,
+        transactionIndex: index,
+        creator: member,
+        rentPayer: member,
+        isDraft: false,
+      }),
+    ],
+  };
 }
 
 // Display label for a member's on-chain Squads permission mask.
