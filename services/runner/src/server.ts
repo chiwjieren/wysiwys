@@ -4,6 +4,7 @@ import type { Listener } from "./listener";
 import type { CreRunner } from "./cre";
 import { SettlementError, toWire, type Settlement } from "./settlement";
 import type { Store } from "./store";
+import type { ModeSwitch, ReviewMode } from "./mode";
 
 type Deps = {
   programId: string;
@@ -17,6 +18,10 @@ type Deps = {
   review?: Pick<CreRunner, "run">;
   /** Bearer token for POST /review. Null with review present means fail closed (503). */
   reviewToken?: string | null;
+  /** Review path switch (live DON or simulator); shown on /status, switched by POST /admin/mode. */
+  reviewMode?: Pick<ModeSwitch, "mode" | "available" | "forwarder" | "set">;
+  /** Operator token for POST /admin/mode. Null with reviewMode present means fail closed (503). */
+  adminToken?: string | null;
   rateLimitPerMinute?: number;
   log?: (line: string) => void;
 };
@@ -122,9 +127,29 @@ export function createStatusServer(d: Deps): Server {
     return [result.ok ? 200 : 502, result];
   }
 
+  const pathInfo = () => d.reviewMode && { mode: d.reviewMode.mode, available: d.reviewMode.available, forwarder: d.reviewMode.forwarder };
+
+  async function adminModeRoute(req: IncomingMessage): Promise<[number, unknown]> {
+    if (!d.adminToken) throw new HttpError(503, "review path switching is not configured");
+    if (!tokenMatches(req.headers.authorization, d.adminToken)) throw new HttpError(401, "unauthorized");
+    if (!allow(req.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "too many requests");
+    const mode = String(((await readJson(req)) as Record<string, unknown>)?.mode ?? "") as ReviewMode;
+    try {
+      d.reviewMode!.set(mode);
+    } catch (e) {
+      throw new HttpError(400, e instanceof Error ? e.message : "invalid mode");
+    }
+    log(`[server] review path set to ${mode} by operator`);
+    return [200, pathInfo()];
+  }
+
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
+      if (url.pathname === "/admin/mode" && req.method === "POST" && d.reviewMode) {
+        const [status, body] = await adminModeRoute(req);
+        return send(res, status, body);
+      }
       if (url.pathname === "/review" && req.method === "POST" && d.review) {
         const [status, body] = await reviewRoute(req);
         return send(res, status, body);
@@ -136,7 +161,10 @@ export function createStatusServer(d: Deps): Server {
       if (req.method !== "GET") return send(res, 405, { error: "method not allowed" });
       if (url.pathname === "/status") {
         const h = d.health();
-        return send(res, h.ok ? 200 : 503, { ok: h.ok, programId: d.programId, listener: h, reviews: d.store.counts() });
+        return send(res, h.ok ? 200 : 503, {
+          ok: h.ok, programId: d.programId, listener: h, reviews: d.store.counts(),
+          ...(d.reviewMode ? { reviewPath: pathInfo() } : {}),
+        });
       }
       if (url.pathname === "/reviews") {
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50) || 50, 1), MAX_REVIEWS);
