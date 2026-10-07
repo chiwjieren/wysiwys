@@ -99,7 +99,9 @@ for (const scenario of [
   const creating = scenario === "create";
   const executing = scenario === "execute";
   const configExecuting = scenario === "config-execute";
-  const standard = creating || executing || configExecuting;
+  // Memo payments without a guard review are the standard (opt-in) flow; guarded proposals
+  // need the settlement runner, which these mocks do not provide.
+  const standard = creating || executing || configExecuting || proposing;
   test(
     scenario === "disconnect"
       ? "disconnect invalidates the account and allows reconnection without signing"
@@ -617,7 +619,8 @@ for (const scenario of [
           json: { jsonrpc: "2.0", id: request.id, result },
         });
       });
-      await page.goto("/");
+      // No treasury opens by default: open the mocked one through its invite link.
+      await page.goto(creating ? "/" : `/?group=${multisig.toBase58()}`);
       if (!creating) {
         await expect(page.getByText("2.5 SOL", { exact: true })).toBeVisible();
         await expect(
@@ -734,6 +737,14 @@ for (const scenario of [
         await expect(
           page.getByText(/Send 1.25 SOL from the treasury vault/),
         ).toBeVisible();
+        // The draft is decoded by @wysiwys/decoder; its JSON is under Technical details.
+        await page.getByText("Technical details", { exact: true }).click();
+        await expect(page.getByTestId("decoder-json")).toContainText(
+          '"kind": "system.transfer"',
+        );
+        await expect(page.getByTestId("decoder-json")).toContainText(
+          '"lamports": "1250000000"',
+        );
         await page.screenshot({ path: "test-results/payment-review.png" });
         await page
           .getByRole("button", { name: "Sign and propose payment" })
@@ -742,10 +753,18 @@ for (const scenario of [
         await expect(
           page.getByText(/Send 1.25 SOL from the treasury vault/).first(),
         ).toBeVisible();
+        // The stored proposal is decoded from its exact account bytes, with its tx_hash.
+        await page.getByText("Technical details", { exact: true }).click();
+        await expect(page.getByTestId("decoder-json")).toContainText(
+          '"status": "success"',
+        );
+        await expect(
+          page.getByText("Transaction hash (tx_hash)"),
+        ).toBeVisible();
         expect(submitted).toBeTruthy();
         expect(voted).toBeFalsy();
         await expect(
-          page.getByRole("button", { name: "Execute through guard" }),
+          page.getByRole("button", { name: "Execute payment" }),
         ).toBeDisabled();
         return;
       }
