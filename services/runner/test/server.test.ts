@@ -98,6 +98,13 @@ test("config enables the CRE gateway trigger only with a workflow id and a signi
   );
 });
 
+test("config reads both review paths' forwarders from deployments/devnet.json", () => {
+  const forwarders = { simulator: { program: "SimF", state: "SimS" }, live: { program: "LiveF", state: "LiveS" } };
+  const cfg = loadConfig({}, (p) => (p.endsWith("devnet.json") ? JSON.stringify({ programId: "P1", forwarders }) : null));
+  assert.deepEqual(cfg.forwarders, forwarders);
+  assert.equal(loadConfig({}, () => null).forwarders, null);
+});
+
 test("config falls back to the shared IDL address and public devnet RPC", () => {
   const cfg = loadConfig({}, () => null);
   assert.equal(cfg.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");

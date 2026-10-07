@@ -74,6 +74,33 @@ sudo -u wysiwys bash -c 'cd /opt/wysiwys/workflow/confidential-preflight && HOME
 
 Open `https://app.<host>/status`: wallet login, chain state, "Runner online", listener subscribed.
 
+## Review path: live DON (primary) or simulator (backup)
+
+Each treasury's GuardConfig fixes its path forever: live treasuries accept only reports from the deployed workflow through the production Keystone forwarder, simulator treasuries only `cre workflow simulate --broadcast` reports through the mock forwarder. Run **one runner at a time**: it skips reviews of the other path's treasuries (`deployments/devnet.json` `forwarders`), so they cost one GuardConfig read and no CRE run. New treasuries created in the app use `deployments/devnet.json` `guard` (the live values).
+
+| | Live (primary) | Simulator (backup) |
+|---|---|---|
+| `/opt/wysiwys/.env` | `CRE_WORKFLOW_ID=<deployed id>` and `CRE_GATEWAY_PRIVATE_KEY` set | comment both out (`CRE_PROJECT_DIR` stays) |
+| Runner log | `review path: only treasuries using forwarder CXsKE...`, `trigger: CRE gateway` | `review path: only treasuries using forwarder 7kuEAA...`, `trigger: cre simulate` |
+| Treasury to demo | one created in the app (live GuardConfig) | an existing simulator treasury |
+
+Switch (about a minute):
+
+```bash
+sudo -u wysiwys nano /opt/wysiwys/.env      # set or comment out CRE_WORKFLOW_ID and CRE_GATEWAY_PRIVATE_KEY
+sudo systemctl restart wysiwys-runner
+journalctl -u wysiwys-runner -n 20 --no-pager | grep -E "review path|trigger:"
+```
+
+Re-trigger a live review whose DON run failed (only while it is still pending and inside the 15-minute review deadline; after that, propose the payment again):
+
+```bash
+curl -s -X POST localhost:8787/review -H "authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
+  -d '{"multisig":"<multisig>","txIndex":"<n>"}' | jq '{ok, log}'    # ok true only once the decision is on chain
+```
+
+A redeploy of the live workflow changes its ID: update `CRE_WORKFLOW_ID` and restart. Re-running `scripts/bootstrap-devnet.ts` rewrites `guard` from the default (simulator) test treasury; restore the live values afterwards.
+
 ## SQLite
 
 `/var/lib/wysiwys/runner.db` (plus `-wal`), created on first start. History only: if it is lost, the runner rebuilds it from chain on the next start. It survives reboots; it is gone only if the instance and its volume are terminated.

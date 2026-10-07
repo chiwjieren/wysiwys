@@ -32,7 +32,7 @@ export type CreRunnerOptions = {
 
 const URL_RE = /\bhttps?:\/\/\S+/g;
 
-function validate(r: ReviewRequest): ReviewRequest {
+export function validate(r: ReviewRequest): ReviewRequest {
   try {
     const multisig = new PublicKey(r.multisig).toBase58();
     if (
