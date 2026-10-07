@@ -126,6 +126,8 @@ export function PaymentButton() {
               message,
             }),
             vault,
+            undefined,
+            config?.token,
           );
           if (!cancelled) {
             if (!result.supported) throw new Error(result.reason);
@@ -335,7 +337,7 @@ export function PaymentButton() {
               {decoded?.payments.map((payment, i) => (
                 <div key={i}>
                   <p className="mt-2 text-[32px] leading-10 font-semibold tracking-tight">
-                    Send {payment.amount} {assetLabel(config, payment.mint)}
+                    Send {payment.amount} {payment.symbol}
                   </p>
                   <p className="eyebrow mt-5">Recipient wallet</p>
                   <p className="mt-2 break-all rounded-lg border bg-background/60 p-3 font-mono text-xs leading-5">
@@ -343,7 +345,7 @@ export function PaymentButton() {
                   </p>
                   {payment.mint && (
                     <p className="caption mt-2 break-all">
-                      {`Mint ${payment.mint}. Paid into token account ${payment.destination}.`}
+                      {`Token address ${payment.mint}. Paid into the recipient's token account ${payment.destination}.`}
                     </p>
                   )}
                 </div>

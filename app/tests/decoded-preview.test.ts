@@ -258,11 +258,13 @@ const liveAccounts = () =>
     [destination.toBase58(), tokenAccount(mint, recipient)],
   ]);
 
-test("a token draft shows amount, mint and recipient from the decoded TransferChecked", async () => {
+test("a token draft shows amount, token and recipient from the decoded TransferChecked", async () => {
   const preview = await previewVaultTransaction(
     rpcWith(liveAccounts()),
     tokenDraft(),
     vault,
+    undefined,
+    { mint: mint.toBase58(), symbol: "mUSD" },
   );
   assert.equal(preview.supported, true, preview.reason);
   assert.deepEqual(preview.payments, [
@@ -271,17 +273,35 @@ test("a token draft shows amount, mint and recipient from the decoded TransferCh
       amount: "2.5",
       rawAmount: "2500000",
       decimals: 6,
+      symbol: "mUSD",
       mint: mint.toBase58(),
+      source: source.toBase58(),
       recipient: recipient.toBase58(),
       destination: destination.toBase58(),
     },
   ]);
-  for (const value of [
-    mint.toBase58(),
-    recipient.toBase58(),
-    destination.toBase58(),
-  ])
-    assert.ok(preview.lines[0].includes(value));
+  // Plain wording: a known token by symbol, never "mint" (nothing is minted).
+  assert.equal(
+    preview.lines[0],
+    `Send 2.5 mUSD from the treasury's token account ${source.toBase58()} to wallet ${recipient.toBase58()}, into their token account ${destination.toBase58()}.`,
+  );
+  assert.doesNotMatch(preview.lines.join(" "), /mint/i);
+});
+
+test("an unknown token is named by its token address", async () => {
+  const preview = await previewVaultTransaction(
+    rpcWith(liveAccounts()),
+    tokenDraft(),
+    vault,
+  );
+  assert.equal(preview.payments[0].symbol, "tokens");
+  assert.match(
+    preview.lines[0],
+    new RegExp(
+      `^Send 2\\.5 tokens \\(token address ${mint.toBase58()}\\) from`,
+    ),
+  );
+  assert.doesNotMatch(preview.lines.join(" "), /mint/i);
 });
 
 test("live token accounts must confirm the decoded payment", async () => {
@@ -364,7 +384,8 @@ test("a standard token payment that creates the recipient account is described i
     vault,
   );
   assert.equal(preview.supported, true, preview.reason);
-  assert.match(preview.lines[0], /^Create token account/);
+  assert.match(preview.lines[0], /^Create wallet \S+ token account/);
+  assert.doesNotMatch(preview.lines.join(" "), /mint/i);
   assert.equal(preview.payments[0].recipient, recipient.toBase58());
 });
 

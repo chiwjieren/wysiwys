@@ -517,6 +517,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           { address: record.transactionAddress, data: record.transactionData },
           vault,
           review?.txHash,
+          config!.token,
         );
         assertReviewedPreview(reviewed, preview);
       }
@@ -571,6 +572,8 @@ export function SquadProvider({ children }: { children: ReactNode }) {
               data: record.transactionData,
             },
             vault,
+            undefined,
+            config!.token,
           ),
         );
         const { instruction, lookupTableAccounts } =

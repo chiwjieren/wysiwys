@@ -157,6 +157,7 @@ export function LiveProposal({ id }: { id: string }) {
                 },
                 vault,
                 onChainReview?.txHash,
+                config.token,
               )
             : undefined;
         const change =
@@ -591,23 +592,27 @@ export function LiveProposal({ id }: { id: string }) {
                       </div>
                       <dl className="grid gap-4 sm:grid-cols-2">
                         <div>
-                          <dt className="caption">From</dt>
-                          <dd className="mt-1 break-all text-xs">
+                          <dt className="caption">
+                            {fields.tokenAddress
+                              ? "From treasury token account"
+                              : "From"}
+                          </dt>
+                          <dd className="mt-1 break-all font-mono text-xs">
                             {fields.source}
                           </dd>
                         </div>
-                        {fields.mint && (
+                        {fields.tokenAddress && (
                           <div>
-                            <dt className="caption">Token mint</dt>
+                            <dt className="caption">Token address</dt>
                             <dd className="mt-1 break-all font-mono text-xs">
-                              {fields.mint}
+                              {fields.tokenAddress}
                             </dd>
                           </div>
                         )}
                         {fields.destinationAccount && (
                           <div className="sm:col-span-2">
                             <dt className="caption">
-                              Destination token account
+                              Recipient&apos;s token account
                             </dt>
                             <dd className="mt-1 break-all font-mono text-xs">
                               {fields.destinationAccount}

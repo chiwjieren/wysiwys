@@ -30,7 +30,12 @@ export type DisplayPayment = {
   amount: string;
   rawAmount: string;
   decimals: number;
+  /** "SOL", the configured token's symbol, or "tokens" for any other token. */
+  symbol: string;
+  /** Token address (the SPL mint account); absent for SOL. */
   mint?: string;
+  /** Account debited: the vault for SOL, the treasury's token account for SPL. */
+  source: string;
   /** Recipient wallet: the SOL destination, or the destination token account's owner. */
   recipient: string;
   /** Account credited by the instruction (the wallet for SOL, the token account for SPL). */
@@ -66,11 +71,19 @@ function blocked(
   return { supported: false, lines, payments, reason };
 }
 
+// The deployment's token, named by its symbol in previews. Other tokens show their address.
+export type KnownToken = { mint: string; symbol: string };
+
 export function describeDecoded(
   result: DecodeResult,
   vault: PublicKey,
   tokens: TokenContext = { accounts: new Map(), mints: new Map() },
+  known?: KnownToken,
 ): PaymentPreview {
+  const symbol = (mint: string) =>
+    known?.mint === mint ? known.symbol : "tokens";
+  const named = (mint: string) =>
+    known?.mint === mint ? known.symbol : `token address ${mint}`;
   if (result.status === "unsupported") return blocked(UNSUPPORTED);
   if (result.status !== "success") return blocked(MALFORMED);
   if (!result.actions.length) return blocked(MALFORMED);
@@ -86,6 +99,8 @@ export function describeDecoded(
         amount,
         rawAmount: action.lamports,
         decimals: 9,
+        symbol: "SOL",
+        source: fromVault,
         recipient: action.destination,
         destination: action.destination,
       });
@@ -107,7 +122,7 @@ export function describeDecoded(
         mint: action.mint,
       });
       lines.push(
-        `Create token account ${action.associatedTokenAccount} for wallet ${action.walletOwner} and mint ${action.mint} if needed. Treasury SOL pays account rent.`,
+        `Create wallet ${action.walletOwner} token account ${action.associatedTokenAccount} for ${named(action.mint)} if needed. Treasury SOL pays account rent.`,
       );
     } else if (
       action.kind === "token.transferChecked" &&
@@ -153,12 +168,14 @@ export function describeDecoded(
         amount,
         rawAmount: action.amount,
         decimals: action.decimals,
+        symbol: symbol(action.mint),
         mint: action.mint,
+        source: action.sourceTokenAccount,
         recipient: owner,
         destination: action.destinationTokenAccount,
       });
       lines.push(
-        `Send ${amount} tokens (mint ${action.mint}) from token account ${action.sourceTokenAccount} to wallet ${owner} via token account ${action.destinationTokenAccount}.`,
+        `Send ${amount} ${known?.mint === action.mint ? known.symbol : `tokens (token address ${action.mint})`} from the treasury's token account ${action.sourceTokenAccount} to wallet ${owner}, into their token account ${action.destinationTokenAccount}.`,
       );
     } else
       return blocked(
@@ -220,6 +237,7 @@ export async function previewVaultTransaction(
   account: { address: PublicKey; data: Uint8Array },
   vault: PublicKey,
   expectedTxHash?: Uint8Array,
+  known?: KnownToken,
 ): Promise<PaymentPreview> {
   const decoded = decodeVaultTransaction(account.data);
   const hash = hex(txHash(account.address.toBytes(), account.data));
@@ -236,7 +254,12 @@ export async function previewVaultTransaction(
     );
   try {
     return bound(
-      describeDecoded(decoded, vault, await readTokenContext(rpc, decoded)),
+      describeDecoded(
+        decoded,
+        vault,
+        await readTokenContext(rpc, decoded),
+        known,
+      ),
     );
   } catch {
     return bound(
