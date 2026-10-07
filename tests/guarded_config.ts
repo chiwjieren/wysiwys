@@ -101,6 +101,31 @@ describe("guarded_config_execute", () => {
     expect((await getAccount(connection, desk.counterpartyAta)).amount - before).to.equal(usdc(3));
   });
 
+  it("changes a member's permissions in one proposal (remove, then re-add the same wallet)", async () => {
+    const target = desk.members[1].publicKey;
+    const index = await proposeConfig([
+      { __kind: "RemoveMember", oldMember: target },
+      { __kind: "AddMember", newMember: { key: target, permissions: Permissions.fromPermissions([Permission.Vote]) } },
+    ]);
+    await executeConfig(index);
+    expect((await members()).get(target.toBase58())).to.equal(Permission.Vote);
+  });
+
+  it("replaces a member's wallet in one proposal (add the new wallet, then remove the old one)", async () => {
+    const oldWallet = desk.members[2].publicKey;
+    const newWallet = Keypair.generate().publicKey;
+    const index = await proposeConfig([
+      { __kind: "AddMember", newMember: { key: newWallet, permissions: voter() } },
+      { __kind: "RemoveMember", oldMember: oldWallet },
+    ]);
+    await executeConfig(index);
+    const m = await members();
+    expect(m.has(oldWallet.toBase58())).to.equal(false);
+    expect(m.get(newWallet.toBase58())).to.equal(Permission.Initiate | Permission.Vote);
+    const ms = await multisig.accounts.Multisig.fromAccountAddress(connection, desk.multisigPda, "confirmed");
+    expect(ms.threshold).to.equal(3);
+  });
+
   it("sets the time lock", async () => {
     const index = await proposeConfig([{ __kind: "SetTimeLock", newTimeLock: 0 }]);
     await executeConfig(index);
