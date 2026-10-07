@@ -13,9 +13,11 @@ import {
 import { CopyButton } from "@/components/dialogs";
 import { useSquad } from "@/lib/squads/provider";
 import { useWalletConnection } from "@/lib/auth/provider";
+import { PublicKey } from "@solana/web3.js";
 import {
-  fixedMembershipReason,
   GUARDED_GROUP_MAX_INVITES,
+  membershipChangeNote,
+  planMemberRemoval,
   standardGroupsEnabled,
 } from "@/lib/squads/groups";
 
@@ -101,7 +103,8 @@ export function CreateGroupButton({
           </label>
           <p className="caption">
             Your wallet joins automatically. Up to {maxInvites} other wallets.
-            {!standard && " Members are fixed after creation."}
+            {!standard &&
+              " Member changes need the members' vote and are checked by the guard."}
           </p>
           <label className="block space-y-2">
             <span>Required approvals</span>
@@ -302,8 +305,9 @@ function InvitationForm() {
         Propose member invitation
       </Button>
       <p className="caption">
-        New members receive proposal and voting permissions. Invitations become
-        active after group approval and execution by an authorized executor.
+        {config.executor && config.executionMode !== "standard"
+          ? "New members can propose and vote, never execute. The invitation takes effect after the group approves it and it is executed through the guard."
+          : "New members receive proposal and voting permissions. Invitations become active after group approval and execution by an authorized executor."}
       </p>
     </div>
   );
@@ -311,16 +315,6 @@ function InvitationForm() {
 
 export function GroupInvite() {
   const { snapshot, config } = useSquad();
-  const fixed = fixedMembershipReason(config);
-  if (fixed)
-    return (
-      <div className="flex max-w-sm flex-col items-end gap-1 text-right">
-        <Button variant="secondary" disabled>
-          Invite member
-        </Button>
-        <p className="caption">{fixed}</p>
-      </div>
-    );
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -330,10 +324,82 @@ export function GroupInvite() {
       </DialogTrigger>
       <DialogContent className="bg-card">
         <DialogTitle>Invite a member</DialogTitle>
-        <DialogDescription>
-          Membership changes need your group’s approval.
-        </DialogDescription>
+        <DialogDescription>{membershipChangeNote(config)}</DialogDescription>
         <InvitationForm />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Proposes a RemoveMember config change. Never offered for the guard executor.
+export function RemoveMemberButton({ address }: { address: string }) {
+  const { config, snapshot, account, removeMember, busy, error } = useSquad();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  if (!snapshot || !config || address === config.executor) return null;
+  const squad = snapshot.squad;
+  const proposer = squad.members.find(
+    (m) => m.key.toBase58() === account?.address,
+  );
+  let plan: ReturnType<typeof planMemberRemoval> | undefined;
+  let problem = "";
+  try {
+    plan = planMemberRemoval(squad, new PublicKey(address), config.executor);
+  } catch (e) {
+    problem = e instanceof Error ? e.message : "This member cannot be removed.";
+  }
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!busy) setOpen(next);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          variant="secondary"
+          disabled={!proposer || !(proposer.permissions.mask & 1) || !!busy}
+        >
+          Remove
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-card">
+        <DialogTitle>Remove a member</DialogTitle>
+        <DialogDescription>{membershipChangeNote(config)}</DialogDescription>
+        <p className="break-all text-xs">{address}</p>
+        {problem ? (
+          <p role="alert" className="text-destructive">
+            {problem}
+          </p>
+        ) : plan?.newThreshold !== undefined ? (
+          <p>
+            Removing this member leaves {plan.remainingVoters} voters, so this
+            proposal also lowers required approvals from {squad.threshold} to{" "}
+            {plan.newThreshold}.
+          </p>
+        ) : (
+          <p>
+            Required approvals stay at {squad.threshold} of{" "}
+            {plan?.remainingVoters} voters.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          disabled={!!problem || !proposer || !!busy}
+          onClick={async () => {
+            const id = await removeMember(address);
+            if (id) {
+              setOpen(false);
+              router.push(`/transactions/${id}`);
+            }
+          }}
+        >
+          {busy || "Propose member removal"}
+        </Button>
       </DialogContent>
     </Dialog>
   );

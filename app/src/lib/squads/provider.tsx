@@ -12,7 +12,7 @@ import { useSearchParams } from "next/navigation";
 import {
   buildGroupCreation,
   buildMemberInvitation,
-  fixedMembershipReason,
+  buildMemberRemoval,
   validateInitializeGuard,
 } from "./groups";
 import { useWalletConnection } from "@/lib/auth/provider";
@@ -48,7 +48,12 @@ import {
   type WireInstruction,
 } from "./sdk";
 
-import { assertStandardExecution } from "./execution";
+import {
+  assertStandardExecution,
+  executionRoute,
+  guardedConfigGate,
+} from "./execution";
+import { describeConfigActions, GUARD_REFUSES } from "./config-actions";
 import { isGuarded, readReviews, type Review } from "./review";
 import { assertDevnet } from "./network";
 import {
@@ -83,6 +88,7 @@ type ContextValue = {
   ) => Promise<string | undefined>;
   openGroup: (address: string) => void;
   invite: (address: string) => Promise<string | undefined>;
+  removeMember: (address: string) => Promise<string | undefined>;
   snapshot?: Snapshot;
   error: string;
   busy: string;
@@ -403,7 +409,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
     return succeeded;
   }
   async function prepare(
-    action: "propose" | "execute",
+    action: "propose" | "execute" | "configExecute",
     index: bigint,
     member: PublicKey,
   ): Promise<{ guardInstruction: WireInstruction }> {
@@ -442,6 +448,17 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         throw new Error(
           "Batch approval is unavailable until every payment can be decoded.",
         );
+      if (
+        action === "approve" &&
+        record.kind === "config" &&
+        !describeConfigActions(
+          record.transaction.actions,
+          isGuarded(config) ? config!.executor : undefined,
+        ).supported
+      )
+        throw new Error(
+          "This settings change cannot be approved: it includes an action that cannot be executed.",
+        );
       if (action === "approve" && record.kind === "vault") {
         const vault = sqds.getVaultPda({
           multisigPda: new PublicKey(config!.multisig),
@@ -459,10 +476,12 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   }
   async function execute(index: bigint, reviewed?: readonly string[]) {
     await run("execute", async (rpc, key) => {
-      if (config!.executionMode === "standard") {
+      const record = await readProposal(rpc, config!, index);
+      if (!record) throw new Error("Proposal not found.");
+      const route = executionRoute(config!, record.kind);
+      const multisig = new PublicKey(config!.multisig);
+      if (route === "standard") {
         const squad = await readMultisig(rpc, config!);
-        const record = await readProposal(rpc, config!, index);
-        if (!record) throw new Error("Proposal not found.");
         assertStandardExecution(
           config!,
           squad,
@@ -471,14 +490,8 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           undefined,
           record.kind === "archived" ? "vault" : record.kind,
         );
-        const multisig = new PublicKey(config!.multisig);
         if (record.kind === "config") {
-          if (
-            !record.transaction.actions.length ||
-            record.transaction.actions.some(
-              (a) => a.__kind !== "ChangeThreshold" && a.__kind !== "AddMember",
-            )
-          )
+          if (!describeConfigActions(record.transaction.actions).supported)
             throw new Error("This settings change cannot be fully decoded.");
           return [
             sqds.instructions.configTransactionExecute({
@@ -515,21 +528,39 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           throw new Error("Lookup table payments are not yet supported.");
         return [instruction];
       }
-      if (!config!.settlementEnabled)
+      if (!config!.settlementEnabled || !config!.guardProgram)
         throw new Error("Guard settlement adapter is unavailable.");
-      const record = await readProposal(rpc, config!, index);
-      if (
-        !record ||
+      if (route === "configExecute") {
+        // Membership, threshold and time lock changes: no Chainlink review,
+        // guarded_config_execute checks every action on-chain.
+        if (record.kind !== "config" || !config!.executor)
+          throw new Error("Proposal is not executable.");
+        const gate = guardedConfigGate(
+          await readMultisig(rpc, config!),
+          record.proposal,
+        );
+        if (!gate.enabled) throw new Error(gate.reason);
+        const actions = describeConfigActions(
+          record.transaction.actions,
+          config!.executor,
+        );
+        if (!actions.supported)
+          throw new Error(
+            actions.refused
+              ? `${GUARD_REFUSES}.`
+              : "This settings change cannot be fully decoded.",
+          );
+      } else if (
         record.kind !== "vault" ||
         record.proposal.status.__kind !== "Approved" ||
         record.transaction.message.addressTableLookups.length
       )
         throw new Error("Proposal is not executable.");
-      const prepared = await prepare("execute", index, key);
+      const prepared = await prepare(route, index, key);
       return buildGuardedExecute(
         fromWire(prepared.guardInstruction),
-        new PublicKey(config!.guardProgram!),
-        new PublicKey(config!.multisig),
+        new PublicKey(config!.guardProgram),
+        multisig,
         index,
         key,
       );
@@ -706,10 +737,6 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   async function setThreshold(threshold: number) {
     let id: string | undefined;
     const success = await run("threshold", async (rpc, key) => {
-      if (fixedMembershipReason(config))
-        throw new Error(
-          "The threshold of a guarded treasury is fixed after creation.",
-        );
       const squad = await readMultisig(rpc, config!);
       const instructions = buildThresholdChange({
         squad,
@@ -914,8 +941,6 @@ export function SquadProvider({ children }: { children: ReactNode }) {
   async function invite(address: string) {
     let id: string | undefined;
     const success = await run("invite member", async (rpc, key) => {
-      const fixed = fixedMembershipReason(config);
-      if (fixed) throw new Error(fixed);
       const squad = await readMultisig(rpc, config!);
       const member = squad.members.find((m) => m.key.equals(key));
       if (
@@ -940,7 +965,31 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         creator: key,
         index,
         newMember,
+        executor: config!.executor
+          ? new PublicKey(config!.executor)
+          : undefined,
       });
+    });
+    if (success) {
+      setCursor(undefined);
+      return id;
+    }
+  }
+  async function removeMember(address: string) {
+    let id: string | undefined;
+    const success = await run("remove member", async (rpc, key) => {
+      const squad = await readMultisig(rpc, config!);
+      const removal = buildMemberRemoval({
+        squad,
+        multisig: new PublicKey(config!.multisig),
+        member: key,
+        removed: new PublicKey(address),
+        executor: config!.executor
+          ? new PublicKey(config!.executor)
+          : undefined,
+      });
+      id = removal.index.toString();
+      return removal.instructions;
     });
     if (success) {
       setCursor(undefined);
@@ -957,6 +1006,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         createGroup,
         openGroup,
         invite,
+        removeMember,
         snapshot,
         error,
         busy,

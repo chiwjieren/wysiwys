@@ -19,7 +19,12 @@ import { assetLabel, tokenAmount } from "@/lib/squads/payments";
 import { memberRole } from "@/lib/squads/groups";
 import { PublicKey } from "@solana/web3.js";
 import { figmaAssets } from "@/lib/figma-assets";
-import { CreateGroupButton, GroupManage, GroupInvite } from "./group-controls";
+import {
+  CreateGroupButton,
+  GroupManage,
+  GroupInvite,
+  RemoveMemberButton,
+} from "./group-controls";
 import { PaymentButton, ReceiveButton } from "./payment-dialog";
 import { ThresholdSettings } from "./account-actions";
 import { ProposalTable } from "./proposal-table";
@@ -349,9 +354,10 @@ export function SquadMembers() {
           <table className="data-table min-w-[620px]">
             <thead>
               <tr>
-                <th className="w-[35%]">Member</th>
-                <th className="w-[36%]">Wallet address</th>
+                <th className="w-[30%]">Member</th>
+                <th className="w-[32%]">Wallet address</th>
                 <th>Permissions</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -381,6 +387,9 @@ export function SquadMembers() {
                         config?.executor,
                       )}
                     </StatusBadge>
+                  </td>
+                  <td className="text-right">
+                    <RemoveMemberButton address={m.key.toBase58()} />
                   </td>
                 </tr>
               ))}
@@ -439,7 +448,11 @@ export function SquadMembers() {
         </div>
       </Panel>
       <p className="caption">
-        Inviting a member creates a proposal for your group to approve.
+        Inviting or removing a member creates a proposal for your group to
+        approve.
+        {config?.executor && config.executionMode !== "standard"
+          ? " Approved changes are executed through the guard, which accepts voters only and never a new executor."
+          : ""}
       </p>
     </div>
   );
