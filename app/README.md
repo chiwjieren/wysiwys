@@ -27,13 +27,18 @@ What happens:
 3. Your wallet signs **one transaction** with two instructions, also signed by the `createKey`: Squads `multisigCreateV2` (humans get Propose and Vote, the guard executor PDA is the sole Execute member, no config authority, no timelock) and `initialize_guard` (the immutable `GuardConfig`). Both land or neither does. Your wallet pays fees and rent.
 4. The app opens the new treasury; the groups route now finds it guarded through the runner (`GET /frontend/groups/:multisig`).
 
-**Members are fixed after creation.** Squads applies member and threshold changes through config transactions, which need a member with Execute. In a guarded treasury that is only the guard executor, and the guard only executes vault payments. Invite member and threshold changes are disabled for guarded treasuries; create a new treasury instead.
+**Membership changes.** Member changes need the members' vote and are checked by the guard. Squads applies member, threshold and time lock changes through config transactions, which need a member with Execute; in a guarded treasury that is only the guard executor, which applies them with `guarded_config_execute`.
+
+1. **Invite member** (Members page), **Remove** (per member row) or **Propose threshold change** (Settings) creates a Squads `configTransactionCreate` + `proposalCreate`, signed by a member with Initiate. New members always get Initiate + Vote, never Execute. The guard executor is never offered for removal. A removal that would leave fewer voters than the threshold also lowers the threshold to the remaining voter count in the same proposal, and the dialog says so.
+2. Members vote as for any proposal. The review screen decodes every config action (add or remove member, threshold, time lock). Any action the guard refuses (Execute permission, adding or removing the executor, spending limits, rent collector) is flagged "The guard will refuse this change" and cannot be approved or executed from the UI.
+3. Once the Squads proposal is Approved (current, time lock elapsed), **Execute through guard** asks `POST /api/squads/prepare` with action `configExecute`. The route forwards `{ multisig, txIndex, member }` to the runner's `POST /frontend/config-execute` and validates the returned instruction like `execute` (deployed guard program, the open group's multisig, config transaction and proposal accounts, the member as the only signer). The wallet signs it with a 400,000 compute unit limit. The member pays any rent when adding a member grows the multisig.
+4. No Chainlink review is involved. The guard checks every action on-chain (voters only, no spending limits) and that its executor remains the sole Execute member afterwards; Squads checks the approval, staleness and time lock. Executing a config change makes older pending proposals stale, as in any Squads multisig.
 
 **Funding.** Use **Receive** to deposit SOL or the treasury token (mUSD, 6 decimals) from any connected wallet. A token deposit creates the vault's associated token account idempotently (the depositor pays) and then sends a `TransferChecked`.
 
 **Policy.** The policy whitelist is not set per treasury in the UI. Every guarded treasury is initialized with the deployment's `policy_hash` (`deployments/devnet.json` `guard.policyHash`), so the same confidential policy and destination whitelist apply to every guarded treasury.
 
-Propose, request review, vote and guarded execute work for whichever guarded treasury is open: the prepare route takes the multisig from the wallet-signed request, resolves it to the deployment or a runner-reported group under the deployed guard program, and validates the runner's guard instruction against that group.
+Propose, request review, vote, guarded execute and membership changes work for whichever guarded treasury is open: the prepare route takes the multisig from the wallet-signed request, resolves it to the deployment or a runner-reported group under the deployed guard program, and validates the runner's guard instruction against that group.
 
 ## Standard Squads workflow
 
@@ -73,6 +78,7 @@ For guarded groups the app reads each proposal's guard `Review` account (PDA `["
 - Proposal screen: the on-chain review comes first (Pending review, Approved, Rejected, Executed, or Expired when an approval is past `expires_at`), with a plain-English reason and the expiry time. "No review requested" means no Review account exists. The local decoder card is labelled a preview and never overrides the on-chain verdict.
 - Transaction list: the Guard review column shows the same on-chain status next to the Squads proposal status.
 - Execute through guard is enabled only when the Squads proposal is Approved and the Review is Approved and unexpired; otherwise the button shows why. The guard enforces this on-chain regardless.
+- Config proposals (membership, threshold, time lock) have no Review account. They show "Guard check" with the decoded actions, and Execute through guard is enabled once the Squads proposal is Approved; see Membership changes above.
 - Status page: runner online/offline, listener subscription, last backfill and review counts from `GET /api/runner/status` (sanitized, 5 second timeout).
 - Dashboard: "Recent reviews" from `GET /api/runner/reviews?multisig=<open treasury>` (runner history filtered to that validated multisig, polled every 15 seconds). It is history; the on-chain review is authoritative.
 
