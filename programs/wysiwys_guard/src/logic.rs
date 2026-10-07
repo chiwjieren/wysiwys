@@ -52,6 +52,55 @@ pub fn tx_index_seed_from(data: &[u8]) -> [u8; 8] {
     data.get(72..80).map(|s| s.try_into().unwrap()).unwrap_or([0u8; 8])
 }
 
+pub struct ConfigTxHeader {
+    pub multisig: Pubkey,
+    pub index: u64,
+}
+
+/// Squads ConfigTransaction: discriminator, multisig (8..40), creator (40..72), index (72..80), bump, actions.
+pub fn parse_config_transaction(data: &[u8]) -> Result<ConfigTxHeader> {
+    require!(data.len() >= 85 && data[..8] == CONFIG_TRANSACTION_DISCRIMINATOR, GuardError::NotSquadsAccount);
+    Ok(ConfigTxHeader { multisig: read_pubkey(data, 8)?, index: read_u64(data, 72)? })
+}
+
+/// The only config changes the guard executes: add a voter (Initiate and/or Vote, never Execute, never
+/// the executor), remove a member other than the executor, change the threshold, set the time lock.
+/// Spending limits, rent collector and unknown actions could route funds or control around the guard.
+pub fn check_config_actions(data: &[u8], executor: &Pubkey) -> Result<()> {
+    parse_config_transaction(data)?;
+    let count = read_u32(data, 81)? as usize;
+    require!(count > 0, GuardError::ConfigActionNotAllowed);
+    let mut off = 85;
+    for _ in 0..count {
+        let tag = *data.get(off).ok_or_else(not_squads)?;
+        off += 1;
+        match tag {
+            CONFIG_ADD_MEMBER => {
+                let key = read_pubkey(data, off)?;
+                let mask = *data.get(off + 32).ok_or_else(not_squads)?;
+                require!(key != *executor, GuardError::ConfigActionNotAllowed);
+                require!(mask != 0 && mask & !(PERMISSION_INITIATE | PERMISSION_VOTE) == 0, GuardError::ConfigActionNotAllowed);
+                off += 33;
+            }
+            CONFIG_REMOVE_MEMBER => {
+                require!(read_pubkey(data, off)? != *executor, GuardError::ConfigActionNotAllowed);
+                off += 32;
+            }
+            CONFIG_CHANGE_THRESHOLD => {
+                require!(data.len() >= off + 2, GuardError::NotSquadsAccount);
+                off += 2;
+            }
+            CONFIG_SET_TIME_LOCK => {
+                require!(data.len() >= off + 4, GuardError::NotSquadsAccount);
+                off += 4;
+            }
+            _ => return err!(GuardError::ConfigActionNotAllowed),
+        }
+    }
+    require!(off == data.len(), GuardError::NotSquadsAccount);
+    Ok(())
+}
+
 pub struct ProposalHeader {
     pub multisig: Pubkey,
     pub transaction_index: u64,
@@ -748,6 +797,100 @@ mod tests {
         assert!(!is_advance_nonce(&system, &[2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])); // Transfer
         assert!(!is_advance_nonce(&key(5), &[4, 0, 0, 0]));
         assert!(!is_advance_nonce(&system, &[4]));
+    }
+
+    // Config transactions (guarded_config_execute)
+
+    fn config_tx_bytes(multisig: Pubkey, index: u64, actions: &[Vec<u8>]) -> Vec<u8> {
+        let mut d = CONFIG_TRANSACTION_DISCRIMINATOR.to_vec();
+        d.extend_from_slice(multisig.as_ref());
+        d.extend_from_slice(key(9).as_ref()); // creator
+        d.extend_from_slice(&index.to_le_bytes());
+        d.push(255); // bump
+        d.extend_from_slice(&(actions.len() as u32).to_le_bytes());
+        for a in actions {
+            d.extend_from_slice(a);
+        }
+        d
+    }
+    fn add_member(k: Pubkey, mask: u8) -> Vec<u8> {
+        let mut a = vec![0u8];
+        a.extend_from_slice(k.as_ref());
+        a.push(mask);
+        a
+    }
+    fn remove_member(k: Pubkey) -> Vec<u8> {
+        let mut a = vec![1u8];
+        a.extend_from_slice(k.as_ref());
+        a
+    }
+    fn change_threshold(t: u16) -> Vec<u8> {
+        let mut a = vec![2u8];
+        a.extend_from_slice(&t.to_le_bytes());
+        a
+    }
+    fn set_time_lock(t: u32) -> Vec<u8> {
+        let mut a = vec![3u8];
+        a.extend_from_slice(&t.to_le_bytes());
+        a
+    }
+
+    #[test]
+    fn parses_config_transaction_header() {
+        let h = parse_config_transaction(&config_tx_bytes(key(1), 7, &[change_threshold(2)])).unwrap();
+        assert_eq!(h.multisig, key(1));
+        assert_eq!(h.index, 7);
+    }
+
+    #[test]
+    fn vault_transaction_bytes_are_not_a_config_transaction() {
+        assert_eq!(code_of(parse_config_transaction(&vault_tx_bytes(key(1), 7))), code(GuardError::NotSquadsAccount));
+    }
+
+    #[test]
+    fn safe_member_and_threshold_changes_are_allowed() {
+        let d = config_tx_bytes(
+            key(1),
+            3,
+            &[add_member(key(20), HUMAN), add_member(key(21), 2), remove_member(key(22)), change_threshold(2), set_time_lock(0)],
+        );
+        check_config_actions(&d, &key(4)).unwrap();
+    }
+
+    #[test]
+    fn adding_a_member_with_execute_is_refused() {
+        let refused = code(GuardError::ConfigActionNotAllowed);
+        for mask in [PERMISSION_EXECUTE, HUMAN | PERMISSION_EXECUTE, 0u8, 8u8] {
+            assert_eq!(code_of(check_config_actions(&config_tx_bytes(key(1), 1, &[add_member(key(20), mask)]), &key(4))), refused, "mask {mask}");
+        }
+    }
+
+    #[test]
+    fn the_executor_cannot_be_added_or_removed() {
+        let refused = code(GuardError::ConfigActionNotAllowed);
+        assert_eq!(code_of(check_config_actions(&config_tx_bytes(key(1), 1, &[add_member(key(4), 2)]), &key(4))), refused);
+        assert_eq!(code_of(check_config_actions(&config_tx_bytes(key(1), 1, &[remove_member(key(4))]), &key(4))), refused);
+    }
+
+    #[test]
+    fn spending_limits_rent_collector_and_unknown_actions_are_refused() {
+        let refused = code(GuardError::ConfigActionNotAllowed);
+        // AddSpendingLimit (4), RemoveSpendingLimit (5), SetRentCollector (6), unknown (7): refused on the tag.
+        for tag in [4u8, 5, 6, 7] {
+            let mut a = vec![tag];
+            a.extend_from_slice(&[0u8; 64]);
+            assert_eq!(code_of(check_config_actions(&config_tx_bytes(key(1), 1, &[change_threshold(2), a]), &key(4))), refused, "tag {tag}");
+        }
+    }
+
+    #[test]
+    fn empty_or_truncated_action_lists_are_refused() {
+        assert_eq!(code_of(check_config_actions(&config_tx_bytes(key(1), 1, &[]), &key(4))), code(GuardError::ConfigActionNotAllowed));
+        let d = config_tx_bytes(key(1), 1, &[add_member(key(20), HUMAN)]);
+        assert_eq!(code_of(check_config_actions(&d[..d.len() - 1], &key(4))), code(GuardError::NotSquadsAccount));
+        let mut long = d.clone();
+        long.push(0);
+        assert_eq!(code_of(check_config_actions(&long, &key(4))), code(GuardError::NotSquadsAccount));
     }
 
     // Execution status

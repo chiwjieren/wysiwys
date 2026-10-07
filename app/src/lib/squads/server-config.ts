@@ -141,9 +141,20 @@ export async function loadDeployment(): Promise<{
         guardArgs: parseGuardArgs(raw),
       };
 }
+// Prepare actions and the runner settlement route each one calls.
+const RUNNER_PATHS = {
+  propose: "frontend/propose",
+  execute: "frontend/execute",
+  // guarded_config_execute for a voted Squads config transaction.
+  configExecute: "frontend/config-execute",
+} as const;
+export type PrepareAction = keyof typeof RUNNER_PATHS;
+export function runnerPath(action: PrepareAction) {
+  return RUNNER_PATHS[action];
+}
 export function isPrepareRequest(input: unknown): input is {
   multisig: string;
-  action: "propose" | "execute";
+  action: PrepareAction;
   index: string;
   member: unknown;
 } {
@@ -160,7 +171,8 @@ export function isPrepareRequest(input: unknown): input is {
     return false;
   }
   return (
-    (action === "propose" || action === "execute") &&
+    typeof action === "string" &&
+    Object.hasOwn(RUNNER_PATHS, action) &&
     typeof index === "string" &&
     /^\d{1,20}$/.test(index) &&
     BigInt(index) >= 1n &&

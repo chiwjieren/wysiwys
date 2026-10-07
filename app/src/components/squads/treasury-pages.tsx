@@ -17,9 +17,16 @@ import { useWalletConnection } from "@/lib/auth/provider";
 import { actionsForMember } from "@/lib/squads/sdk";
 import { assetLabel, tokenAmount } from "@/lib/squads/payments";
 import { memberRole } from "@/lib/squads/groups";
+import { memberDisplayName, useMemberNames } from "@/lib/squads/member-names";
 import { PublicKey } from "@solana/web3.js";
 import { figmaAssets } from "@/lib/figma-assets";
-import { CreateGroupButton, GroupManage, GroupInvite } from "./group-controls";
+import {
+  CreateGroupButton,
+  EditMemberButton,
+  GroupManage,
+  GroupInvite,
+  RemoveMemberButton,
+} from "./group-controls";
 import { PaymentButton, ReceiveButton } from "./payment-dialog";
 import { ThresholdSettings } from "./account-actions";
 import { ProposalTable } from "./proposal-table";
@@ -307,6 +314,7 @@ export function SquadTransactions() {
 }
 export function SquadMembers() {
   const { config, snapshot, account } = useSquad();
+  const { names } = useMemberNames(config?.multisig);
   const humans =
     snapshot?.squad.members.filter(
       (m) => m.key.toBase58() !== config?.executor,
@@ -349,41 +357,50 @@ export function SquadMembers() {
           <table className="data-table min-w-[620px]">
             <thead>
               <tr>
-                <th className="w-[35%]">Member</th>
-                <th className="w-[36%]">Wallet address</th>
+                <th className="w-[30%]">Member</th>
+                <th className="w-[32%]">Wallet address</th>
                 <th>Permissions</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {humans.map((m, i) => (
-                <tr className="h-20" key={m.key.toBase58()}>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <Avatar
-                        initials={m.key.toBase58().slice(0, 2)}
-                        size={40}
-                      />
-                      <span>
-                        {m.key.toBase58() === account?.address
-                          ? "Your wallet · You"
-                          : `Member ${i + 1}`}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <Explorer address={m.key.toBase58()} />
-                  </td>
-                  <td>
-                    <StatusBadge className="min-w-0">
-                      {memberRole(
-                        m.key.toBase58(),
-                        m.permissions.mask,
-                        config?.executor,
-                      )}
-                    </StatusBadge>
-                  </td>
-                </tr>
-              ))}
+              {humans.map((m, i) => {
+                const address = m.key.toBase58();
+                const label = memberDisplayName(
+                  address,
+                  i,
+                  names,
+                  account?.address,
+                );
+                return (
+                  <tr className="h-20" key={address}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar initials={address.slice(0, 2)} size={40} />
+                        <span>{label}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <Explorer address={m.key.toBase58()} />
+                    </td>
+                    <td>
+                      <StatusBadge className="min-w-0">
+                        {memberRole(
+                          m.key.toBase58(),
+                          m.permissions.mask,
+                          config?.executor,
+                        )}
+                      </StatusBadge>
+                    </td>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <EditMemberButton address={address} label={label} />
+                        <RemoveMemberButton address={address} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -439,7 +456,11 @@ export function SquadMembers() {
         </div>
       </Panel>
       <p className="caption">
-        Inviting a member creates a proposal for your group to approve.
+        Inviting or removing a member creates a proposal for your group to
+        approve.
+        {config?.executor && config.executionMode !== "standard"
+          ? " Approved changes are executed through the guard, which accepts voters only and never a new executor."
+          : ""}
       </p>
     </div>
   );

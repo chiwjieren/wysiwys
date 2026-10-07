@@ -11,15 +11,18 @@ const sources = [
 ].map((path) => ({ path, text: readFileSync(path, "utf8") }));
 
 describe("structure (security rules 2, 3, 8)", () => {
-  it("exposes exactly the four frozen instructions (no config update path)", () => {
+  it("exposes exactly the five instructions (no guard config update path)", () => {
     expect(idl.instructions.map((i: any) => i.name).sort()).to.deep.equal(
-      ["guarded_execute", "initialize_guard", "on_report", "request_review"],
+      ["guarded_config_execute", "guarded_execute", "initialize_guard", "on_report", "request_review"],
     );
   });
 
-  it("has exactly one invoke_signed, in guarded_execute", () => {
-    const hits = sources.flatMap((s) => (s.text.match(/invoke_signed\(/g) ?? []).map(() => s.path));
-    expect(hits).to.deep.equal([join(srcDir, "instructions", "guarded_execute.rs")]);
+  it("signs with the executor only in the two Squads execute handlers", () => {
+    const hits = sources.flatMap((s) => (s.text.match(/invoke_signed\(/g) ?? []).map(() => s.path)).sort();
+    expect(hits).to.deep.equal([
+      join(srcDir, "instructions", "guarded_config_execute.rs"),
+      join(srcDir, "instructions", "guarded_execute.rs"),
+    ]);
   });
 
   it("never uses init_if_needed", () => {

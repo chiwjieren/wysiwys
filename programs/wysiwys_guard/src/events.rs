@@ -25,3 +25,9 @@ pub struct Executed {
     pub multisig: Pubkey,
     pub tx_index: u64,
 }
+
+#[event]
+pub struct ConfigExecuted {
+    pub multisig: Pubkey,
+    pub tx_index: u64,
+}

@@ -36,3 +36,8 @@
 - Build 215,184 bytes (sha256 `ac32be4edcd8a3e31f47eca41dbffb3bf3c6fd94b16df1d0245dbda8a40d3de3`) at e098b24; fits the existing 216,960-byte ProgramData. Verified: the dumped program's first 215,184 bytes equal the build and the rest is zero padding.
 - Why: CRE caps the Solana raw report at 265 bytes (109 metadata + 32 account hash + 4 length + payload), so payload v1 (181) could not be delivered. v2 is 117 bytes with `destination_hash`. See `docs/specs/guard-cre-interface.md`.
 - `anchor test --validator legacy`: 70 passing before the upgrade.
+
+## Guard upgrade: guarded_config_execute (7 Oct)
+
+- In-place upgrade of `9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya` (additive: new instruction, no account layout change). Signature `3ZCvUu5bfBYzedxMmdYaY96cUyyZ3yPHpDNJDk3qDmNVgsgnBkqrwayYhxBuUWZweeoQFQWVTEeUcaaNgwhs9eVV`, slot 508302149. ProgramData extended to 233,008 bytes; dump byte-identical to the build (sha256 `97b176e7302760565275084ddd01b3ae36a3be751c31816de7b9938ca959da2e`).
+- Devnet check on treasury `26XYHwTdNnNN1mFZAu11LK3m68eY1SmA8HNVhb41gMc4`: voted AddMember (Initiate + Vote) executed through the guard (`3E4MnPWL…`), then voted RemoveMember (`5UEjjqji…`); the executor stayed the sole Execute member.

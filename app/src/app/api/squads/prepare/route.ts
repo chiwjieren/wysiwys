@@ -4,6 +4,7 @@ import {
   isPrepareRequest,
   loadConfig,
   rateLimit,
+  runnerPath,
 } from "@/lib/squads/server-config";
 import { fromWire, toWire, validateGuardInstruction } from "@/lib/squads/sdk";
 import { callRunner, fetchGuardedGroup } from "@/lib/squads/guard-groups";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       return unavailable();
     let prepared: { guardInstruction?: unknown };
     try {
-      prepared = (await callRunner(`frontend/${input.action}`, {
+      prepared = (await callRunner(runnerPath(input.action), {
         method: "POST",
         body: JSON.stringify({
           multisig: config.multisig,
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+    // Same checks for execute and configExecute: the guard program, the open
+    // group's multisig, transaction and proposal accounts, and the member as
+    // the only signer.
     const guardInstruction = validateGuardInstruction(
       fromWire(prepared.guardInstruction as never),
       new PublicKey(config.guardProgram),

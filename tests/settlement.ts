@@ -193,4 +193,34 @@ describe("runner settlement endpoints (instruction builders)", () => {
     const [ms] = multisig.getMultisigPda({ createKey: createKey.publicKey });
     await expectError(bare.prepareGuardedGroup({ multisig: ms.toBase58(), creator: Keypair.generate().publicKey.toBase58(), createKey: createKey.publicKey.toBase58() }), "not configured");
   });
+
+  it("guarded_config_execute from the runner adds a voter after the members vote", async () => {
+    const creator = desk.members[0];
+    const ms = await multisig.accounts.Multisig.fromAccountAddress(connection, desk.multisigPda, "confirmed");
+    const index = BigInt(ms.transactionIndex.toString()) + 1n;
+    const newcomer = Keypair.generate().publicKey;
+    const { Permission, Permissions } = multisig.types;
+    await sendWithFreshBlockhash(
+      connection,
+      [
+        multisig.instructions.configTransactionCreate({
+          multisigPda: desk.multisigPda, transactionIndex: index, creator: creator.publicKey, rentPayer: creator.publicKey,
+          actions: [{ __kind: "AddMember", newMember: { key: newcomer, permissions: Permissions.fromPermissions([Permission.Initiate, Permission.Vote]) } }],
+        }),
+        multisig.instructions.proposalCreate({ multisigPda: desk.multisigPda, transactionIndex: index, creator: creator.publicKey, rentPayer: creator.publicKey }),
+      ],
+      [creator],
+    );
+    await approve(connection, desk, index);
+    const ix = await settlement.guardedConfigExecute(ids(index));
+    expect(ix.keys.filter((k) => k.isSigner).map((k) => k.pubkey.toBase58())).to.deep.equal([creator.publicKey.toBase58()]);
+    await sendWithFreshBlockhash(connection, [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ix], [creator]);
+    const after = await multisig.accounts.Multisig.fromAccountAddress(connection, desk.multisigPda, "confirmed");
+    expect(after.members.some((m) => m.key.equals(newcomer))).to.equal(true);
+  });
+
+  it("guarded_config_execute is refused for a payment proposal", async () => {
+    const { txIndex } = await propose(payoutIxs(desk, desk.counterpartyAta, usdc(1)));
+    await expectError(settlement.guardedConfigExecute(ids(txIndex)), "not a config");
+  });
 });

@@ -131,6 +131,29 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
       .instruction();
   }
 
+  const CONFIG_TX_DISCRIMINATOR = Buffer.from([94, 8, 4, 35, 113, 139, 139, 112]);
+
+  /**
+   * guarded_config_execute for a voted Squads config transaction (membership, threshold, time lock).
+   * The guard checks every action on chain; the member pays any rent from resizing the multisig.
+   */
+  async function guardedConfigExecute(input: unknown): Promise<TransactionInstruction> {
+    const { multisig, txIndex, member } = parseIds(input);
+    await requireGuarded(multisig);
+    const { vaultTransaction: configTransaction, proposal } = squadsAccounts(multisig, txIndex);
+    const info = await connection.getAccountInfo(configTransaction, "confirmed");
+    if (!info || !info.owner.equals(sqds.PROGRAM_ID) || !info.data.subarray(0, 8).equals(CONFIG_TX_DISCRIMINATOR)) {
+      throw new SettlementError(409, "not a config transaction");
+    }
+    return program.methods
+      .guardedConfigExecute()
+      .accountsPartial({
+        config: configPda(multisig), multisig, proposal, configTransaction, executor: executorPda(multisig),
+        rentPayer: member, squadsProgram: sqds.PROGRAM_ID, instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+      })
+      .instruction();
+  }
+
   async function guardedGroup(multisig: string): Promise<GuardedGroup | null> {
     let ms: PublicKey;
     try {
@@ -189,7 +212,7 @@ export function createSettlement(o: { connection: Connection; programId: PublicK
     };
   }
 
-  return { requestReview, guardedExecute, destinationOf, guardedGroup, prepareGuardedGroup };
+  return { requestReview, guardedExecute, guardedConfigExecute, destinationOf, guardedGroup, prepareGuardedGroup };
 }
 
 export type Settlement = ReturnType<typeof createSettlement>;

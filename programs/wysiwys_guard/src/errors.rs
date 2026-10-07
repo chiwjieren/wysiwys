@@ -47,4 +47,6 @@ pub enum GuardError {
     ReviewDeadlinePassed,
     #[msg("Invalid guard configuration")]
     InvalidConfig,
+    #[msg("Config change not allowed: only adding or removing voters, threshold and time lock")]
+    ConfigActionNotAllowed,
 }

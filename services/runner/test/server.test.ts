@@ -140,6 +140,7 @@ function fakeSettlement(calls: string[]): Settlement {
       return ix;
     },
     destinationOf: async () => ({ kind: "spl", destination: "x" }),
+    guardedConfigExecute: async (input: any) => (calls.push(`config:${input.txIndex}`), ix),
     prepareGuardedGroup: async (input: any) => {
       calls.push(`prepareGroup:${input.multisig}`);
       if (input.multisig === "Exists") throw new SettlementError(409, "guard config already exists for this multisig");
@@ -224,6 +225,18 @@ test("POST /frontend/execute maps settlement errors to their status and hides in
     const boom = await s.post("/frontend/execute", { ...ids, txIndex: "8" });
     assert.equal(boom.status, 502);
     assert.doesNotMatch(await boom.text(), /api-key|secret/);
+  } finally {
+    s.close();
+  }
+});
+
+test("POST /frontend/config-execute returns the guarded_config_execute instruction", async () => {
+  const s = await serveSettlement("tok");
+  try {
+    const res = await s.post("/frontend/config-execute", ids);
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as any).guardInstruction.programId, "9wCcjb74o2cWcFx8GimQQMcR1nJay9X86v1JiyV9kwya");
+    assert.deepEqual(s.calls, ["config:3"]);
   } finally {
     s.close();
   }
