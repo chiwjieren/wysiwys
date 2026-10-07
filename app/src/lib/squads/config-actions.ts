@@ -16,6 +16,48 @@ export type ConfigActionLine = {
   reason?: string;
 };
 
+export const shortAddress = (address: string) =>
+  `${address.slice(0, 4)}…${address.slice(-4)}`;
+
+// Label for a member's permissions as offered in the Edit member dialog.
+export function permissionChoiceLabel(mask: number) {
+  if (mask === (INITIATE | VOTE)) return "Initiate + Vote";
+  if (mask === VOTE) return "Vote only";
+  if (mask === INITIATE) return "Initiate only";
+  const names = [
+    [INITIATE, "Initiate"],
+    [VOTE, "Vote"],
+    [EXECUTE, "Execute"],
+  ] as const;
+  const held = names.filter(([bit]) => mask & bit).map(([, name]) => name);
+  return held.length ? held.join(" + ") : "No permissions";
+}
+
+// One sentence for a member edit (built by buildMemberEdit): RemoveMember and
+// AddMember of the same wallet is a permission change; AddMember of one wallet
+// and RemoveMember of another is a wallet replacement. A threshold change may
+// accompany either and keeps its own line.
+function memberEditHeadline(actions: readonly sqds.types.ConfigAction[]) {
+  const members = actions.filter((a) => a.__kind !== "ChangeThreshold");
+  if (members.length !== 2) return undefined;
+  const add = members.find((a) => a.__kind === "AddMember");
+  const remove = members.find((a) => a.__kind === "RemoveMember");
+  if (add?.__kind !== "AddMember" || remove?.__kind !== "RemoveMember")
+    return undefined;
+  const added = add.newMember.key.toBase58();
+  const removed = remove.oldMember.toBase58();
+  const permissions = permissionChoiceLabel(add.newMember.permissions.mask);
+  return added === removed
+    ? {
+        text: `Change permissions of ${added} to ${permissions}.`,
+        label: "Change permissions",
+      }
+    : {
+        text: `Replace ${removed} with ${added} (${permissions}).`,
+        label: "Replace member",
+      };
+}
+
 function permissionText(mask: number) {
   const names = [
     [INITIATE, "propose"],
@@ -104,6 +146,18 @@ export function describeConfigActions(
       : { text, label, refused };
   });
   const refused = lines.some((line) => line.refused);
+  // A refused action is always listed on its own, never folded into a headline.
+  const headline = refused ? undefined : memberEditHeadline(actions);
+  const listLabel = headline
+    ? [
+        headline.label,
+        ...lines
+          .filter((_, i) => actions[i].__kind === "ChangeThreshold")
+          .map((l) => l.label),
+      ].join(", ")
+    : lines
+        .map((l) => (l.refused ? `${l.label} (guard refuses)` : l.label))
+        .join(", ");
   // Actions the app can decode and execute (directly, or through the guard).
   const executable = actions.every((a) =>
     ["AddMember", "RemoveMember", "ChangeThreshold", "SetTimeLock"].includes(
@@ -112,6 +166,10 @@ export function describeConfigActions(
   );
   return {
     lines,
+    // Plain-English summary of a member edit; every action stays in `lines`.
+    headline,
+    // Short description for the transaction list.
+    listLabel,
     refused,
     supported: actions.length > 0 && executable && !refused,
   };
