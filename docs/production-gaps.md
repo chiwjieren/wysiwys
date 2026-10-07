@@ -36,7 +36,7 @@ The invariant that holds today, even with every gap below: money moves only when
 | 16 | Payment types | One instruction per payment: SOL transfer or legacy SPL `TransferChecked` to an existing token account | No batches, ATA creation, Token-2022, lookup tables, swaps | Extend decoder, policy and guard binding per instruction type | Medium |
 | 17 | Limits | Per-payment cap only | Many small payments bypass a daily budget | On-chain cumulative counters updated atomically at execution | Medium |
 | 18 | Treasury size | Up to 11 humans per treasury (one-transaction creation, with compute budget instructions, fits 1232 bytes) | Large committees not supported | Two-step creation | Low |
-| 19 | Audit | Guard not audited; durable-nonce check looks at instruction 0 only | Undiscovered bugs | External audit; broaden instruction introspection | High |
+| 19 | Audit | Guard not audited. The durable-nonce check reads instruction 0 only, which matches the runtime: Solana honours a durable nonce only when `AdvanceNonceAccount` is the first instruction | Undiscovered bugs | External audit; internal security review before any mainnet use | High |
 | 20 | Dependency | Squads v4 is upgradable by the Squads team | External trust | Accept (audited, widely used) or pin a verified build | Low |
 
 ## Policy

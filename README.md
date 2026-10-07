@@ -47,7 +47,7 @@ Wysiwys is a hackathon build on Solana devnet. One invariant holds even with eve
 | DON consensus | Simulation runs a single node | Live DON; verify membership, fault bound and quorum |
 | Confidential execution | TEE simulated locally; no attestation | Confidential Workflows enrollment; verify attestation |
 | Upgrade authority | One deployer key can upgrade the guard | Squads multisig as upgrade authority; immutable after audit |
-| Audit | Guard not audited; durable-nonce check looks at instruction 0 only | External audit; broader instruction introspection |
+| Audit | Guard not audited (the instruction-0 durable-nonce check matches the runtime, which honours a nonce only as the first instruction) | External audit; internal security review first |
 | Recovery path | CRE or the runner down means nothing can execute (funds safe but stuck) | Timelocked recovery, e.g. a supermajority can execute after N days without a review |
 
 **Medium: product and operations**
