@@ -13,6 +13,7 @@ import {
   isPolicyMember,
   parsePolicyRequest,
   policyHashFromGuardConfig,
+  readPolicyChange,
 } from "@/lib/squads/policy";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     const stored = async (hash: string) => {
       try {
         return (
-          (await callRunner(`frontend/policies/${input.multisig}/${hash}`, {
+          (await callRunner(`frontend/policies/${hash}`, {
             method: "GET",
           })) as { document: unknown }
         ).document;
@@ -80,14 +81,33 @@ export async function POST(request: Request) {
         currentPolicyHash: current,
         document: await stored(current),
       });
-    if (input.action === "read")
-      return json({
-        hash: input.hash,
-        document: await stored(input.hash),
-        ...(input.base
-          ? { base: input.base, baseDocument: await stored(input.base) }
-          : {}),
+    if (input.action === "read") {
+      // Only documents named by this treasury's own policy change proposal, read from chain.
+      const [transaction] = sqds.getTransactionPda({
+        multisigPda: multisig,
+        index: BigInt(input.index),
       });
+      const vaultTx = await sqds.accounts.VaultTransaction.fromAccountAddress(
+        rpc,
+        transaction,
+        "finalized",
+      ).catch(() => null);
+      const change =
+        vaultTx && vaultTx.multisig.equals(multisig)
+          ? readPolicyChange(vaultTx.message, guard)
+          : null;
+      if (!change)
+        return json(
+          { error: "Not a policy change proposal of this treasury." },
+          404,
+        );
+      return json({
+        hash: change.newPolicyHash,
+        document: await stored(change.newPolicyHash),
+        base: change.expectedPolicyHash,
+        baseDocument: await stored(change.expectedPolicyHash),
+      });
+    }
     const result = (await callRunner("frontend/policies", {
       method: "POST",
       body: JSON.stringify({

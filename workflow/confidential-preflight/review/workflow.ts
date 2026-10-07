@@ -18,8 +18,8 @@ import {
 } from '@chainlink/cre-sdk'
 import { PublicKey } from '@solana/web3.js'
 import { z } from 'zod'
-import { ReviewReason, VERDICT, txHash } from '../../../packages/shared/src/index'
-import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, selectPolicy, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
+import { ReviewReason, VERDICT, canonicalJson, parsePolicy, policyHash, txHash } from '../../../packages/shared/src/index'
+import { base64ToBytes, buildPayload, decideDestination, parseGuardConfig, parseReview, planReview, findPolicy, SQUADS_PROGRAM, type AccountSnapshot, type Decision, type Policy } from './review-logic'
 import { normalizeSnapshot, selectQuorum, type SnapshotAccount } from './rpc-quorum'
 
 // Wysiwys review workflow. HTTP trigger with identifiers only -> 2-of-3 RPC reads of the Review, the
@@ -38,6 +38,8 @@ const commonConfig = {
 		maxSlotLag: z.number().int().nonnegative().max(128),
 		screening: z.boolean(),
 		execution: z.enum(['tee', 'don']).default('tee'),
+		/** Runner base URL serving policy documents by hash (GET /cre/policies/:hash); absent means secret only. */
+		policyStoreUrl: z.string().regex(/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i).optional(),
 		authorizedKeys: z.array(z.object({ type: z.literal('KEY_TYPE_ECDSA_EVM'), publicKey: z.string().regex(/^0x[0-9a-fA-F]{40}$/) }).strict()),
 }
 export const configSchema = z.union([
@@ -171,18 +173,64 @@ function screenWallet(runtime: TeeRuntime<Config> | NodeRuntime<Config>, apiKey:
 	return records.some((r) => r.isSanctioned === true) ? 'SANCTIONED' : 'NO_SANCTIONS_MATCH'
 }
 
+const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+
+/**
+ * The treasury's policy from the runner store, by the hash its GuardConfig names: canonical JSON of the
+ * document when it parses as Policy v1 and hashes to that value, else '' (POLICY_STALE upstream). The
+ * store can only withhold a document, never substitute one. A store outage throws (fail closed).
+ */
+function fetchPolicyDocument(runtime: TeeRuntime<Config> | NodeRuntime<Config>, url: string, token: string, hash: string, decoderVersion: string): string {
+	const response = new cre.capabilities.HTTPClient()
+		.sendRequest(runtime, {
+			url: `${url}/cre/policies/${hash}`,
+			method: 'GET',
+			timeout: '5s',
+			multiHeaders: { authorization: { values: [`Bearer ${token}`] } },
+			cacheSettings: { store: false },
+		})
+		.result()
+	if (response.statusCode === 404) return ''
+	if (response.statusCode !== 200) throw new Error(`POLICY_STORE_UNAVAILABLE (HTTP ${response.statusCode})`)
+	try {
+		const doc = parsePolicy((JSON.parse(new TextDecoder().decode(response.body)) as { document?: unknown }).document)
+		return hex(policyHash(doc as unknown as Record<string, unknown>, decoderVersion)) === hash ? canonicalJson(doc) : ''
+	} catch {
+		return ''
+	}
+}
+
 /** Confidential execution: the policy and the screening call stay inside the enclave. */
 export function onReview(runtime: TeeRuntime<Config>, payload: HTTPPayload): string {
-	return runReview(runtime, runtime.usingTheDons(), payload, (wallet) =>
-		screenWallet(runtime, runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value, wallet))
+	const config = configSchema.parse(runtime.config)
+	return runReview(
+		runtime,
+		runtime.usingTheDons(),
+		payload,
+		(wallet) => screenWallet(runtime, runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value, wallet),
+		(hash) => fetchPolicyDocument(runtime, config.policyStoreUrl!, runtime.getSecret({ id: 'POLICY_STORE_TOKEN' }).result().value, hash, config.decoderVersion),
+	)
 }
 
 /** DON execution: same review; screening runs on every node and needs identical answers. */
 export function onReviewDon(runtime: Runtime<Config>, payload: HTTPPayload): string {
-	return runReview(runtime, runtime, payload, (wallet) => {
-		const apiKey = runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value
-		return runtime.runInNodeMode(screenWallet, consensusIdenticalAggregation<ScreeningResult>())(apiKey, wallet).result()
-	})
+	const config = configSchema.parse(runtime.config)
+	return runReview(
+		runtime,
+		runtime,
+		payload,
+		(wallet) => {
+			const apiKey = runtime.getSecret({ id: 'SCORECHAIN_SANCTIONS_API_KEY' }).result().value
+			return runtime.runInNodeMode(screenWallet, consensusIdenticalAggregation<ScreeningResult>())(apiKey, wallet).result()
+		},
+		// Every node fetches and verifies; the nodes must agree on the same canonical document.
+		(hash) => {
+			const token = runtime.getSecret({ id: 'POLICY_STORE_TOKEN' }).result().value
+			return runtime
+				.runInNodeMode(fetchPolicyDocument, consensusIdenticalAggregation<string>())(config.policyStoreUrl!, token, hash, config.decoderVersion)
+				.result()
+		},
+	)
 }
 
 type ReviewHost = Pick<Runtime<Config>, 'config' | 'getSecret' | 'log'>
@@ -196,7 +244,13 @@ function parseSecretJson(secret: string): unknown {
 	}
 }
 
-function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPayload, screen: (wallet: string) => ScreeningResult): string {
+function runReview(
+	runtime: ReviewHost,
+	don: Runtime<Config>,
+	payload: HTTPPayload,
+	screen: (wallet: string) => ScreeningResult,
+	fetchPolicy: (hash: string) => string,
+): string {
 	const config = configSchema.parse(runtime.config)
 	const req = requestSchema.parse(JSON.parse(new TextDecoder().decode(payload.input)))
 	const txIndex = BigInt(req.txIndex)
@@ -223,7 +277,13 @@ function runReview(runtime: ReviewHost, don: Runtime<Config>, payload: HTTPPaylo
 	}
 
 	// Private policy (decrypted inside the enclave in TEE execution): the registry entry the guard committed to.
-	const policy = selectPolicy(parseSecretJson(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value), guard.policyHash, config.decoderVersion)
+	let policy = findPolicy(parseSecretJson(runtime.getSecret({ id: 'POLICY_DOCUMENT' }).result().value), guard.policyHash, config.decoderVersion)
+	if (!policy && config.policyStoreUrl) {
+		// Not in the secret: fetch the document the treasury committed to (a voted change) and verify it.
+		const fetched = fetchPolicy(hex(guard.policyHash))
+		if (fetched) policy = parsePolicy(JSON.parse(fetched))
+	}
+	if (!policy) throw new Error('POLICY_STALE: no policy document matches the guard config')
 
 	let decision: Decision
 	const recomputed = txHash(new PublicKey(vaultTxPda).toBytes(), vaultTxAcc.data)

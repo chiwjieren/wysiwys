@@ -25,6 +25,8 @@ export type RunnerConfig = {
   gateway: { url: string; workflowId: string; privateKey: string } | null;
   /** Operator token for POST /admin/mode (switch between the live DON and the simulator). */
   adminToken: string | null;
+  /** Token the CRE workflow uses to fetch policy documents by hash (GET /cre/policies/:hash). */
+  policyFetchToken: string | null;
   /** Bearer token for POST /review. */
   reviewToken: string | null;
   /** GuardConfig values for treasuries created in the app (deployments/devnet.json `guard`). */
@@ -81,6 +83,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
         : null,
     reviewToken: env.REVIEW_TOKEN || null,
     adminToken: env.ADMIN_TOKEN || null,
+    policyFetchToken: env.POLICY_FETCH_TOKEN || null,
     guardSetup: dep.guard ?? null,
     forwarders: dep.forwarders ?? null,
     token: dep.mint && dep.token ? { mint: dep.mint, symbol: dep.token.symbol, decimals: dep.token.decimals } : null,

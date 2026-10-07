@@ -10,5 +10,6 @@
   "maxSlotLag": 32,
   "computeLimit": 200000,
   "screening": true,
+  "policyStoreUrl": "https://runner.13-250-78-41.sslip.io",
   "authorizedKeys": [{ "type": "KEY_TYPE_ECDSA_EVM", "publicKey": "0xD6Bbf377d9ce95975a78b84656548B255d816325" }]
 }

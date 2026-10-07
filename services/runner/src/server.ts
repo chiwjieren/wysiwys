@@ -10,7 +10,7 @@ import { parsePolicy, PolicyFormatError, policyHash } from "@wysiwys/shared";
 import decoderPkg from "../../../packages/decoder/package.json" with { type: "json" };
 
 /** Policy hashes commit to the decoder version (same string as scripts/policy-hash.ts and the workflow). */
-const DECODER_VERSION = `${decoderPkg.name}@${decoderPkg.version}`;
+export const DECODER_VERSION = `${decoderPkg.name}@${decoderPkg.version}`;
 
 type Deps = {
   programId: string;
@@ -28,6 +28,8 @@ type Deps = {
   reviewMode?: Pick<ModeSwitch, "mode" | "available" | "forwarder" | "set">;
   /** Operator token for POST /admin/mode. Null with reviewMode present means fail closed (503). */
   adminToken?: string | null;
+  /** Token the CRE workflow sends to GET /cre/policies/:hash. Null means fail closed (503). */
+  policyFetchToken?: string | null;
   rateLimitPerMinute?: number;
   log?: (line: string) => void;
 };
@@ -121,7 +123,7 @@ export function createStatusServer(d: Deps): Server {
       d.store.putPolicy({ hash, multisig, document: JSON.stringify(doc), createdAt: now });
       return [200, { hash, currentPolicyHash: current, currentVersionKnown: true, current: true }];
     }
-    const currentDoc = d.store.getPolicy(multisig, current);
+    const currentDoc = d.store.getPolicyDocument(current);
     const currentVersion = currentDoc ? (JSON.parse(currentDoc) as { version: number }).version : null;
     if (currentVersion !== null && doc.version <= currentVersion) {
       throw new HttpError(409, `version must be greater than ${currentVersion}`);
@@ -130,17 +132,28 @@ export function createStatusServer(d: Deps): Server {
     return [200, { hash, currentPolicyHash: current, currentVersionKnown: currentVersion !== null, current: false }];
   }
 
+  function policyDocument(hash: string): [number, unknown] {
+    const document = d.store.getPolicyDocument(hash);
+    return document ? [200, { document: JSON.parse(document) }] : [404, { error: "unknown policy document" }];
+  }
+
+  /** The CRE workflow fetches a policy by the hash the treasury's GuardConfig names, and checks the hash itself. */
+  function crePolicyRoute(req: IncomingMessage, hash: string): [number, unknown] {
+    if (!d.policyFetchToken) throw new HttpError(503, "policy fetch is not configured");
+    if (!tokenMatches(req.headers.authorization, d.policyFetchToken)) throw new HttpError(401, "unauthorized");
+    if (!allow(req.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "too many requests");
+    return policyDocument(hash);
+  }
+
   async function settlementRoute(req: IncomingMessage, url: URL): Promise<[number, unknown]> {
     const s = d.settlement!;
     if (!d.settlementToken) throw new HttpError(503, "settlement is not configured");
     if (!tokenMatches(req.headers.authorization, d.settlementToken)) throw new HttpError(401, "unauthorized");
     if (!allow(req.socket.remoteAddress ?? "unknown")) throw new HttpError(429, "too many requests");
 
-    const policy = url.pathname.match(/^\/frontend\/policies\/([^/]+)\/([0-9a-f]{64})$/);
-    if (req.method === "GET" && policy) {
-      const document = d.store.getPolicy(decodeURIComponent(policy[1]!), policy[2]!);
-      return document ? [200, { document: JSON.parse(document) }] : [404, { error: "unknown policy document" }];
-    }
+    // Content-addressed read; the app checks membership and which hashes the treasury may read.
+    const policy = url.pathname.match(/^\/frontend\/policies\/([0-9a-f]{64})$/);
+    if (req.method === "GET" && policy) return policyDocument(policy[1]!);
     if (req.method === "POST" && url.pathname === "/frontend/policies") return storePolicy(await readJson(req));
     if (req.method === "POST" && url.pathname === "/frontend/policy-apply") {
       return [200, { guardInstruction: toWire(await s.applyPolicyChange(await readJson(req))) }];
@@ -199,6 +212,11 @@ export function createStatusServer(d: Deps): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
+      const crePolicy = url.pathname.match(/^\/cre\/policies\/([0-9a-f]{64})$/);
+      if (crePolicy && req.method === "GET") {
+        const [status, body] = crePolicyRoute(req, crePolicy[1]!);
+        return send(res, status, body);
+      }
       if (url.pathname === "/admin/mode" && req.method === "POST" && d.reviewMode) {
         const [status, body] = await adminModeRoute(req);
         return send(res, status, body);

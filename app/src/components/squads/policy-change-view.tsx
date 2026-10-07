@@ -78,8 +78,8 @@ export function PolicyApplyPanel(p: {
       </Button>
       <p className="caption">{p.step.detail}</p>
       <p className="caption">
-        The Chainlink workflow must have the new policy document before payments
-        are reviewed under it; the operator uploads it to the workflow secrets.
+        Reviews switch to the new policy as soon as it is applied: the Chainlink
+        workflow fetches it by the hash the guard now holds.
       </p>
     </Panel>
   );

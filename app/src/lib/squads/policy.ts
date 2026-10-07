@@ -252,10 +252,13 @@ export function policyProgress(o: {
 
 export type PolicyRequest =
   | { action: "current"; multisig: string }
-  | { action: "read"; multisig: string; hash: string; base?: string }
+  | { action: "read"; multisig: string; index: string }
   | { action: "submit"; multisig: string; document: PolicyV1 };
 
-/** Body of POST /api/policy (wallet-signed): the treasury's current policy, a stored document, or a submission. */
+/**
+ * Body of POST /api/policy (wallet-signed): the treasury's current policy, the two documents of one of its
+ * policy change proposals (by index; the server reads the hashes from the marker on chain), or a submission.
+ */
 export function parsePolicyRequest(input: unknown): PolicyRequest {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Invalid policy request.");
@@ -265,17 +268,15 @@ export function parsePolicyRequest(input: unknown): PolicyRequest {
   const keys = Object.keys(o).sort().join(",");
   if (o.action === "current" && keys === "action,multisig")
     return { action: "current", multisig };
-  const isHash = (v: unknown): v is string =>
-    typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
-  if (o.action === "read" && keys === "action,hash,multisig" && isHash(o.hash))
-    return { action: "read", multisig, hash: o.hash };
   if (
     o.action === "read" &&
-    keys === "action,base,hash,multisig" &&
-    isHash(o.hash) &&
-    isHash(o.base)
+    keys === "action,index,multisig" &&
+    typeof o.index === "string" &&
+    /^\d{1,20}$/.test(o.index) &&
+    BigInt(o.index) >= 1n &&
+    BigInt(o.index) <= 18446744073709551615n
   )
-    return { action: "read", multisig, hash: o.hash, base: o.base };
+    return { action: "read", multisig, index: o.index };
   if (o.action === "submit" && keys === "action,document,multisig")
     return { action: "submit", multisig, document: parsePolicy(o.document) };
   throw new Error("Invalid policy request.");
