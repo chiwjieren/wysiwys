@@ -21,6 +21,8 @@ export type RunnerConfig = {
   backfillIntervalMs: number;
   /** CRE review simulation; null unless CRE_PROJECT_DIR is set. */
   cre: { command: string[]; projectDir: string; workflow: string; target: string; broadcast: boolean; timeoutMs: number } | null;
+  /** Deployed workflow on a live DON, triggered through the CRE gateway; null unless CRE_WORKFLOW_ID and its key are set. */
+  gateway: { url: string; workflowId: string; privateKey: string } | null;
   /** Bearer token for POST /review. */
   reviewToken: string | null;
   /** GuardConfig values for treasuries created in the app (deployments/devnet.json `guard`). */
@@ -65,6 +67,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read: (path: st
           timeoutMs: Number(env.CRE_TIMEOUT_MS || 300_000),
         }
       : null,
+    gateway:
+      env.CRE_WORKFLOW_ID && env.CRE_GATEWAY_PRIVATE_KEY
+        ? {
+            url: env.CRE_GATEWAY_URL || "https://01.gateway.zone-a.cre.chain.link",
+            workflowId: env.CRE_WORKFLOW_ID,
+            privateKey: env.CRE_GATEWAY_PRIVATE_KEY,
+          }
+        : null,
     reviewToken: env.REVIEW_TOKEN || null,
     guardSetup: dep.guard ?? null,
     token: dep.mint && dep.token ? { mint: dep.mint, symbol: dep.token.symbol, decimals: dep.token.decimals } : null,
