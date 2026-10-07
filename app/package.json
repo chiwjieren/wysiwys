@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm --prefix ../packages/decoder run build",
+    "prebuild": "npm --prefix ../packages/decoder run build",
+    "pretest": "npm --prefix ../packages/decoder run build",
+    "pretypecheck": "npm --prefix ../packages/decoder run build",
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
@@ -14,6 +18,8 @@
     "format:check": "prettier --check src tests *.json *.ts *.mjs docs README.md"
   },
   "dependencies": {
+    "@wysiwys/decoder": "file:../packages/decoder",
+    "@wysiwys/shared": "file:../packages/shared",
     "@fontsource-variable/inter": "^5.2.8",
     "@solana-program/memo": "^0.10.0",
     "@solana-program/system": "^0.10.0",

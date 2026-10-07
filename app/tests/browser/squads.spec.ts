@@ -8,6 +8,7 @@ const {
   VersionedTransaction,
   SystemProgram,
   TransactionMessage,
+  ComputeBudgetProgram,
 } = require("@solana/web3.js") as typeof import("@solana/web3.js");
 const sqds = require("@sqds/multisig") as typeof import("@sqds/multisig");
 
@@ -83,6 +84,52 @@ const accountInfo = (data: Buffer) => ({
   rentEpoch: 0,
 });
 
+test("first visit stays empty even when a funded deployment is configured", async ({
+  page,
+}) => {
+  let treasuryReads = 0;
+  await page.route("**/api/squads/config", (route) =>
+    route.fulfill({
+      json: {
+        config: {
+          multisig: multisig.toBase58(),
+          guardProgram: guard.toBase58(),
+          executor: executor.toBase58(),
+          vaultIndex: 0,
+          settlementEnabled: false,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/squads/rpc", (route) => {
+    treasuryReads++;
+    return route.fulfill({ json: { error: "No treasury should be read" } });
+  });
+  const configLoaded = page.waitForResponse("**/api/squads/config");
+  await page.goto("/");
+  await configLoaded;
+  await expect(
+    page.getByText("No treasury selected", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open group", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create treasury", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Your treasury assets belong here", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No activity yet", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(`a[href*="${multisig.toBase58()}"]`)).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+  expect(treasuryReads).toBe(0);
+});
+
 for (const scenario of [
   "vote",
   "disconnect",
@@ -99,7 +146,7 @@ for (const scenario of [
   const creating = scenario === "create";
   const executing = scenario === "execute";
   const configExecuting = scenario === "config-execute";
-  const standard = creating || executing || configExecuting;
+  const standard = creating || executing || configExecuting || proposing;
   test(
     scenario === "disconnect"
       ? "disconnect invalidates the account and allows reconnection without signing"
@@ -291,11 +338,14 @@ for (const scenario of [
                       member: signer.publicKey,
                     }),
                   ];
+          expected.unshift(
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
+          );
           expect(tx.message.compiledInstructions.length).toBe(expected.length);
           tx.message.compiledInstructions.forEach((ix, i) => {
             expect(
               tx.message.staticAccountKeys[ix.programIdIndex].equals(
-                sqds.PROGRAM_ID,
+                expected[i].programId,
               ),
             ).toBeTruthy();
             expect(Array.from(ix.data)).toEqual(Array.from(expected[i].data));
@@ -617,7 +667,16 @@ for (const scenario of [
           json: { jsonrpc: "2.0", id: request.id, result },
         });
       });
-      await page.goto("/");
+      if (scenario === "vote") {
+        await page.addInitScript((address) => {
+          localStorage.setItem("wysiwys.activeGroup", address);
+        }, multisig.toBase58());
+      }
+      await page.goto(
+        creating || scenario === "vote"
+          ? "/"
+          : `/?group=${multisig.toBase58()}`,
+      );
       if (!creating) {
         await expect(page.getByText("2.5 SOL", { exact: true })).toBeVisible();
         await expect(
@@ -687,12 +746,13 @@ for (const scenario of [
       }
       if (creating) {
         await page
-          .getByRole("button", { name: "Create group", exact: true })
+          .getByRole("button", { name: "Create treasury", exact: true })
           .click();
-        await page.getByLabel("Group name").fill("Design team");
+        await page.getByLabel("Treasury name").fill("Design team");
         await page
-          .getByLabel("Member wallet addresses")
+          .getByLabel("Wallet address 1", { exact: true })
           .fill(otherMember.toBase58());
+        await page.getByLabel("Standard group (no guard)").check();
         await page.getByLabel("Required approvals").fill("2");
         await page
           .getByRole("button", { name: "Create group on devnet", exact: true })
@@ -711,7 +771,10 @@ for (const scenario of [
           .first()
           .click();
         await expect(
-          page.getByRole("cell", { name: "Propose Vote Execute", exact: true }),
+          page.getByRole("cell", {
+            name: "Initiate + Vote + Execute",
+            exact: true,
+          }),
         ).toBeVisible();
         await page.screenshot({
           path: "test-results/created-group-members.png",
@@ -745,7 +808,7 @@ for (const scenario of [
         expect(submitted).toBeTruthy();
         expect(voted).toBeFalsy();
         await expect(
-          page.getByRole("button", { name: "Execute through guard" }),
+          page.getByRole("button", { name: "Execute payment" }),
         ).toBeDisabled();
         return;
       }
@@ -785,6 +848,16 @@ for (const scenario of [
       await expect(
         page.getByText(/Send 0.1 SOL from the treasury vault/).first(),
       ).toBeVisible();
+      await page.getByText("Technical details", { exact: true }).click();
+      const decoderJson = JSON.parse(
+        await page.locator("details pre").innerText(),
+      );
+      expect(decoderJson.status).toBe("success");
+      expect(decoderJson.actions[0]).toMatchObject({
+        kind: "system.transfer",
+        lamports: "100000000",
+        destination: signer.publicKey.toBase58(),
+      });
       await expect(
         page.getByRole("button", { name: "Approve proposal", exact: true }),
       ).toBeEnabled();

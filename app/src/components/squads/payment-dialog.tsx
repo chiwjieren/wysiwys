@@ -109,6 +109,14 @@ export function PaymentButton() {
           const result = await readPaymentPreview(
             rpc,
             {
+              numSigners: compiled.header.numRequiredSignatures,
+              numWritableSigners:
+                compiled.header.numRequiredSignatures -
+                compiled.header.numReadonlySignedAccounts,
+              numWritableNonSigners:
+                compiled.staticAccountKeys.length -
+                compiled.header.numRequiredSignatures -
+                compiled.header.numReadonlyUnsignedAccounts,
               accountKeys: compiled.staticAccountKeys,
               instructions: compiled.compiledInstructions.map((ix) => ({
                 programIdIndex: ix.programIdIndex,

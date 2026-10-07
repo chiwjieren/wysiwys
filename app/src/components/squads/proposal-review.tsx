@@ -62,14 +62,6 @@ export function LiveProposal({ id }: { id: string }) {
           "finalized",
         );
         const result = await readProposal(rpc, config, BigInt(id));
-        const preview =
-          result?.kind === "vault" && snapshot
-            ? await readPaymentPreview(
-                rpc,
-                result.transaction.message,
-                snapshot.vault,
-              )
-            : undefined;
         let onChainReview: Review | null | undefined;
         if (isGuarded(config))
           try {
@@ -84,6 +76,18 @@ export function LiveProposal({ id }: { id: string }) {
           } catch {
             onChainReview = undefined;
           }
+        const preview =
+          result?.kind === "vault" && snapshot
+            ? await readPaymentPreview(
+                rpc,
+                result.transaction.message,
+                snapshot.vault,
+                {
+                  ...result.stored,
+                  hash: onChainReview?.txHash ?? result.stored.hash,
+                },
+              )
+            : undefined;
         if (!cancelled) {
           setDecoded(preview);
           setRecord(result);
@@ -346,6 +350,11 @@ export function LiveProposal({ id }: { id: string }) {
                   Technical details
                 </summary>
                 <div className="mt-4 space-y-3">
+                  {decoded?.decoder && (
+                    <pre className="overflow-x-auto rounded-lg bg-secondary p-3 text-xs">
+                      {JSON.stringify(decoded.decoder, null, 2)}
+                    </pre>
+                  )}
                   <Explorer
                     full
                     address={record.transactionAddress.toBase58()}

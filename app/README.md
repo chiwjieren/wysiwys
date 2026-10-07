@@ -2,6 +2,8 @@
 
 Next.js web app: dashboard, transactions, review (verdict + summary + claim vs decoded reality), members, settings and /status. Propose, request review, vote and guarded execute.
 
+Payment previews use `@wysiwys/decoder` JSON output. Stored proposals decode the exact chain account bytes; drafts use the Squads SDK serializer. The app formats supported actions into payment messages and shows the decoder JSON under **Technical details** on the transaction review screen. Live token-account checks remain required, and the on-chain Guard Review supplies the policy verdict. App dev, build, test and typecheck commands build the decoder automatically.
+
 ## Run
 
 ```bash
@@ -18,7 +20,11 @@ Run these commands from `app/`. Browser tests use port 3105 and ephemeral test w
 
 ## Creating a guarded treasury
 
+The first visit starts with no treasury selected, empty holdings and no activity. Connect a wallet to create a treasury, or use **Open group** to view an existing one. A `?group=<multisig>` link or a previously selected treasury saved in this browser opens that treasury directly. Deployment configuration supplies Guard settings but never automatically selects its test treasury. Connecting a wallet alone does not select a treasury.
+
 Click **Create treasury** (dashboard, or **Open or create a group**). Enter a name, the other member wallets (up to 12; every entry must be a wallet address, and your connected wallet joins automatically) and the required approvals (default: every member; any value from 1 to the member count).
+
+Enter one wallet address per field. Use **Add wallet** for another field and the remove button to delete a row. Blank fields do not add members or increase the default required approvals.
 
 What happens:
 
@@ -52,6 +58,8 @@ Vault, configuration and Batch proposal accounts are readable. Batch creation, f
 ## Configuration
 
 Copy `.env.example` to `.env.local` and fill in what you need.
+
+For local guarded creation, run the runner from the repository root with `npm run dev --workspace=services/runner` using Node 22.13 or newer. Put `SETTLEMENT_TOKEN` in the root `.env`, and use the same value for `WYSIWYS_SETTLEMENT_TOKEN` in `app/.env.local`. Set `WYSIWYS_SETTLEMENT_URL=http://127.0.0.1:8787` when both processes run in WSL. The app does not load the root `.env`. Missing configuration, a connection failure or rejected service authentication produces a specific creation error. A running settlement service can prepare treasury creation, but payment reviews also need the runner's CRE trigger or simulation configured.
 
 | Variable                             | Purpose                                                                                                                                |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |

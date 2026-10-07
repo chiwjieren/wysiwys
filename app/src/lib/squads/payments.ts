@@ -9,7 +9,6 @@ import {
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   createTransferCheckedInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
@@ -17,6 +16,14 @@ import {
   unpackMint,
 } from "@solana/spl-token";
 import { parseAmount } from "./governance";
+import { decodeVaultTransaction, type DecodeResult } from "@wysiwys/decoder";
+import { txHash } from "@wysiwys/shared";
+
+export type StoredPayment = {
+  data: Uint8Array;
+  address: PublicKey;
+  hash: Uint8Array;
+};
 
 export type PaymentInput = {
   recipient: string;
@@ -146,8 +153,11 @@ export function buildPaymentProposal(args: {
     }),
   ];
 }
-// App-only local preview. This is not the shared CRE DecodedAction contract or an on-chain policy verdict.
+// Shared decoder output is descriptive. These display checks do not grant a Guard verdict.
 type Message = {
+  numSigners?: number;
+  numWritableSigners?: number;
+  numWritableNonSigners?: number;
   accountKeys: PublicKey[];
   instructions: {
     programIdIndex: number;
@@ -160,74 +170,135 @@ export type PaymentPreview = {
   supported: boolean;
   lines: string[];
   reason?: string;
+  decoder?: DecodeResult;
 };
 export function previewMessage(
   message: Message,
   vault: PublicKey,
   tokens?: TokenContext,
 ): PaymentPreview {
+  // Drafts have no stored account yet. Use the SDK account serializer rather
+  // than maintaining a second instruction decoder or a hand-written layout.
+  if (message.addressTableLookups.length)
+    return {
+      supported: false,
+      lines: [],
+      reason: "Address lookup table payments are unsupported.",
+    };
+  try {
+    const data = sqds.accounts.VaultTransaction.fromArgs({
+      multisig: PublicKey.default,
+      creator: PublicKey.default,
+      index: 0,
+      bump: 0,
+      vaultIndex: 0,
+      vaultBump: 0,
+      ephemeralSignerBumps: new Uint8Array(),
+      message: {
+        ...message,
+        numSigners: message.numSigners ?? 1,
+        numWritableSigners: message.numWritableSigners ?? 1,
+        numWritableNonSigners: message.numWritableNonSigners ?? 0,
+        addressTableLookups: [],
+      },
+    }).serialize()[0];
+    return previewVaultTransaction(data, vault, tokens);
+  } catch {
+    return {
+      supported: false,
+      lines: [],
+      reason: "This draft cannot be decoded. Approval is unavailable.",
+    };
+  }
+}
+
+export function previewVaultTransaction(
+  data: Uint8Array,
+  vault: PublicKey,
+  tokens?: TokenContext,
+  binding?: Omit<StoredPayment, "data">,
+): PaymentPreview {
+  if (binding) {
+    const actual = txHash(binding.address.toBytes(), data);
+    if (
+      binding.hash.length !== actual.length ||
+      actual.some((byte, i) => byte !== binding.hash[i])
+    )
+      return {
+        supported: false,
+        lines: [],
+        reason:
+          "The stored transaction changed. Refresh and request a new review.",
+      };
+  }
+  const decoder = decodeVaultTransaction(data);
+  if (decoder.status !== "success")
+    return {
+      supported: false,
+      lines: [],
+      decoder,
+      reason: `The decoder could not fully inspect this transaction (${decoder.error}). Approval is unavailable.`,
+    };
   const lines: string[] = [];
   try {
-    if (message.addressTableLookups.length || !message.instructions.length)
-      throw new Error(
-        "This transaction cannot be fully decoded. Approval is unavailable.",
-      );
+    const [transaction] = sqds.accounts.VaultTransaction.deserialize(
+      Buffer.from(data),
+    );
     const created = new Map<string, { owner: PublicKey; mint: PublicKey }>();
-    for (const ix of message.instructions) {
-      const program = message.accountKeys[ix.programIdIndex];
-      const keys = Array.from(ix.accountIndexes, (i) => message.accountKeys[i]);
-      if (!program || keys.some((k) => !k))
-        throw new Error("Invalid instruction accounts.");
-      const data = Buffer.from(ix.data);
-      if (
-        program.equals(SystemProgram.programId) &&
-        data.length === 12 &&
-        data.readUInt32LE(0) === 2 &&
-        keys.length === 2 &&
-        keys[0].equals(vault)
-      ) {
+    for (const action of decoder.actions) {
+      if (action.kind === "system.transfer") {
+        if (
+          transaction.message.instructions[action.instructionIndex]
+            .accountIndexes.length !== 2
+        )
+          throw new Error(
+            "The payment has unexpected instruction accounts. Approval is unavailable.",
+          );
+        if (action.source !== vault.toBase58())
+          throw new Error("Payment must originate from the treasury vault.");
         lines.push(
-          `Send ${tokenAmount(data.readBigUInt64LE(4).toString(), 9)} SOL from the treasury vault to ${keys[1].toBase58()}.`,
+          `Send ${tokenAmount(action.lamports, 9)} SOL from the treasury vault to ${action.destination}.`,
         );
-      } else if (
-        program.equals(ASSOCIATED_TOKEN_PROGRAM_ID) &&
-        data.length === 1 &&
-        data[0] === 1 &&
-        keys.length === 6 &&
-        keys[0].equals(vault) &&
-        keys[4].equals(SystemProgram.programId) &&
-        keys[5].equals(TOKEN_PROGRAM_ID) &&
-        getAssociatedTokenAddressSync(keys[3], keys[2], true).equals(keys[1])
-      ) {
-        created.set(keys[1].toBase58(), { owner: keys[2], mint: keys[3] });
+      } else if (action.kind === "ata.createIdempotent") {
+        const owner = new PublicKey(action.walletOwner);
+        const mint = new PublicKey(action.mint);
+        if (
+          action.payer !== vault.toBase58() ||
+          getAssociatedTokenAddressSync(mint, owner, true).toBase58() !==
+            action.associatedTokenAccount
+        )
+          throw new Error("Invalid recipient token account derivation.");
+        created.set(action.associatedTokenAccount, { owner, mint });
         lines.push(
-          `Create token account ${keys[1].toBase58()} for wallet ${keys[2].toBase58()} and mint ${keys[3].toBase58()} if needed. Treasury SOL pays account rent.`,
+          `Create token account ${action.associatedTokenAccount} for wallet ${action.walletOwner} and mint ${action.mint} if needed. Treasury SOL pays account rent.`,
         );
-      } else if (
-        program.equals(TOKEN_PROGRAM_ID) &&
-        data.length === 10 &&
-        data[0] === 12 &&
-        keys.length === 4 &&
-        keys[3].equals(vault)
-      ) {
-        const recipient = created.get(keys[2].toBase58());
-        const source = tokens?.accounts.get(keys[0].toBase58());
-        const destination = tokens?.accounts.get(keys[2].toBase58());
-        const decimals = tokens?.mints.get(keys[1].toBase58());
+      } else if (action.kind === "token.transferChecked") {
+        if (
+          action.authority !== vault.toBase58() ||
+          action.multisigSigners?.length
+        )
+          throw new Error("Payment must be authorized by the treasury vault.");
+        const mint = new PublicKey(action.mint);
+        const recipient = created.get(action.destinationTokenAccount);
+        const source = tokens?.accounts.get(action.sourceTokenAccount);
+        const destination = tokens?.accounts.get(
+          action.destinationTokenAccount,
+        );
+        const decimals = tokens?.mints.get(action.mint);
         if (
           !source ||
           !source.owner.equals(vault) ||
-          !source.mint.equals(keys[1]) ||
-          decimals !== data[9]
+          !source.mint.equals(mint) ||
+          decimals !== action.decimals
         )
           throw new Error(
             "Token ownership or mint decimals could not be verified. Approval is unavailable.",
           );
-        if (recipient && !recipient.mint.equals(keys[1]))
+        if (recipient && !recipient.mint.equals(mint))
           throw new Error("Token mint mismatch.");
         if (
           destination &&
-          (!destination.mint.equals(keys[1]) ||
+          (!destination.mint.equals(mint) ||
             (recipient && !destination.owner.equals(recipient.owner)))
         )
           throw new Error(
@@ -239,18 +310,19 @@ export function previewMessage(
             "Recipient token owner could not be verified. Approval is unavailable.",
           );
         lines.push(
-          `Send ${tokenAmount(data.readBigUInt64LE(1).toString(), data[9])} tokens (mint ${keys[1].toBase58()}) from token account ${keys[0].toBase58()} to wallet ${owner.toBase58()} via token account ${keys[2].toBase58()}.`,
+          `Send ${tokenAmount(action.amount, action.decimals)} tokens (mint ${action.mint}) from token account ${action.sourceTokenAccount} to wallet ${owner.toBase58()} via token account ${action.destinationTokenAccount}.`,
         );
       } else
         throw new Error(
           "An instruction is unsupported. Do not approve a transaction you cannot fully understand.",
         );
     }
-    return { supported: true, lines };
+    return { supported: true, lines, decoder };
   } catch (e) {
     return {
       supported: false,
       lines,
+      decoder,
       reason:
         e instanceof Error ? e.message : "Could not decode the transaction.",
     };
@@ -266,6 +338,7 @@ export async function readPaymentPreview(
   rpc: Pick<Connection, "getMultipleAccountsInfo">,
   message: Message,
   vault: PublicKey,
+  stored?: StoredPayment,
 ) {
   const keys = new Map<string, PublicKey>();
   for (const ix of message.instructions) {
@@ -302,7 +375,9 @@ export async function readPaymentPreview(
         }
       });
     }
-    return previewMessage(message, vault, context);
+    return stored
+      ? previewVaultTransaction(stored.data, vault, context, stored)
+      : previewMessage(message, vault, context);
   } catch {
     return {
       supported: false,

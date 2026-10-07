@@ -113,6 +113,8 @@ export async function POST(request: Request) {
         { error: "Invalid treasury request." },
         { status: 400 },
       );
+    if (error instanceof RunnerRequestError)
+      return Response.json({ error: error.message }, { status: 503 });
     return Response.json(
       { error: "Group protection could not be prepared. Try again later." },
       { status: 503 },

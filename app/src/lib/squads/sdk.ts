@@ -1,5 +1,7 @@
 import { Buffer } from "buffer";
 import * as sqds from "@sqds/multisig";
+import { txHash } from "@wysiwys/shared";
+import type { StoredPayment } from "./payments";
 import {
   ComputeBudgetProgram,
   Connection,
@@ -228,7 +230,11 @@ export type ProposalRecord = {
   address: PublicKey;
   transactionAddress: PublicKey;
 } & (
-  | { kind: "vault"; transaction: sqds.accounts.VaultTransaction }
+  | {
+      kind: "vault";
+      transaction: sqds.accounts.VaultTransaction;
+      stored: StoredPayment;
+    }
   | { kind: "config"; transaction: sqds.accounts.ConfigTransaction }
   | { kind: "batch"; transaction: sqds.accounts.Batch }
   | { kind: "archived"; transaction: null }
@@ -356,6 +362,11 @@ function decodeProposalPair(
         kind: "vault",
         proposal,
         transaction: transaction as sqds.accounts.VaultTransaction,
+        stored: {
+          data: new Uint8Array(transactionInfo.data),
+          address: transactionAddress,
+          hash: txHash(transactionAddress.toBytes(), transactionInfo.data),
+        },
         address,
         transactionAddress,
       };
@@ -390,11 +401,27 @@ export async function signAndConfirm(
 ) {
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash("finalized");
+  // Phantom adds priority-fee instructions to unsigned messages without a
+  // developer-specified budget. Set the devnet fee before signing so the
+  // strict message comparison remains valid. Co-signed messages and explicit
+  // caller budgets are already excluded from Phantom's fee enhancement.
+  const hasBudget = instructions.some(
+    (ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      [2, 3].includes(ix.data[0]),
+  );
+  const walletInstructions =
+    additionalSigners.length || hasBudget
+      ? instructions
+      : [
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
+          ...instructions,
+        ];
   const transaction = new VersionedTransaction(
     new TransactionMessage({
       payerKey: wallet,
       recentBlockhash: blockhash,
-      instructions,
+      instructions: walletInstructions,
     }).compileToV0Message(),
   );
   if (additionalSigners.length) transaction.sign(additionalSigners);

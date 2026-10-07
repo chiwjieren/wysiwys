@@ -13,8 +13,21 @@ import { parseDeployment } from "./server-config";
 // runner. Runner responses are validated here; upstream text is never echoed.
 
 export class RunnerRequestError extends Error {
-  constructor(readonly status: number) {
-    super("Group protection is unavailable.");
+  constructor(
+    readonly status: number,
+    kind: "http" | "configuration" | "connection" | "response" = "http",
+  ) {
+    super(
+      kind === "configuration"
+        ? "Treasury protection is not configured. Contact the app operator."
+        : kind === "connection"
+          ? "The treasury protection service is unreachable. Try again shortly."
+          : kind === "response"
+            ? "The treasury protection service returned an invalid response. Contact the app operator."
+            : status === 401 || status === 403
+              ? "Treasury protection authentication failed. Contact the app operator."
+              : "The treasury protection service is unavailable. Try again shortly.",
+    );
   }
 }
 
@@ -94,25 +107,35 @@ export async function callRunner(
   init: { method: "GET" } | { method: "POST"; body: string },
 ): Promise<unknown> {
   const base = process.env.WYSIWYS_SETTLEMENT_URL;
-  if (!base) throw new RunnerRequestError(503);
-  const response = await fetch(
-    new URL(path, base.endsWith("/") ? base : `${base}/`),
-    {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
-          ? {
-              Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
-            }
-          : {}),
+  if (!base || !process.env.WYSIWYS_SETTLEMENT_TOKEN)
+    throw new RunnerRequestError(503, "configuration");
+  let response: Response;
+  try {
+    response = await fetch(
+      new URL(path, base.endsWith("/") ? base : `${base}/`),
+      {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(process.env.WYSIWYS_SETTLEMENT_TOKEN
+            ? {
+                Authorization: `Bearer ${process.env.WYSIWYS_SETTLEMENT_TOKEN}`,
+              }
+            : {}),
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
       },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    },
-  );
+    );
+  } catch {
+    throw new RunnerRequestError(503, "connection");
+  }
   if (!response.ok) throw new RunnerRequestError(response.status);
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    throw new RunnerRequestError(502, "response");
+  }
 }
 
 export async function fetchGuardedGroup(

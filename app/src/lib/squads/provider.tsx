@@ -212,11 +212,11 @@ export function SquadProvider({ children }: { children: ReactNode }) {
             saved.find((g) => g.address === address)?.name || "Shared group",
           );
           setMode("live");
-        } else if (loaded) {
-          setConfig(loaded);
-          setGroupName("Treasury");
-          setMode("live");
-        } else setMode("unconfigured");
+        } else {
+          // Deployment settings support treasury creation, but selecting its
+          // treasury requires an explicit link or a saved user choice.
+          setMode("unconfigured");
+        }
       })
       .catch((e) => {
         if (!abort.signal.aborted) {
@@ -451,6 +451,7 @@ export function SquadProvider({ children }: { children: ReactNode }) {
           rpc,
           record.transaction.message,
           vault,
+          record.stored,
         );
         assertReviewedPreview(reviewed, preview);
       }
@@ -502,7 +503,12 @@ export function SquadProvider({ children }: { children: ReactNode }) {
         })[0];
         assertReviewedPreview(
           reviewed,
-          await readPaymentPreview(rpc, record.transaction.message, vault),
+          await readPaymentPreview(
+            rpc,
+            record.transaction.message,
+            vault,
+            record.stored,
+          ),
         );
         const { instruction, lookupTableAccounts } =
           await sqds.instructions.vaultTransactionExecute({

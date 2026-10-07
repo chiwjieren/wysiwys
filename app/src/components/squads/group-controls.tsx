@@ -1,5 +1,6 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useState, useRef, useId, type ReactNode } from "react";
+import { Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,11 +37,15 @@ export function CreateGroupButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [members, setMembers] = useState("");
+  const [members, setMembers] = useState([{ id: 0, address: "" }]);
+  const nextMemberId = useRef(1);
+  const memberFieldId = useId();
   // Empty means "every member must approve" (the default).
   const [threshold, setThreshold] = useState("");
   const [standard, setStandard] = useState(false);
-  const invitees = members.split(/[\s,]+/).filter(Boolean);
+  const invitees = members
+    .map((member) => member.address.trim())
+    .filter(Boolean);
   const count = invitees.length + 1;
   const required = threshold || String(count);
   const maxInvites = standard ? 19 : GUARDED_GROUP_MAX_INVITES;
@@ -56,7 +61,7 @@ export function CreateGroupButton({
           {label}
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-card">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card">
         <DialogTitle>
           {standard ? "Create a standard group" : "Create a guarded treasury"}
         </DialogTitle>
@@ -90,15 +95,72 @@ export function CreateGroupButton({
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label className="block space-y-2">
-            <span>Other member wallets</span>
-            <textarea
-              className="min-h-24 w-full rounded-lg border bg-secondary p-3 text-xs"
-              value={members}
-              onChange={(e) => setMembers(e.target.value)}
-              placeholder="One Solana wallet address per line"
-            />
-          </label>
+          <fieldset className="space-y-2">
+            <legend className="mb-2">Other member wallets</legend>
+            {members.map((member, index) => (
+              <div key={member.id} className="flex items-center gap-2">
+                <label
+                  className="sr-only"
+                  htmlFor={`${memberFieldId}-${member.id}`}
+                >
+                  Wallet address {index + 1}
+                </label>
+                <Input
+                  id={`${memberFieldId}-${member.id}`}
+                  value={member.address}
+                  placeholder="Solana wallet address"
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={!!busy}
+                  onChange={(e) =>
+                    setMembers((current) =>
+                      current.map((row) =>
+                        row.id === member.id
+                          ? { ...row, address: e.target.value }
+                          : row,
+                      ),
+                    )
+                  }
+                />
+                {members.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    aria-label={`Remove wallet ${index + 1}`}
+                    disabled={!!busy}
+                    onClick={() => {
+                      const remaining = members.filter(
+                        (row) => row.id !== member.id,
+                      );
+                      setMembers(remaining);
+                      const nextCount =
+                        remaining.filter((row) => row.address.trim()).length +
+                        1;
+                      if (Number(threshold) > nextCount)
+                        setThreshold(String(nextCount));
+                    }}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full border border-dashed"
+              disabled={!!busy || members.length >= maxInvites}
+              onClick={() => {
+                const id = nextMemberId.current++;
+                setMembers((current) => [...current, { id, address: "" }]);
+              }}
+            >
+              <Plus className="size-4" />
+              Add wallet
+            </Button>
+          </fieldset>
           <p className="caption">
             Your wallet joins automatically. Up to {maxInvites} other wallets.
             {!standard && " Members are fixed after creation."}

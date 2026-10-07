@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Panel, SectionTitle } from "@/components/design";
 import { Button } from "@/components/ui/button";
 import { useSquad } from "@/lib/squads/provider";
-import { previewMessage } from "@/lib/squads/payments";
+import { previewVaultTransaction } from "@/lib/squads/payments";
 import { EmptyState, ProposalStatus, ReviewBadge } from "./treasury-ui";
 import { isGuarded } from "@/lib/squads/review";
 import type { ProposalRecord } from "@/lib/squads/sdk";
@@ -51,7 +51,12 @@ export function ProposalTable({
               const id = record.proposal.transactionIndex.toString();
               const decoded =
                 record.kind === "vault" && snapshot
-                  ? previewMessage(record.transaction.message, snapshot.vault)
+                  ? previewVaultTransaction(
+                      record.stored.data,
+                      snapshot.vault,
+                      undefined,
+                      record.stored,
+                    )
                   : undefined;
               const payment =
                 record.kind === "config"
