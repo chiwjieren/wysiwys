@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import * as sqds from "@sqds/multisig";
 import {
   ComputeBudgetProgram,
+  type VersionedMessage,
   Connection,
   PublicKey,
   TransactionInstruction,
@@ -380,6 +381,68 @@ function decodeBoundProposal(
     throw new Error("Proposal account binding mismatch.");
   return proposal;
 }
+// Every transaction carries its own compute limit and priority fee. Wallets such as Phantom add
+// their own fee instructions when a transaction has none, which changes the signed bytes.
+export const COMPUTE_UNIT_LIMIT = 400_000;
+export const PRIORITY_FEE_MICROLAMPORTS = 10_000;
+const isComputeBudget = (ix: TransactionInstruction) =>
+  ix.programId.equals(ComputeBudgetProgram.programId);
+const SET_COMPUTE_UNIT_LIMIT = 2;
+const SET_COMPUTE_UNIT_PRICE = 3;
+
+/** Prepends a compute limit and a priority fee unless the instructions already set them. */
+export function withComputeBudget(instructions: TransactionInstruction[]) {
+  const has = (tag: number) =>
+    instructions.some((ix) => isComputeBudget(ix) && ix.data[0] === tag);
+  return [
+    ...(has(SET_COMPUTE_UNIT_LIMIT)
+      ? []
+      : [ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNIT_LIMIT })]),
+    ...(has(SET_COMPUTE_UNIT_PRICE)
+      ? []
+      : [
+          ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: PRIORITY_FEE_MICROLAMPORTS,
+          }),
+        ]),
+    ...instructions,
+  ];
+}
+
+/**
+ * What you see is what you sign: the wallet may only add or change compute budget (fee)
+ * instructions. Same fee payer, same blockhash, and every other instruction identical and in
+ * the same order (program, accounts with signer/writable flags, data). Anything else throws.
+ */
+export function assertSameIntent(built: VersionedMessage, signed: VersionedMessage) {
+  if (Buffer.from(built.serialize()).equals(Buffer.from(signed.serialize()))) return;
+  const changed = () => new Error("Wallet changed the transaction message.");
+  let a: TransactionMessage, b: TransactionMessage;
+  try {
+    // Lookup tables are never used by this app; a wallet adding one is a change.
+    if (signed.addressTableLookups.length || built.addressTableLookups.length) throw changed();
+    a = TransactionMessage.decompile(built);
+    b = TransactionMessage.decompile(signed);
+  } catch {
+    throw changed();
+  }
+  if (!a.payerKey.equals(b.payerKey) || a.recentBlockhash !== b.recentBlockhash) throw changed();
+  const work = (m: TransactionMessage) => m.instructions.filter((ix) => !isComputeBudget(ix));
+  const x = work(a);
+  const y = work(b);
+  const same = (p: TransactionInstruction, q: TransactionInstruction) =>
+    p.programId.equals(q.programId) &&
+    p.data.equals(q.data) &&
+    p.keys.length === q.keys.length &&
+    p.keys.every(
+      (k, i) =>
+        k.pubkey.equals(q.keys[i].pubkey) &&
+        k.isSigner === q.keys[i].isSigner &&
+        k.isWritable === q.keys[i].isWritable,
+    );
+  if (x.length !== y.length || !x.every((ix, i) => same(ix, y[i]))) throw changed();
+}
+
 export async function signAndConfirm(
   connection: Connection,
   wallet: PublicKey,
@@ -394,7 +457,7 @@ export async function signAndConfirm(
     new TransactionMessage({
       payerKey: wallet,
       recentBlockhash: blockhash,
-      instructions,
+      instructions: withComputeBudget(instructions),
     }).compileToV0Message(),
   );
   if (additionalSigners.length) transaction.sign(additionalSigners);
@@ -407,13 +470,9 @@ export async function signAndConfirm(
   } else {
     signed = VersionedTransaction.deserialize(response);
   }
-  if (
-    !Buffer.from(signed.message.serialize()).equals(
-      Buffer.from(transaction.message.serialize()),
-    )
-  )
-    throw new Error("Wallet changed the transaction message.");
-  // A connector may reconstruct the same message with only its own signature.
+  assertSameIntent(transaction.message, signed.message);
+  // The wallet may have changed fee instructions or rebuilt the message with only its own
+  // signature: additional signers sign the message actually being sent.
   if (additionalSigners.length) signed.sign(additionalSigners);
   const signature = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: false,

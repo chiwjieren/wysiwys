@@ -7,8 +7,8 @@ import {
   type TransactionInstruction,
 } from "@solana/web3.js";
 
-// multisigCreateV2 and initialize_guard share one transaction (1232 bytes).
-export const GUARDED_GROUP_MAX_INVITES = 12;
+// multisigCreateV2, initialize_guard and the compute budget share one transaction (1232 bytes).
+export const GUARDED_GROUP_MAX_INVITES = 10;
 
 const permissions = () =>
   sqds.types.Permissions.fromPermissions([

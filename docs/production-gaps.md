@@ -35,7 +35,7 @@ The invariant that holds today, even with every gap below: money moves only when
 | 15 | One review per transaction | Rejected, expired or late (> 900 s) reviews cannot be retried | Re-propose the payment | Review generations (`RequestHead`) | Low |
 | 16 | Payment types | One instruction per payment: SOL transfer or legacy SPL `TransferChecked` to an existing token account | No batches, ATA creation, Token-2022, lookup tables, swaps | Extend decoder, policy and guard binding per instruction type | Medium |
 | 17 | Limits | Per-payment cap only | Many small payments bypass a daily budget | On-chain cumulative counters updated atomically at execution | Medium |
-| 18 | Treasury size | Up to 13 humans per treasury (one-transaction creation fits 1232 bytes) | Large committees not supported | Two-step creation | Low |
+| 18 | Treasury size | Up to 11 humans per treasury (one-transaction creation, with compute budget instructions, fits 1232 bytes) | Large committees not supported | Two-step creation | Low |
 | 19 | Audit | Guard not audited; durable-nonce check looks at instruction 0 only | Undiscovered bugs | External audit; broaden instruction introspection | High |
 | 20 | Dependency | Squads v4 is upgradable by the Squads team | External trust | Accept (audited, widely used) or pin a verified build | Low |
 

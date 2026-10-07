@@ -18,7 +18,7 @@ Run these commands from `app/`. Browser tests use port 3105 and ephemeral test w
 
 ## Creating a guarded treasury
 
-Click **Create treasury** (dashboard, or **Open or create a group**). Enter a name, the other member wallets (up to 12; every entry must be a wallet address, and your connected wallet joins automatically) and the required approvals (default: every member; any value from 1 to the member count).
+Click **Create treasury** (dashboard, or **Open or create a group**). Enter a name, the other member wallets (up to 10; every entry must be a wallet address, and your connected wallet joins automatically) and the required approvals (default: every member; any value from 1 to the member count).
 
 What happens:
 
